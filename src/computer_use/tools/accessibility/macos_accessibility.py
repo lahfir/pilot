@@ -51,7 +51,7 @@ class MacOSAccessibility:
             print(f"  ⚠️  Failed to initialize Accessibility: {e}")
             self.available = False
 
-    def click_element(self, label: str, app_name: Optional[str] = None) -> bool:
+    def click_element(self, label: str, app_name: Optional[str] = None) -> tuple:
         """
         Find and click element directly using accessibility API.
         This is the primary method for interaction.
@@ -61,10 +61,11 @@ class MacOSAccessibility:
             app_name: Application name to search in
 
         Returns:
-            True if clicked successfully
+            Tuple of (success: bool, element: Optional[element])
+            Returns the element even if click fails, so caller can get coordinates
         """
         if not self.available:
-            return False
+            return (False, None)
 
         try:
             app = self._get_app(app_name)
@@ -72,15 +73,35 @@ class MacOSAccessibility:
 
             if element:
                 identifier = getattr(element, "AXIdentifier", "N/A")
-                self._perform_click(element)
-                print(f"    ✅ Clicked '{identifier}' via Accessibility API")
-                return True
+                elem_title = getattr(element, "AXTitle", "")
+                elem_desc = ""
+                if hasattr(element, "AXAttributedDescription"):
+                    try:
+                        elem_desc = (
+                            str(element.AXAttributedDescription).split("{")[0].strip()
+                        )
+                    except:
+                        pass
 
-            return False
+                print(
+                    f"    🔍 Found element: identifier='{identifier}', title='{elem_title}', desc='{elem_desc}'"
+                )
+
+                try:
+                    self._perform_click(element)
+                    print(
+                        f"    ✅ Clicked '{identifier}' via Accessibility API (Press method)"
+                    )
+                    return (True, element)
+                except Exception as click_error:
+                    print(f"    ⚠️  Native click failed: {click_error}")
+                    return (False, element)
+
+            return (False, None)
 
         except Exception as e:
-            print(f"    ⚠️  Accessibility click failed: {e}")
-            return False
+            print(f"    ⚠️  Accessibility search failed: {e}")
+            return (False, None)
 
     def get_all_interactive_elements(
         self, app_name: Optional[str] = None
@@ -112,6 +133,34 @@ class MacOSAccessibility:
 
         return elements
 
+    def get_app_window_bounds(self, app_name: Optional[str] = None) -> Optional[tuple]:
+        """
+        Get the bounds of the app's main window.
+        Used to crop screenshots to only the app, preventing OCR from finding text in other apps.
+
+        Returns:
+            (x, y, width, height) or None
+        """
+        if not self.available:
+            return None
+
+        try:
+            app = self._get_app(app_name)
+            windows = self._get_app_windows(app)
+
+            if windows:
+                main_window = windows[0]
+                if hasattr(main_window, "AXPosition") and hasattr(
+                    main_window, "AXSize"
+                ):
+                    pos = main_window.AXPosition
+                    size = main_window.AXSize
+                    return (int(pos[0]), int(pos[1]), int(size[0]), int(size[1]))
+        except Exception:
+            pass
+
+        return None
+
     def _collect_interactive_elements(
         self, container, elements: List[Dict[str, Any]], depth=0
     ):
@@ -131,18 +180,13 @@ class MacOSAccessibility:
                         self._collect_interactive_elements(child, elements, depth + 1)
                 return
 
-            interactive_roles = [
-                "AXButton",
-                "AXTextField",
-                "AXTextArea",
-                "AXCheckBox",
-                "AXRadioButton",
-                "AXPopUpButton",
-                "AXMenuButton",
-                "AXSlider",
-            ]
+            is_interactive = False
 
-            if any(role in str(elem_role) for role in interactive_roles):
+            if hasattr(container, "AXEnabled") and container.AXEnabled:
+                if hasattr(container, "AXActions") and container.AXActions:
+                    is_interactive = True
+
+            if is_interactive:
                 identifier = getattr(container, "AXIdentifier", "")
                 description = ""
 
@@ -292,12 +336,13 @@ class MacOSAccessibility:
     def _element_matches_text(self, element, target_text):
         """
         Check if element's text attributes match the target text.
-        Checks AXIdentifier, AXAttributedDescription, AXTitle, AXValue, AXDescription.
+        EXACT MATCH ONLY - LLM must use the exact identifier we show it!
+        No fuzzy matching - forces LLM to be precise.
         """
         try:
             if hasattr(element, "AXIdentifier") and element.AXIdentifier:
                 identifier = str(element.AXIdentifier).lower()
-                if target_text in identifier or identifier in target_text:
+                if identifier == target_text:
                     return True
 
             if (
@@ -306,21 +351,19 @@ class MacOSAccessibility:
             ):
                 try:
                     desc_str = str(element.AXAttributedDescription).lower()
-                    if target_text in desc_str or desc_str.startswith(target_text):
+                    if desc_str == target_text:
                         return True
                 except:
                     pass
 
             if hasattr(element, "AXTitle") and element.AXTitle:
-                if target_text in str(element.AXTitle).lower():
+                title = str(element.AXTitle).lower()
+                if title == target_text:
                     return True
 
             if hasattr(element, "AXValue") and element.AXValue:
-                if target_text in str(element.AXValue).lower():
-                    return True
-
-            if hasattr(element, "AXDescription") and element.AXDescription:
-                if target_text in str(element.AXDescription).lower():
+                value = str(element.AXValue).lower()
+                if value == target_text:
                     return True
 
         except:
@@ -329,16 +372,23 @@ class MacOSAccessibility:
         return False
 
     def _perform_click(self, element):
-        """Perform click action on element using atomacos."""
+        """
+        Perform click action on element using atomacos.
+
+        Raises:
+            Exception if click fails
+        """
         try:
             if hasattr(element, "Press"):
                 element.Press()
+                return True
             elif hasattr(element, "AXPress"):
                 element.AXPress()
+                return True
             else:
-                raise Exception("Element does not support click action")
+                raise Exception("Element does not support Press/AXPress action")
         except Exception as e:
-            raise Exception(f"Click action failed: {e}")
+            raise Exception(f"Click action failed: {str(e)}")
 
     def _traverse_and_collect(self, container, label, role, elements, depth=0):
         """Traverse accessibility tree and collect matching elements with coordinates."""

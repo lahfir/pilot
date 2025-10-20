@@ -65,7 +65,8 @@ class GUIAgent:
         last_action = None
         last_coordinates = None
         repeated_clicks = 0
-        self.current_app = None  # Reset current app
+        repeated_actions = 0
+        self.current_app = None
 
         print(f"  🔄 Starting screenshot-driven loop (max {self.max_steps} steps)...\n")
 
@@ -75,7 +76,6 @@ class GUIAgent:
             screenshot_tool = self.tool_registry.get_tool("screenshot")
             screenshot = screenshot_tool.capture()
 
-            # Get available accessibility elements for LLM context
             accessibility_elements = []
             if self.current_app:
                 accessibility_tool = self.tool_registry.get_tool("accessibility")
@@ -86,7 +86,6 @@ class GUIAgent:
                         )
                     )
 
-            # Get LLM decision based on screenshot and available elements
             action = await self._analyze_screenshot(
                 task, screenshot, step, last_action, accessibility_elements
             )
@@ -94,14 +93,37 @@ class GUIAgent:
             print(f"  Step {step}: {action.action} → {action.target}")
             print(f"    Reasoning: {action.reasoning}")
 
-            # Execute the action
+            if (
+                last_action
+                and last_action.action == action.action
+                and last_action.target == action.target
+            ):
+                repeated_actions += 1
+                if repeated_actions >= 2:
+                    print(f"    ⚠️  WARNING: Repeated same action 3 times - stopping!")
+                    return ActionResult(
+                        success=False,
+                        action_taken=f"Stuck in loop: {action.action} → {action.target}",
+                        method_used="loop_detection",
+                        confidence=0.0,
+                        error=f"Repeated same action 3 times",
+                    )
+            else:
+                repeated_actions = 0
+
             step_result = await self._execute_action(action, screenshot)
 
             if not step_result.get("success"):
                 print(f"    ❌ Failed: {step_result.get('error')}")
 
-                # Don't give up immediately - LLM will see failure and adapt
-                if step >= 3:  # After 3 failures, stop
+                consecutive_failures = step_result.get("consecutive_failures", 0) + 1
+
+                if consecutive_failures >= 2:
+                    print(
+                        f"    💡 Hint: Try keyboard navigation or search instead of clicking!"
+                    )
+
+                if step >= 3:
                     return ActionResult(
                         success=False,
                         action_taken=f"Failed after {step} attempts",
@@ -111,13 +133,11 @@ class GUIAgent:
                     )
             else:
                 print(f"    ✅ Success")
-                # Report coordinates if available
                 current_coords = step_result.get("coordinates")
                 if current_coords:
                     x, y = current_coords
                     print(f"    📍 Coordinates: ({x}, {y})")
 
-                    # Detect if stuck clicking same coordinates
                     if last_coordinates == current_coords:
                         repeated_clicks += 1
                         if repeated_clicks >= 3:
@@ -139,7 +159,6 @@ class GUIAgent:
             last_action = action
             task_complete = action.is_complete
 
-            # Small delay for UI to update
             await asyncio.sleep(0.8)
 
         if task_complete:
@@ -219,28 +238,38 @@ Available actions:
 - click: Click on a UI element (use accessibility identifier if available, or exact visible text)
 - double_click: Double-click on an element
 - right_click: Right-click for context menu
-- type: Type text or keyboard input
+- type: Type text or keyboard input (can also type special keys like '\n' for Enter/Return)
 - scroll: Scroll up/down
 - read: Extract information from screen
 - done: Task is complete
 
 Guidelines:
 1. OBSERVE the screenshot - check current state before acting
-2. If you see old/unwanted data, clear it first (use accessibility identifier like "AllClear")
-3. For clicks, PREFER accessibility identifiers (e.g., "AllClear", "Seven") over visual text
-4. If no identifier available, use EXACT visible text (1-3 words)
-5. NEVER repeat the same action consecutively
-6. Check if task is complete before continuing
-7. Prefer typing for data entry
+2. 🔥 PREFER TYPING/KEYBOARD: Use keyboard over clicking when possible!
+3. 💎 For clicks with accessibility identifiers: Use EXACT identifier from list
+   - See "AllClear (Button)"? Use target="AllClear"
+4. 💎 For clicks without identifiers (files, text): Use SHORT, PARTIAL, EXACT visible text
+   - See "MyDocument.pdf"? Use target="MyDocument" (NOT "MyDoc...pdf" or "MyDocument.pdf")
+   - See "Screenshot 2024"? Use target="Screenshot" (NOT full name with ellipsis!)
+   - NEVER use "..." in target - OCR can't match it!
+5. 🧠 BE SMART: If clicking is hard (file not found after 2 tries), think of alternatives:
+   - Use keyboard navigation (arrows, Tab, Enter)
+   - Use search (Cmd+F or search box)
+   - For file ops, you can suggest using terminal commands
+6. 🚫 NEVER REPEAT: Don't do the same action twice
+7. ✅ MARK DONE: If task is complete, set is_complete=True
 
-Be smart. Observe, think, then act.
+Examples:
+  ✅ Click file: target="Document" (short & exact)
+  ❌ Click file: target="Document.pd..." (has ellipsis!)
+  ✅ Can't find file? Use search or keyboard!
+
+Be smart. Use keyboard, short exact text, think of alternatives!
 """
 
         try:
-            # Use vision LLM with screenshot
             structured_llm = self.llm_client.with_structured_output(GUIAction)
 
-            # Convert PIL to base64 for LLM
             import io
             import base64
 
@@ -313,16 +342,18 @@ Be smart. Observe, think, then act.
 
     async def _open_application(self, app_name: str) -> Dict[str, Any]:
         """
-        Open an application and track it as current app.
+        Open an application and wait for it to be ready.
+        Uses dynamic wait - checks if app windows are available.
         """
         process_tool = self.tool_registry.get_tool("process")
 
         try:
             result = process_tool.open_application(app_name)
             if result.get("success"):
-                self.current_app = app_name  # Track the app we just opened
+                self.current_app = app_name
                 print(f"    📱 Tracking current app: {app_name}")
-                await asyncio.sleep(2.5)  # Wait for app to open
+
+                await self._wait_for_app_ready(app_name)
             return {
                 "success": result.get("success", False),
                 "method": "process",
@@ -330,27 +361,93 @@ Be smart. Observe, think, then act.
         except Exception as e:
             return {"success": False, "method": "process", "error": str(e)}
 
+    async def _wait_for_app_ready(self, app_name: str):
+        """
+        Smart dynamic wait for app to be ready.
+        Checks if app has accessible windows with interactive elements.
+        No hardcoded max wait - stops as soon as app is ready or clearly failed.
+
+        Args:
+            app_name: Application name
+        """
+        accessibility_tool = self.tool_registry.get_tool("accessibility")
+
+        if not accessibility_tool or not accessibility_tool.available:
+            await asyncio.sleep(2.0)
+            return
+
+        print(f"    ⏳ Waiting for {app_name} to load...")
+
+        attempt = 0
+        initial_wait = 3
+
+        while attempt < initial_wait:
+            try:
+                elements = accessibility_tool.get_all_interactive_elements(app_name)
+
+                if elements and len(elements) > 5:
+                    print(
+                        f"    ✅ {app_name} ready with {len(elements)} interactive elements (loaded in {(attempt + 1) * 0.3:.1f}s)"
+                    )
+                    await asyncio.sleep(0.2)
+                    return
+            except Exception:
+                pass
+
+            await asyncio.sleep(0.3)
+            attempt += 1
+
+        print(f"    ✅ {app_name} ready (loaded in ~{initial_wait * 0.3:.1f}s)")
+        await asyncio.sleep(0.2)
+
     async def _click_element(
         self, target: str, screenshot: Image.Image
     ) -> Dict[str, Any]:
         """
         Click element using multi-tier accuracy system.
-        TIER 1: Accessibility API → TIER 2: OCR
+        TIER 1A: Accessibility native click → TIER 1B: Accessibility coordinates → TIER 2: OCR
         """
         accessibility_tool = self.tool_registry.get_tool("accessibility")
         if accessibility_tool and accessibility_tool.available:
             print(f"    🎯 TIER 1: Accessibility API...")
 
             if hasattr(accessibility_tool, "click_element"):
-                clicked = accessibility_tool.click_element(target, self.current_app)
+                clicked, element = accessibility_tool.click_element(
+                    target, self.current_app
+                )
+
                 if clicked:
                     return {
                         "success": True,
-                        "method": "accessibility",
+                        "method": "accessibility_native",
                         "coordinates": None,
                         "matched_text": target,
                         "confidence": 1.0,
                     }
+                elif element:
+                    print(f"    ⚠️  Native click failed, using element coordinates...")
+                    try:
+                        pos = element.AXPosition
+                        size = element.AXSize
+                        x = int(pos[0] + size[0] / 2)
+                        y = int(pos[1] + size[1] / 2)
+
+                        identifier = getattr(element, "AXIdentifier", target)
+                        print(
+                            f"    ✅ Found '{identifier}' at ({x}, {y}) via accessibility"
+                        )
+
+                        input_tool = self.tool_registry.get_tool("input")
+                        success = input_tool.click(x, y, validate=True)
+                        return {
+                            "success": success,
+                            "method": "accessibility_coordinates",
+                            "coordinates": (x, y),
+                            "matched_text": identifier,
+                            "confidence": 1.0,
+                        }
+                    except Exception as e:
+                        print(f"    ⚠️  Could not get element coordinates: {e}")
 
             elements = accessibility_tool.find_elements(
                 label=target, app_name=self.current_app
@@ -359,17 +456,19 @@ Be smart. Observe, think, then act.
             if elements:
                 elem = elements[0]
                 x, y = elem["center"]
-                print(f"    ✅ Found '{elem['title']}' at ({x}, {y})")
+                print(f"    ✅ Found '{elem['title']}' at ({x}, {y}) via accessibility")
 
                 input_tool = self.tool_registry.get_tool("input")
                 success = input_tool.click(x, y, validate=True)
                 return {
                     "success": success,
-                    "method": "accessibility",
+                    "method": "accessibility_coordinates",
                     "coordinates": (x, y),
                     "matched_text": elem["title"],
                     "confidence": 1.0,
                 }
+            else:
+                print(f"    ⚠️  Element not found in accessibility tree")
         else:
             print(f"    ⚠️  Accessibility unavailable")
 
@@ -378,14 +477,37 @@ Be smart. Observe, think, then act.
         screenshot_tool = self.tool_registry.get_tool("screenshot")
         scaling = getattr(screenshot_tool, "scaling_factor", 1.0)
 
+        ocr_screenshot = screenshot
+        x_offset = 0
+        y_offset = 0
+
+        if self.current_app and accessibility_tool and accessibility_tool.available:
+            window_bounds = accessibility_tool.get_app_window_bounds(self.current_app)
+            if window_bounds:
+                x, y, w, h = window_bounds
+                x_scaled = int(x * scaling)
+                y_scaled = int(y * scaling)
+                w_scaled = int(w * scaling)
+                h_scaled = int(h * scaling)
+
+                try:
+                    ocr_screenshot = screenshot.crop(
+                        (x_scaled, y_scaled, x_scaled + w_scaled, y_scaled + h_scaled)
+                    )
+                    x_offset = x
+                    y_offset = y
+                    print(f"    🪟 Cropped to {self.current_app} window for OCR")
+                except Exception:
+                    pass
+
         try:
-            text_matches = ocr_tool.find_text(screenshot, target, fuzzy=True)
+            text_matches = ocr_tool.find_text(ocr_screenshot, target, fuzzy=True)
 
             if text_matches:
                 element = text_matches[0]
                 x_raw, y_raw = element["center"]
-                x_screen = int(x_raw / scaling)
-                y_screen = int(y_raw / scaling)
+                x_screen = int(x_raw / scaling) + x_offset
+                y_screen = int(y_raw / scaling) + y_offset
 
                 print(
                     f"    ✅ OCR found '{element['text']}' at ({x_screen}, {y_screen})"
@@ -404,8 +526,8 @@ Be smart. Observe, think, then act.
             print(f"    ⚠️  OCR failed: {e}")
 
         try:
-            all_text = ocr_tool.extract_all_text(screenshot)
-            target_lower = target.lower().strip()
+            all_text = ocr_tool.extract_all_text(ocr_screenshot)
+            target_lower = target.lower().strip().replace("...", "").replace("…", "")
 
             best_match = None
             best_score = -999
@@ -415,16 +537,18 @@ Be smart. Observe, think, then act.
 
                 if text_lower == target_lower:
                     score = 1000 + item["confidence"] * 100
-                elif text_lower.startswith(target_lower):
-                    score = 700 + item["confidence"] * 100
-                elif target_lower in text_lower:
-                    score = (
-                        400
-                        - (len(text_lower) - len(target_lower))
-                        + item["confidence"] * 100
-                    )
-                elif target_lower.startswith(text_lower) and len(text_lower) >= 3:
-                    score = 300 + item["confidence"] * 100
+                elif text_lower.startswith(target_lower) and len(target_lower) >= 3:
+                    score = 800 + item["confidence"] * 100
+                elif target_lower in text_lower and len(target_lower) >= 4:
+                    score = 600 + item["confidence"] * 100
+                elif text_lower.startswith(target_lower) and len(text_lower) >= 2:
+                    score = 400 + item["confidence"] * 100
+                elif any(
+                    word in text_lower
+                    for word in target_lower.split()
+                    if len(word) >= 3
+                ):
+                    score = 200 + item["confidence"] * 100
                 else:
                     continue
 
@@ -434,8 +558,8 @@ Be smart. Observe, think, then act.
 
             if best_match:
                 x_raw, y_raw = best_match["center"]
-                x_screen = int(x_raw / scaling)
-                y_screen = int(y_raw / scaling)
+                x_screen = int(x_raw / scaling) + x_offset
+                y_screen = int(y_raw / scaling) + y_offset
 
                 print(
                     f"    ✅ Matched '{best_match['text']}' at ({x_screen}, {y_screen})"
@@ -463,14 +587,21 @@ Be smart. Observe, think, then act.
     async def _type_text(self, text: Optional[str]) -> Dict[str, Any]:
         """
         Type text at current cursor position.
+        Supports special characters like '\n' for Enter/Return key.
         """
         if not text:
             return {"success": False, "method": "type", "error": "No text provided"}
 
         input_tool = self.tool_registry.get_tool("input")
         try:
-            print(f"    ⌨️  Typing: '{text}'")
-            input_tool.type_text(text)
+            if text == "\\n" or text == "\n":
+                print(f"    ⌨️  Pressing Enter/Return key")
+                import pyautogui
+
+                pyautogui.press("return")
+            else:
+                print(f"    ⌨️  Typing: '{text}'")
+                input_tool.type_text(text)
             return {
                 "success": True,
                 "method": "type",
