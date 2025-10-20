@@ -2,7 +2,7 @@
 Browser agent for web automation using Browser-Use.
 """
 
-from typing import Dict, Any
+from ..schemas.actions import ActionResult
 
 
 class BrowserAgent:
@@ -23,7 +23,7 @@ class BrowserAgent:
 
     async def execute_task(
         self, task: str, url: str = None, context: dict = None
-    ) -> Dict[str, Any]:
+    ) -> ActionResult:
         """
         Execute web automation task.
 
@@ -33,7 +33,7 @@ class BrowserAgent:
             context: Context from previous agents
 
         Returns:
-            Result dictionary with status and data
+            ActionResult with status and data
         """
         enhanced_task = task
         if context and context.get("previous_results"):
@@ -50,19 +50,19 @@ class BrowserAgent:
         try:
             result = await self.browser_tool.execute_task(enhanced_task, url)
 
-            return {
-                "success": result.get("success", False),
-                "action_taken": task,
-                "method_used": "browser",
-                "confidence": 1.0 if result.get("success") else 0.0,
-                "data": result.get("data", {}),
-                "error": result.get("error"),
-            }
+            return ActionResult(
+                success=result.get("success", False),
+                action_taken=task,
+                method_used="browser",
+                confidence=1.0 if result.get("success") else 0.0,
+                data=result.get("data", {}),
+                error=result.get("error"),
+            )
         except Exception as e:
-            return {
-                "success": False,
-                "action_taken": task,
-                "method_used": "browser",
-                "confidence": 0.0,
-                "error": str(e),
-            }
+            return ActionResult(
+                success=False,
+                action_taken=task,
+                method_used="browser",
+                confidence=0.0,
+                error=str(e),
+            )

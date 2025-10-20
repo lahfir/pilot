@@ -319,32 +319,30 @@ class ComputerUseCrew:
         """
         Execute browser agent with loop until completion.
         Browser-Use handles internal looping automatically.
+        Returns ActionResult converted to dict.
         """
         print("  🔄 Browser-Use agent started (runs until task complete)...")
         result = await self.browser_agent.execute_task(task, context=context)
-        return result
+        return result.model_dump() if hasattr(result, "model_dump") else result
 
     async def _execute_gui(self, task: str, context: dict) -> dict:
         """
         Execute GUI agent with multi-step planning.
         GUI agent handles its own step loop.
+        Returns ActionResult converted to dict.
         """
         result = await self.gui_agent.execute_task(task, context=context)
-
-        if hasattr(result, "dict"):
-            return result.dict()
-        elif hasattr(result, "__dict__"):
-            return result.__dict__
-        return result
+        return result.model_dump() if hasattr(result, "model_dump") else result
 
     async def _execute_system(self, task: str, context: dict) -> dict:
         """
         Execute system agent with context from previous agents.
         Passes confirmation manager for command approval.
+        Returns ActionResult converted to dict.
         """
         context["confirmation_manager"] = self.confirmation_manager
         result = await self.system_agent.execute_task(task, context)
-        return result
+        return result.model_dump() if hasattr(result, "model_dump") else result
 
     def _print_header(self, text: str):
         """Print styled header."""

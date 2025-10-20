@@ -222,7 +222,7 @@ def print_task_result(result: dict):
     if result.get("results"):
         content += "[bold]Execution Steps:[/bold]\n\n"
         for i, res in enumerate(result["results"], 1):
-            if not res:
+            if not res or not isinstance(res, dict):
                 continue
 
             status = "✅" if res.get("success") else "❌"
@@ -234,10 +234,9 @@ def print_task_result(result: dict):
             if res.get("error"):
                 content += f"     [red]Error: {res['error']}[/red]\n"
 
-            if res.get("data", {}).get("output"):
-                outputs.append(
-                    {"step": i, "method": method, "output": res["data"]["output"]}
-                )
+            data = res.get("data")
+            if data and isinstance(data, dict) and data.get("output"):
+                outputs.append({"step": i, "method": method, "output": data["output"]})
 
             if res.get("handoff_requested"):
                 handoffs.append(

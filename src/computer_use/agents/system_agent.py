@@ -6,6 +6,7 @@ LLM generates commands iteratively based on output.
 from typing import Dict, Any, Optional
 import subprocess
 from pydantic import BaseModel, Field
+from ..schemas.actions import ActionResult
 from ..utils.ui import print_info, print_success, print_failure, console
 
 
@@ -53,7 +54,7 @@ class SystemAgent:
 
     async def execute_task(
         self, task: str, context: Dict[str, Any] = None
-    ) -> Dict[str, Any]:
+    ) -> ActionResult:
         """
         Execute task by generating shell commands iteratively.
 
@@ -62,33 +63,35 @@ class SystemAgent:
             context: Optional context from other agents (handoff info)
 
         Returns:
-            Result dictionary
+            ActionResult with task status
         """
         if not self.llm_client:
-            return {
-                "success": False,
-                "action_taken": "No LLM available",
-                "method_used": "system",
-                "error": "System agent requires LLM",
-            }
+            return ActionResult(
+                success=False,
+                action_taken="No LLM available",
+                method_used="system",
+                confidence=0.0,
+                error="System agent requires LLM",
+            )
 
         handoff_context = context.get("handoff_context") if context else None
         confirmation_manager = context.get("confirmation_manager") if context else None
 
         if not confirmation_manager:
-            return {
-                "success": False,
-                "action_taken": "No confirmation manager",
-                "method_used": "system",
-                "error": "System agent requires confirmation manager for safety",
-            }
+            return ActionResult(
+                success=False,
+                action_taken="No confirmation manager",
+                method_used="system",
+                confidence=0.0,
+                error="System agent requires confirmation manager for safety",
+            )
 
         if handoff_context:
             print_info("Received handoff from GUI agent")
             console.print(
                 f"  [dim]Failed action: {handoff_context.get('failed_action')}[/dim]"
             )
-            console.print(f"  [dim]Will use CLI instead...[/dim]\n")
+            console.print("  [dim]Will use CLI instead...[/dim]\n")
 
         self.command_history = []
         step = 0
@@ -101,12 +104,13 @@ class SystemAgent:
             step += 1
 
             if confirmation_manager.is_denied():
-                return {
-                    "success": False,
-                    "action_taken": "User stopped agent",
-                    "method_used": "system_shell",
-                    "error": "User denied command execution",
-                }
+                return ActionResult(
+                    success=False,
+                    action_taken="User stopped agent",
+                    method_used="system_shell",
+                    confidence=0.0,
+                    error="User denied command execution",
+                )
 
             command_decision = await self._get_next_command(
                 task, handoff_context, last_output, step
@@ -117,19 +121,20 @@ class SystemAgent:
 
             if command_decision.needs_handoff:
                 print_info(f"Requesting handoff to {command_decision.handoff_agent}")
-                return {
-                    "success": False,
-                    "action_taken": f"Needs {command_decision.handoff_agent} agent",
-                    "method_used": "system_shell",
-                    "handoff_requested": True,
-                    "suggested_agent": command_decision.handoff_agent,
-                    "handoff_reason": command_decision.handoff_reason,
-                    "handoff_context": {
+                return ActionResult(
+                    success=False,
+                    action_taken=f"Needs {command_decision.handoff_agent} agent",
+                    method_used="system_shell",
+                    confidence=0.0,
+                    handoff_requested=True,
+                    suggested_agent=command_decision.handoff_agent,
+                    handoff_reason=command_decision.handoff_reason,
+                    handoff_context={
                         "original_task": task,
                         "system_progress": self.command_history,
                         "last_output": last_output,
                     },
-                }
+                )
 
             command = command_decision.command
 
@@ -139,12 +144,13 @@ class SystemAgent:
                 allowed, reason = confirmation_manager.request_confirmation(command)
 
                 if not allowed:
-                    return {
-                        "success": False,
-                        "action_taken": f"Command denied: {command}",
-                        "method_used": "system_shell",
-                        "error": f"User {reason} command",
-                    }
+                    return ActionResult(
+                        success=False,
+                        action_taken=f"Command denied: {command}",
+                        method_used="system_shell",
+                        confidence=0.0,
+                        error=f"User {reason} command",
+                    )
 
                 result = self._execute_command(command)
                 self.command_history.append(
@@ -171,20 +177,21 @@ class SystemAgent:
                 break
 
         if task_complete:
-            return {
-                "success": True,
-                "action_taken": f"Completed in {step} commands",
-                "method_used": "system_shell",
-                "confidence": 1.0,
-                "data": {"commands": self.command_history},
-            }
+            return ActionResult(
+                success=True,
+                action_taken=f"Completed in {step} commands",
+                method_used="system_shell",
+                confidence=1.0,
+                data={"commands": self.command_history},
+            )
         else:
-            return {
-                "success": False,
-                "action_taken": f"Exceeded {self.max_steps} steps",
-                "method_used": "system_shell",
-                "error": "Task not completed within step limit",
-            }
+            return ActionResult(
+                success=False,
+                action_taken=f"Exceeded {self.max_steps} steps",
+                method_used="system_shell",
+                confidence=0.0,
+                error="Task not completed within step limit",
+            )
 
     async def _get_next_command(
         self,
@@ -220,7 +227,7 @@ HANDOFF CONTEXT:
 """
 
         if self.command_history:
-            prompt += f"\nCOMMAND HISTORY:\n"
+            prompt += "\nCOMMAND HISTORY:\n"
             for i, cmd in enumerate(self.command_history[-3:], 1):
                 prompt += f"  {i}. {cmd['command']}\n"
                 if cmd["output"]:
