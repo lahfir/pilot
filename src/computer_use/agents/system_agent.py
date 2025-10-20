@@ -1,18 +1,39 @@
 """
-System agent for file operations and terminal commands.
-Uses Python directly for file ops - NO manual parsing bullshit.
+System agent that uses shell commands dynamically.
+LLM generates commands iteratively based on output.
 """
 
-from typing import Dict, Any
-import os
-import glob
-from pathlib import Path
+from typing import Dict, Any, Optional
+import subprocess
+from pydantic import BaseModel, Field
+from ..utils.ui import print_info, print_success, print_failure, console
+
+
+class ShellCommand(BaseModel):
+    """
+    Shell command decision from LLM.
+    """
+
+    command: str = Field(
+        description="Shell command to execute (e.g., 'ls ~/Documents')"
+    )
+    reasoning: str = Field(description="Why this command is needed")
+    is_complete: bool = Field(default=False, description="Is the task fully complete?")
+    needs_handoff: bool = Field(
+        default=False, description="Does this need another agent (e.g., GUI)?"
+    )
+    handoff_agent: Optional[str] = Field(
+        default=None, description="Which agent to handoff to: 'gui' or 'browser'"
+    )
+    handoff_reason: Optional[str] = Field(
+        default=None, description="Why handoff is needed"
+    )
 
 
 class SystemAgent:
     """
-    System operations using Python file operations.
-    NO hardcoding - uses actual Python functions.
+    Shell-command driven system agent.
+    Uses LLM to generate commands iteratively.
     """
 
     def __init__(self, tool_registry, safety_checker, llm_client=None):
@@ -22,224 +43,263 @@ class SystemAgent:
         Args:
             tool_registry: PlatformToolRegistry instance
             safety_checker: SafetyChecker for validating operations
-            llm_client: LLM for understanding tasks
+            llm_client: LLM for generating shell commands
         """
         self.tool_registry = tool_registry
         self.safety_checker = safety_checker
-        self.file_tool = tool_registry.get_tool("file")
-        self.process_tool = tool_registry.get_tool("process")
         self.llm_client = llm_client
+        self.max_steps = 10
+        self.command_history = []
 
-    async def execute_task(self, task: str) -> Dict[str, Any]:
+    async def execute_task(
+        self, task: str, context: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
         """
-        Execute system task using Python file operations.
+        Execute task by generating shell commands iteratively.
 
         Args:
             task: Natural language task description
+            context: Optional context from other agents (handoff info)
 
         Returns:
             Result dictionary
         """
-        task_lower = task.lower()
+        if not self.llm_client:
+            return {
+                "success": False,
+                "action_taken": "No LLM available",
+                "method_used": "system",
+                "error": "System agent requires LLM",
+            }
 
-        # Find/search operations
-        if any(kw in task_lower for kw in ["find", "search", "look for", "locate"]):
-            return await self._find_files(task)
-        
-        # Move/copy operations
-        elif "move" in task_lower:
-            return await self._move_file(task)
-        elif "copy" in task_lower:
-            return await self._copy_file(task)
-        
-        # Create operations
-        elif "create" in task_lower and "folder" in task_lower:
-            return await self._create_folder(task)
-        
-        # List operations
-        elif "list" in task_lower:
-            return await self._list_files(task)
-        
+        handoff_context = context.get("handoff_context") if context else None
+        confirmation_manager = context.get("confirmation_manager") if context else None
+
+        if not confirmation_manager:
+            return {
+                "success": False,
+                "action_taken": "No confirmation manager",
+                "method_used": "system",
+                "error": "System agent requires confirmation manager for safety",
+            }
+
+        if handoff_context:
+            print_info("Received handoff from GUI agent")
+            console.print(
+                f"  [dim]Failed action: {handoff_context.get('failed_action')}[/dim]"
+            )
+            console.print(f"  [dim]Will use CLI instead...[/dim]\n")
+
+        self.command_history = []
+        step = 0
+        task_complete = False
+        last_output = ""
+
+        print_info(f"Starting shell command loop (max {self.max_steps} steps)")
+
+        while step < self.max_steps and not task_complete:
+            step += 1
+
+            if confirmation_manager.is_denied():
+                return {
+                    "success": False,
+                    "action_taken": "User stopped agent",
+                    "method_used": "system_shell",
+                    "error": "User denied command execution",
+                }
+
+            command_decision = await self._get_next_command(
+                task, handoff_context, last_output, step
+            )
+
+            console.print(f"\n[bold cyan]Step {step}:[/bold cyan]")
+            console.print(f"  [dim]Reasoning: {command_decision.reasoning}[/dim]")
+
+            if command_decision.needs_handoff:
+                print_info(f"Requesting handoff to {command_decision.handoff_agent}")
+                return {
+                    "success": False,
+                    "action_taken": f"Needs {command_decision.handoff_agent} agent",
+                    "method_used": "system_shell",
+                    "handoff_requested": True,
+                    "suggested_agent": command_decision.handoff_agent,
+                    "handoff_reason": command_decision.handoff_reason,
+                    "handoff_context": {
+                        "original_task": task,
+                        "system_progress": self.command_history,
+                        "last_output": last_output,
+                    },
+                }
+
+            command = command_decision.command
+
+            if command:
+                console.print(f"  [yellow]Command:[/yellow] [cyan]{command}[/cyan]")
+
+                allowed, reason = confirmation_manager.request_confirmation(command)
+
+                if not allowed:
+                    return {
+                        "success": False,
+                        "action_taken": f"Command denied: {command}",
+                        "method_used": "system_shell",
+                        "error": f"User {reason} command",
+                    }
+
+                result = self._execute_command(command)
+                self.command_history.append(
+                    {"command": command, "output": result.get("output", "")}
+                )
+
+                if not result["success"]:
+                    print_failure(f"Failed: {result.get('error')}")
+                    last_output = f"ERROR: {result.get('error')}"
+                else:
+                    output = result.get("output", "").strip()
+                    if output:
+                        console.print(
+                            f"  [green]Output:[/green] {output[:200]}{'...' if len(output) > 200 else ''}"
+                        )
+                        last_output = output
+                    else:
+                        print_success("Success (no output)")
+                        last_output = "Command succeeded"
+
+            if command_decision.is_complete:
+                print_success("Task complete")
+                task_complete = True
+                break
+
+        if task_complete:
+            return {
+                "success": True,
+                "action_taken": f"Completed in {step} commands",
+                "method_used": "system_shell",
+                "confidence": 1.0,
+                "data": {"commands": self.command_history},
+            }
         else:
             return {
                 "success": False,
-                "action_taken": "Unknown system operation",
-                "method_used": "system",
-                "error": f"Cannot handle task: {task}",
+                "action_taken": f"Exceeded {self.max_steps} steps",
+                "method_used": "system_shell",
+                "error": "Task not completed within step limit",
             }
 
-    async def _find_files(self, task: str) -> Dict[str, Any]:
+    async def _get_next_command(
+        self,
+        task: str,
+        handoff_context: Optional[Dict],
+        last_output: str,
+        step: int,
+    ) -> ShellCommand:
         """
-        Find files using glob patterns.
+        Ask LLM for next shell command based on current state.
+
+        Args:
+            task: Original task
+            handoff_context: Context from handoff
+            last_output: Output from last command
+            step: Current step number
+
+        Returns:
+            ShellCommand decision
+        """
+        prompt = f"""
+You are a shell command agent. Generate ONE shell command at a time to accomplish the task.
+
+TASK: {task}
+"""
+
+        if handoff_context:
+            prompt += f"""
+HANDOFF CONTEXT:
+- GUI agent failed: {handoff_context.get('failed_action')} → {handoff_context.get('failed_target')}
+- Current app: {handoff_context.get('current_app')}
+- You need to accomplish this via shell commands
+"""
+
+        if self.command_history:
+            prompt += f"\nCOMMAND HISTORY:\n"
+            for i, cmd in enumerate(self.command_history[-3:], 1):
+                prompt += f"  {i}. {cmd['command']}\n"
+                if cmd["output"]:
+                    prompt += f"     Output: {cmd['output'][:100]}...\n"
+
+        if last_output:
+            prompt += f"\nLAST OUTPUT:\n{last_output}\n"
+
+        prompt += f"""
+GUIDELINES:
+1. Generate ONE command to progress toward the goal
+2. Common commands:
+   - ls ~/Documents (see what's there)
+   - cp source dest (copy files)
+   - mv source dest (move files)
+   - open file (open with default app)
+   - find ~/Documents -name "*.png" (search for files)
+
+3. If task needs GUI interaction (e.g., edit file content), set needs_handoff=true
+
+4. Set is_complete=true when task is fully done
+
+5. Use full paths (~/Documents, ~/Downloads, etc.)
+
+CURRENT STEP: {step}
+
+Generate the next command:
+"""
+
+        try:
+            structured_llm = self.llm_client.with_structured_output(ShellCommand)
+            decision = await structured_llm.ainvoke(prompt)
+            return decision
+        except Exception as e:
+            console.print(f"  [yellow]Warning: LLM error: {e}[/yellow]")
+            return ShellCommand(
+                command="echo 'error'",
+                reasoning="LLM failed",
+                is_complete=True,
+            )
+
+    def _execute_command(self, command: str) -> Dict[str, Any]:
+        """
+        Execute shell command safely.
+
+        Args:
+            command: Shell command to execute
+
+        Returns:
+            Result dictionary with output or error
         """
         try:
-            # Determine search location
-            if "document" in task.lower():
-                search_dir = str(Path.home() / "Documents")
-            elif "download" in task.lower():
-                search_dir = str(Path.home() / "Downloads")
-            elif "desktop" in task.lower():
-                search_dir = str(Path.home() / "Desktop")
-            else:
-                search_dir = str(Path.home())
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(__import__("pathlib").Path.home()),
+            )
 
-            # Determine file type
-            if "image" in task.lower() or "picture" in task.lower() or "photo" in task.lower():
-                patterns = ["*.jpg", "*.jpeg", "*.png", "*.gif", "*.bmp", "*.webp"]
-            elif "video" in task.lower():
-                patterns = ["*.mp4", "*.mov", "*.avi", "*.mkv"]
-            elif "pdf" in task.lower():
-                patterns = ["*.pdf"]
-            elif "text" in task.lower() or "document" in task.lower():
-                patterns = ["*.txt", "*.doc", "*.docx"]
-            else:
-                patterns = ["*"]
-
-            print(f"  📂 Searching in: {search_dir}")
-            print(f"  🔍 Patterns: {patterns}")
-
-            # Search for files
-            found_files = []
-            for pattern in patterns:
-                search_pattern = os.path.join(search_dir, "**", pattern)
-                files = glob.glob(search_pattern, recursive=True)
-                found_files.extend(files)
-
-            # Limit results
-            found_files = found_files[:20]  # Max 20 files
-
-            if found_files:
-                file_list = "\n".join([f"  - {os.path.basename(f)}" for f in found_files[:10]])
+            if result.returncode == 0:
                 return {
                     "success": True,
-                    "action_taken": f"Found {len(found_files)} files in {search_dir}",
-                    "method_used": "system",
-                    "data": {
-                        "files": found_files,
-                        "count": len(found_files),
-                        "search_dir": search_dir,
-                        "preview": file_list,
-                    },
+                    "output": result.stdout,
+                    "command": command,
                 }
             else:
                 return {
                     "success": False,
-                    "action_taken": f"No files found in {search_dir}",
-                    "method_used": "system",
-                    "error": "No matching files found",
+                    "error": result.stderr or "Command failed",
+                    "command": command,
                 }
 
-        except Exception as e:
+        except subprocess.TimeoutExpired:
             return {
                 "success": False,
-                "action_taken": "File search failed",
-                "method_used": "system",
-                "error": str(e),
+                "error": "Command timed out (30s)",
+                "command": command,
             }
-
-    async def _move_file(self, task: str) -> Dict[str, Any]:
-        """
-        Move file - requires LLM to extract paths.
-        """
-        return {
-            "success": False,
-            "action_taken": "Move file",
-            "method_used": "system",
-            "error": "Move operation requires source and destination paths",
-        }
-
-    async def _copy_file(self, task: str) -> Dict[str, Any]:
-        """
-        Copy file - requires LLM to extract paths.
-        """
-        return {
-            "success": False,
-            "action_taken": "Copy file",
-            "method_used": "system",
-            "error": "Copy operation requires source and destination paths",
-        }
-
-    async def _create_folder(self, task: str) -> Dict[str, Any]:
-        """
-        Create folder using Python.
-        """
-        try:
-            # Extract folder name (simple approach)
-            words = task.split()
-            folder_name = None
-            for i, word in enumerate(words):
-                if word.lower() in ["folder", "directory"] and i > 0:
-                    # Look backwards for the name
-                    for j in range(i - 1, -1, -1):
-                        if words[j].lower() not in ["a", "the", "named", "called", "create"]:
-                            folder_name = words[j]
-                            break
-                    break
-
-            if not folder_name:
-                return {
-                    "success": False,
-                    "error": "Could not determine folder name",
-                    "method_used": "system",
-                }
-
-            # Determine location
-            if "download" in task.lower():
-                base_dir = Path.home() / "Downloads"
-            elif "document" in task.lower():
-                base_dir = Path.home() / "Documents"
-            elif "desktop" in task.lower():
-                base_dir = Path.home() / "Desktop"
-            else:
-                base_dir = Path.cwd()
-
-            folder_path = base_dir / folder_name
-            folder_path.mkdir(parents=True, exist_ok=True)
-
-            return {
-                "success": True,
-                "action_taken": f"Created folder: {folder_path}",
-                "method_used": "system",
-                "data": {"path": str(folder_path)},
-            }
-
         except Exception as e:
-            return {
-                "success": False,
-                "action_taken": "Create folder failed",
-                "method_used": "system",
-                "error": str(e),
-            }
-
-    async def _list_files(self, task: str) -> Dict[str, Any]:
-        """
-        List files in a directory.
-        """
-        try:
-            # Determine directory
-            if "download" in task.lower():
-                dir_path = Path.home() / "Downloads"
-            elif "document" in task.lower():
-                dir_path = Path.home() / "Documents"
-            elif "desktop" in task.lower():
-                dir_path = Path.home() / "Desktop"
-            else:
-                dir_path = Path.cwd()
-
-            files = list(dir_path.iterdir())
-            file_names = [f.name for f in files[:20]]  # Max 20
-
-            return {
-                "success": True,
-                "action_taken": f"Listed {len(file_names)} files in {dir_path}",
-                "method_used": "system",
-                "data": {"files": file_names, "path": str(dir_path)},
-            }
-
-        except Exception as e:
-            return {
-                "success": False,
-                "action_taken": "List files failed",
-                "method_used": "system",
-                "error": str(e),
-            }
+            return {"success": False, "error": str(e), "command": command}

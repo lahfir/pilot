@@ -673,6 +673,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
+    { name = "rich" },
 ]
 
 [package.optional-dependencies]
@@ -714,6 +715,7 @@ requires-dist = [
     { name = "python3-pyatspi", marker = "extra == 'linux'" },
     { name = "pywinauto", marker = "extra == 'windows'", specifier = ">=0.6.8" },
     { name = "pyyaml", specifier = ">=6.0.0" },
+    { name = "rich", specifier = ">=14.2.0" },
 ]
 provides-extras = ["macos", "windows", "linux"]
 

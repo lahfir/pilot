@@ -5,7 +5,14 @@ GUI agent with screenshot-driven loop (like Browser-Use).
 from typing import Optional, Dict, Any, List
 from PIL import Image
 from ..schemas.actions import ActionResult
-from ..schemas.gui_elements import SemanticTarget
+from ..utils.ui import (
+    print_info,
+    print_step,
+    print_success,
+    print_failure,
+    print_warning,
+    console,
+)
 from pydantic import BaseModel, Field
 import asyncio
 
@@ -47,28 +54,33 @@ class GUIAgent:
         self.tool_registry = tool_registry
         self.llm_client = llm_client
         self.max_steps = 15
-        self.current_app = None  # Track which app was just opened
+        self.current_app = None
+        self.action_history = []
 
-    async def execute_task(self, task: str) -> ActionResult:
+    async def execute_task(self, task: str, context: dict = None) -> ActionResult:
         """
         Execute GUI task using screenshot-driven loop.
         Similar to Browser-Use: screenshot → analyze → act → repeat.
 
         Args:
             task: Natural language task description
+            context: Context from previous agents (previous_results, etc.)
 
         Returns:
             ActionResult with execution details
         """
+        self.context = context or {}
         step = 0
         task_complete = False
         last_action = None
         last_coordinates = None
         repeated_clicks = 0
         repeated_actions = 0
+        consecutive_failures = 0
         self.current_app = None
+        self.action_history = []
 
-        print(f"  🔄 Starting screenshot-driven loop (max {self.max_steps} steps)...\n")
+        print_info(f"Starting GUI automation (max {self.max_steps} steps)")
 
         while step < self.max_steps and not task_complete:
             step += 1
@@ -87,11 +99,15 @@ class GUIAgent:
                     )
 
             action = await self._analyze_screenshot(
-                task, screenshot, step, last_action, accessibility_elements
+                task,
+                screenshot,
+                step,
+                last_action,
+                accessibility_elements,
+                self.action_history,
             )
 
-            print(f"  Step {step}: {action.action} → {action.target}")
-            print(f"    Reasoning: {action.reasoning}")
+            print_step(step, action.action, action.target, action.reasoning)
 
             if (
                 last_action
@@ -113,30 +129,51 @@ class GUIAgent:
 
             step_result = await self._execute_action(action, screenshot)
 
-            if not step_result.get("success"):
-                print(f"    ❌ Failed: {step_result.get('error')}")
+            self.action_history.append(
+                {
+                    "step": step,
+                    "action": action.action,
+                    "target": action.target,
+                    "success": step_result.get("success"),
+                    "reasoning": action.reasoning,
+                }
+            )
 
-                consecutive_failures = step_result.get("consecutive_failures", 0) + 1
+            if not step_result.get("success"):
+                print_failure(f"Failed: {step_result.get('error')}")
+                consecutive_failures += 1
 
                 if consecutive_failures >= 2:
-                    print(
-                        f"    💡 Hint: Try keyboard navigation or search instead of clicking!"
+                    print_warning(
+                        f"GUI struggling ({consecutive_failures} failures) - requesting System agent handoff"
                     )
-
-                if step >= 3:
                     return ActionResult(
                         success=False,
-                        action_taken=f"Failed after {step} attempts",
-                        method_used=step_result.get("method", "unknown"),
+                        action_taken=f"GUI agent struggled after {consecutive_failures} failures",
+                        method_used="gui_handoff",
                         confidence=0.0,
                         error=step_result.get("error"),
+                        handoff_requested=True,
+                        suggested_agent="system",
+                        handoff_reason=f"Could not complete GUI action: {step_result.get('error')}",
+                        handoff_context={
+                            "original_task": task,
+                            "failed_action": action.action if action else "unknown",
+                            "failed_target": action.target if action else "unknown",
+                            "current_app": self.current_app,
+                            "steps_completed": step,
+                            "last_successful_action": (
+                                last_action.action if last_action else None
+                            ),
+                        },
                     )
             else:
-                print(f"    ✅ Success")
+                consecutive_failures = 0
+                print_success("Success")
                 current_coords = step_result.get("coordinates")
                 if current_coords:
                     x, y = current_coords
-                    print(f"    📍 Coordinates: ({x}, {y})")
+                    console.print(f"  [dim]Coordinates: ({x}, {y})[/dim]")
 
                     if last_coordinates == current_coords:
                         repeated_clicks += 1
@@ -188,6 +225,7 @@ class GUIAgent:
         step: int,
         last_action: Optional[GUIAction],
         accessibility_elements: List[Dict[str, Any]] = None,
+        action_history: List[Dict[str, Any]] = None,
     ) -> GUIAction:
         """
         Use vision LLM to analyze screenshot and decide next action.
@@ -207,10 +245,19 @@ class GUIAgent:
                 f"\nLast action: {last_action.action} → {last_action.target}"
             )
 
-        # Format accessibility elements for LLM
+        history_context = ""
+        if action_history and len(action_history) > 0:
+            history_context = "\n\nACTION HISTORY (what you've done so far):\n"
+            for h in action_history[-5:]:
+                status = "SUCCESS" if h.get("success") else "FAILED"
+                history_context += (
+                    f"  [{status}] Step {h['step']}: {h['action']} -> {h['target']}\n"
+                )
+            history_context += "\nREMEMBER: Use this history to make smart decisions! If you copied something, you need to paste it."
+
         accessibility_context = ""
         if accessibility_elements and len(accessibility_elements) > 0:
-            accessibility_context = "\n\n🎯 AVAILABLE ACCESSIBILITY ELEMENTS (use these identifiers for 100% accuracy):\n"
+            accessibility_context = "\n\nAVAILABLE ACCESSIBILITY ELEMENTS (use these identifiers for 100% accuracy):\n"
             for elem in accessibility_elements[:30]:  # Show first 30 elements
                 identifier = elem.get("identifier", "")
                 role = elem.get("role", "")
@@ -221,13 +268,37 @@ class GUIAgent:
                         accessibility_context += f" - {desc}"
                     accessibility_context += "\n"
 
+        previous_work_context = ""
+        if self.context and self.context.get("previous_results"):
+            prev_results = self.context.get("previous_results", [])
+            if prev_results:
+                previous_work_context = "\n\nPREVIOUS AGENT WORK:\n"
+                for i, res in enumerate(prev_results, 1):
+                    agent_type = res.get("method_used", "unknown")
+                    action = res.get("action_taken", "")
+                    success = "✅" if res.get("success") else "❌"
+                    previous_work_context += (
+                        f"  {success} Agent {i} ({agent_type}): {action}\n"
+                    )
+                    if res.get("data"):
+                        data = res.get("data", {})
+                        if "downloaded_file" in data:
+                            previous_work_context += (
+                                f"     Downloaded: {data['downloaded_file']}\n"
+                            )
+                        if "file_location" in data:
+                            previous_work_context += (
+                                f"     Location: {data['file_location']}\n"
+                            )
+                previous_work_context += "\n🔥 IMPORTANT: Don't repeat what was already done! Build on previous work!\n"
+
         prompt = f"""
 Analyze this screenshot carefully and decide the NEXT action to accomplish the task.
 
 TASK: {task}
-Current Step: {step}{last_action_text}{accessibility_context}
+Current Step: {step}{last_action_text}{history_context}{previous_work_context}{accessibility_context}
 
-🔍 CRITICAL: LOOK AT THE SCREENSHOT FIRST!
+CRITICAL: LOOK AT THE SCREENSHOT FIRST!
 - What's currently on screen?
 - Is there old data that needs clearing?
 - What's the current state of the app?
@@ -245,26 +316,21 @@ Available actions:
 
 Guidelines:
 1. OBSERVE the screenshot - check current state before acting
-2. 🔥 PREFER TYPING/KEYBOARD: Use keyboard over clicking when possible!
-3. 💎 For clicks with accessibility identifiers: Use EXACT identifier from list
+2. PREFER TYPING/KEYBOARD: Use keyboard over clicking when possible
+3. For clicks with accessibility identifiers: Use EXACT identifier from list
    - See "AllClear (Button)"? Use target="AllClear"
-4. 💎 For clicks without identifiers (files, text): Use SHORT, PARTIAL, EXACT visible text
-   - See "MyDocument.pdf"? Use target="MyDocument" (NOT "MyDoc...pdf" or "MyDocument.pdf")
-   - See "Screenshot 2024"? Use target="Screenshot" (NOT full name with ellipsis!)
-   - NEVER use "..." in target - OCR can't match it!
-5. 🧠 BE SMART: If clicking is hard (file not found after 2 tries), think of alternatives:
-   - Use keyboard navigation (arrows, Tab, Enter)
-   - Use search (Cmd+F or search box)
-   - For file ops, you can suggest using terminal commands
-6. 🚫 NEVER REPEAT: Don't do the same action twice
-7. ✅ MARK DONE: If task is complete, set is_complete=True
+4. For clicks without identifiers: Use visible text from screenshot
+   - Use what you actually SEE in the image
+   - For files: use partial name if full name is long
+5. NEVER REPEAT: Don't do the same action twice
+6. MARK DONE: If task is complete, set is_complete=True
 
 Examples:
-  ✅ Click file: target="Document" (short & exact)
-  ❌ Click file: target="Document.pd..." (has ellipsis!)
-  ✅ Can't find file? Use search or keyboard!
+  GOOD: type "2+2" then type "\n" then done
+  GOOD: click "Document" (from screenshot)
+  BAD: click same thing twice
 
-Be smart. Use keyboard, short exact text, think of alternatives!
+Be smart. Observe, act, complete.
 """
 
         try:
@@ -527,7 +593,7 @@ Be smart. Use keyboard, short exact text, think of alternatives!
 
         try:
             all_text = ocr_tool.extract_all_text(ocr_screenshot)
-            target_lower = target.lower().strip().replace("...", "").replace("…", "")
+            target_lower = target.lower().strip()
 
             best_match = None
             best_score = -999
@@ -537,18 +603,16 @@ Be smart. Use keyboard, short exact text, think of alternatives!
 
                 if text_lower == target_lower:
                     score = 1000 + item["confidence"] * 100
-                elif text_lower.startswith(target_lower) and len(target_lower) >= 3:
-                    score = 800 + item["confidence"] * 100
-                elif target_lower in text_lower and len(target_lower) >= 4:
-                    score = 600 + item["confidence"] * 100
-                elif text_lower.startswith(target_lower) and len(text_lower) >= 2:
-                    score = 400 + item["confidence"] * 100
-                elif any(
-                    word in text_lower
-                    for word in target_lower.split()
-                    if len(word) >= 3
-                ):
-                    score = 200 + item["confidence"] * 100
+                elif text_lower.startswith(target_lower):
+                    score = 700 + item["confidence"] * 100
+                elif target_lower in text_lower:
+                    score = (
+                        400
+                        - (len(text_lower) - len(target_lower))
+                        + item["confidence"] * 100
+                    )
+                elif target_lower.startswith(text_lower) and len(text_lower) >= 3:
+                    score = 300 + item["confidence"] * 100
                 else:
                     continue
 

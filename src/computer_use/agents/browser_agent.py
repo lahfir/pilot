@@ -21,19 +21,34 @@ class BrowserAgent:
         self.tool_registry = tool_registry
         self.browser_tool = tool_registry.get_tool("browser")
 
-    async def execute_task(self, task: str, url: str = None) -> Dict[str, Any]:
+    async def execute_task(
+        self, task: str, url: str = None, context: dict = None
+    ) -> Dict[str, Any]:
         """
         Execute web automation task.
 
         Args:
             task: Natural language task description
             url: Optional starting URL
+            context: Context from previous agents
 
         Returns:
             Result dictionary with status and data
         """
+        enhanced_task = task
+        if context and context.get("previous_results"):
+            prev_results = context.get("previous_results", [])
+            if prev_results:
+                context_info = "CONTEXT - Previous work done:\n"
+                for res in prev_results:
+                    agent_type = res.get("method_used", "unknown")
+                    action = res.get("action_taken", "")
+                    success = "✅" if res.get("success") else "❌"
+                    context_info += f"{success} {agent_type}: {action}\n"
+                enhanced_task = f"{context_info}\n\nYOUR TASK: {task}"
+
         try:
-            result = await self.browser_tool.execute_task(task, url)
+            result = await self.browser_tool.execute_task(enhanced_task, url)
 
             return {
                 "success": result.get("success", False),
@@ -51,4 +66,3 @@ class BrowserAgent:
                 "confidence": 0.0,
                 "error": str(e),
             }
-

@@ -1,5 +1,5 @@
 """
-Windows UI Automation API wrapper for accurate element detection.
+Windows UI Automation API using pywinauto for 100% accurate element interaction.
 """
 
 from typing import List, Optional, Dict, Any
@@ -8,22 +8,18 @@ import platform
 
 class WindowsAccessibility:
     """
-    Wrapper for Windows UI Automation API.
-    Provides accurate element coordinates and native interactions.
+    Windows UI Automation using pywinauto library.
+    Provides 100% accurate element coordinates and direct interaction via UIA APIs.
     """
 
     def __init__(self):
-        """
-        Initialize Windows accessibility API wrapper.
-        """
+        """Initialize Windows UI Automation with pywinauto."""
         self.available = self._check_availability()
         if self.available:
             self._initialize_api()
 
     def _check_availability(self) -> bool:
-        """
-        Check if Windows UI Automation is available.
-        """
+        """Check if pywinauto is available and platform is Windows."""
         if platform.system().lower() != "windows":
             return False
 
@@ -35,41 +31,98 @@ class WindowsAccessibility:
             return False
 
     def _initialize_api(self):
-        """
-        Import and initialize Windows UI Automation.
-        """
+        """Initialize pywinauto and check UI Automation permissions."""
         try:
             import pywinauto
             from pywinauto import Desktop
 
             self.pywinauto = pywinauto
             self.Desktop = Desktop
-            print("  ✅ Windows UI Automation ready with 100% accurate coordinates!")
-        except ImportError:
-            print("  ⚠️  pywinauto not available - install with: uv add pywinauto")
-            self.available = False
+
+            try:
+                desktop = Desktop(backend="uia")
+                windows = desktop.windows()
+                from ...utils.ui import print_success
+
+                print_success("Accessibility API ready with 100% accurate coordinates")
+            except Exception:
+                from ...utils.ui import print_warning, print_info
+
+                print_warning("UI Automation permissions issue")
+                print_info("May need to run with administrator privileges")
+                self.available = False
+
         except Exception as e:
-            print(f"  ⚠️  Failed to initialize Windows UI Automation: {e}")
+            from ...utils.ui import print_warning
+
+            print_warning(f"Failed to initialize UI Automation: {e}")
             self.available = False
 
-    def find_elements(
-        self,
-        role: Optional[str] = None,
-        label: Optional[str] = None,
-        title: Optional[str] = None,
-        app_name: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+    def click_element(self, label: str, app_name: Optional[str] = None) -> tuple:
         """
-        Find UI elements using Windows UI Automation.
+        Find and click element directly using UI Automation API.
 
         Args:
-            role: Element type (e.g., 'Button', 'Edit', 'MenuItem')
-            label: Element label/text
-            title: Window title to search within
-            app_name: Application name (optional)
+            label: Text to search for in element
+            app_name: Application name to search in
 
         Returns:
-            List of element dictionaries with 100% accurate coordinates
+            Tuple of (success: bool, element: Optional[element])
+        """
+        if not self.available:
+            return (False, None)
+
+        try:
+            desktop = self.Desktop(backend="uia")
+
+            if app_name:
+                windows = [
+                    w
+                    for w in desktop.windows()
+                    if app_name.lower() in w.window_text().lower()
+                ]
+            else:
+                windows = [desktop.windows()[0]] if desktop.windows() else []
+
+            if not windows:
+                return (False, None)
+
+            window = windows[0]
+            element = self._find_element(window, label.lower())
+
+            if element:
+                from ...utils.ui import console, print_success, print_warning
+
+                elem_text = element.window_text()
+                console.print(f"    [dim]Found: {elem_text}[/dim]")
+
+                try:
+                    element.click_input()
+                    print_success(f"Clicked '{elem_text}' via UI Automation")
+                    return (True, element)
+                except Exception as e:
+                    print_warning(f"Native click failed: {e}")
+                    return (False, element)
+
+            return (False, None)
+
+        except Exception as e:
+            from ...utils.ui import print_warning
+
+            print_warning(f"UI Automation search failed: {e}")
+            return (False, None)
+
+    def get_all_interactive_elements(
+        self, app_name: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all interactive elements with their identifiers.
+
+        Args:
+            app_name: Application name to search in
+
+        Returns:
+            List of elements with identifier, role, and description
         """
         if not self.available:
             return []
@@ -77,170 +130,234 @@ class WindowsAccessibility:
         elements = []
 
         try:
-            # Get foreground window if no title specified
-            if not title and not app_name:
-                from pywinauto import Desktop
+            desktop = self.Desktop(backend="uia")
 
-                desktop = Desktop(backend="uia")
-                window = desktop.windows()[0]  # Foreground window
-            elif app_name:
-                window = self.pywinauto.Application(backend="uia").connect(
-                    title_re=f".*{app_name}.*"
-                )
+            if app_name:
+                windows = [
+                    w
+                    for w in desktop.windows()
+                    if app_name.lower() in w.window_text().lower()
+                ]
             else:
-                window = self.pywinauto.Application(backend="uia").connect(
-                    title_re=f".*{title}.*"
-                )
+                windows = [desktop.windows()[0]] if desktop.windows() else []
 
-            print(f"  🔍 Windows UI Automation: Searching for '{label or role}'")
+            if not windows:
+                return []
 
-            # Find elements by text/label
-            if label:
-                try:
-                    # Try to find control with matching text
-                    controls = window.descendants()
-                    for ctrl in controls:
-                        try:
-                            ctrl_text = ctrl.window_text()
-                            if label.lower() in ctrl_text.lower():
-                                rect = ctrl.rectangle()
-                                center_x = (rect.left + rect.right) // 2
-                                center_y = (rect.top + rect.bottom) // 2
+            window = windows[0]
+            self._collect_interactive_elements(window, elements)
 
-                                elements.append(
-                                    {
-                                        "center": (center_x, center_y),
-                                        "bounds": (
-                                            rect.left,
-                                            rect.top,
-                                            rect.width(),
-                                            rect.height(),
-                                        ),
-                                        "role": ctrl.element_info.control_type,
-                                        "title": ctrl_text,
-                                        "detection_method": "windows_uia",
-                                        "confidence": 1.0,
-                                        "_native_element": ctrl,
-                                    }
-                                )
-                        except:
-                            continue
-                except Exception as e:
-                    print(f"  ⚠️  Search error: {e}")
-
-            print(f"  ✅ Found {len(elements)} elements with 100% accurate coordinates")
-
-        except Exception as e:
-            print(f"  ⚠️  Windows UI Automation error: {e}")
+        except Exception:
+            pass
 
         return elements
 
-    def perform_action(self, element: Dict[str, Any], action: str, **kwargs) -> bool:
+    def get_app_window_bounds(self, app_name: Optional[str] = None) -> Optional[tuple]:
         """
-        Perform action on element using Windows UI Automation.
-
-        Args:
-            element: Element dict with _native_element
-            action: Action to perform (click, type, scroll, etc.)
-            **kwargs: Additional action parameters
+        Get the bounds of the app's main window for OCR cropping.
 
         Returns:
-            True if action succeeded
+            (x, y, width, height) or None
         """
         if not self.available:
-            return False
+            return None
 
         try:
-            native_elem = element.get("_native_element")
+            desktop = self.Desktop(backend="uia")
 
-            if action == "click":
-                if native_elem:
-                    native_elem.click_input()
-                else:
-                    center = element["center"]
-                    x, y = center
-                    import pyautogui
+            if app_name:
+                windows = [
+                    w
+                    for w in desktop.windows()
+                    if app_name.lower() in w.window_text().lower()
+                ]
+            else:
+                windows = [desktop.windows()[0]] if desktop.windows() else []
 
-                    pyautogui.click(x, y)
+            if windows:
+                window = windows[0]
+                rect = window.rectangle()
+                return (rect.left, rect.top, rect.width(), rect.height())
+        except Exception:
+            pass
+
+        return None
+
+    def _collect_interactive_elements(
+        self, container, elements: List[Dict[str, Any]], depth=0
+    ):
+        """Recursively collect interactive elements for LLM context."""
+        if depth > 20:
+            return
+
+        try:
+            is_interactive = False
+
+            ctrl_type = container.element_info.control_type
+            is_enabled = container.is_enabled()
+
+            if is_enabled and ctrl_type in [
+                "Button",
+                "Edit",
+                "ComboBox",
+                "ListItem",
+                "MenuItem",
+                "CheckBox",
+                "RadioButton",
+                "TabItem",
+            ]:
+                is_interactive = True
+
+            if is_interactive:
+                identifier = container.window_text()
+                description = getattr(container.element_info, "name", "")
+
+                if identifier or description:
+                    elements.append(
+                        {
+                            "identifier": identifier,
+                            "role": ctrl_type,
+                            "description": description,
+                        }
+                    )
+
+            for child in container.children():
+                self._collect_interactive_elements(child, elements, depth + 1)
+
+        except:
+            pass
+
+    def find_elements(
+        self,
+        label: Optional[str] = None,
+        role: Optional[str] = None,
+        app_name: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Find UI elements and return their coordinates.
+
+        Args:
+            label: Element label or text to find
+            role: UI Automation control type
+            app_name: Application name
+
+        Returns:
+            List of elements with coordinates and metadata
+        """
+        if not self.available:
+            return []
+
+        elements = []
+
+        try:
+            from ...utils.ui import console
+
+            desktop = self.Desktop(backend="uia")
+
+            if app_name:
+                windows = [
+                    w
+                    for w in desktop.windows()
+                    if app_name.lower() in w.window_text().lower()
+                ]
+            else:
+                windows = [desktop.windows()[0]] if desktop.windows() else []
+
+            console.print(
+                f"    [dim]Searching {len(windows)} window(s) for '{label}'[/dim]"
+            )
+
+            for window in windows:
+                self._traverse_and_collect(window, label, role, elements)
+
+            console.print(f"  [green]Found {len(elements)} elements[/green]")
+
+        except Exception:
+            pass
+
+        return elements
+
+    def _find_element(self, container, target_text, depth=0):
+        """Recursively find element by text."""
+        if depth > 20:
+            return None
+
+        try:
+            if self._element_matches_text(container, target_text):
+                return container
+
+            for child in container.children():
+                result = self._find_element(child, target_text, depth + 1)
+                if result:
+                    return result
+
+        except:
+            pass
+
+        return None
+
+    def _element_matches_text(self, element, target_text):
+        """Check if element's text attributes match the target text. EXACT MATCH ONLY."""
+        try:
+            window_text = element.window_text().lower()
+            if window_text == target_text:
                 return True
 
-            elif action == "type":
-                text = kwargs.get("text", "")
-                if text and native_elem:
-                    native_elem.type_keys(text)
-                    return True
-
-            elif action == "scroll":
-                direction = kwargs.get("direction", "down")
-                amount = kwargs.get("amount", 3)
-                if native_elem:
-                    if direction == "down":
-                        native_elem.wheel_mouse_input(wheel_dist=-amount)
-                    else:
-                        native_elem.wheel_mouse_input(wheel_dist=amount)
-                    return True
-
-            elif action == "double_click":
-                if native_elem:
-                    native_elem.double_click_input()
-                else:
-                    center = element["center"]
-                    x, y = center
-                    import pyautogui
-
-                    pyautogui.doubleClick(x, y)
+            elem_name = getattr(element.element_info, "name", "").lower()
+            if elem_name == target_text:
                 return True
 
-            elif action == "right_click":
-                if native_elem:
-                    native_elem.right_click_input()
-                else:
-                    center = element["center"]
-                    x, y = center
-                    import pyautogui
-
-                    pyautogui.rightClick(x, y)
-                return True
-
-        except Exception as e:
-            print(f"  ⚠️  Windows action {action} failed: {e}")
-            return False
+        except:
+            pass
 
         return False
 
-    def click_element(self, element: Dict[str, Any]) -> bool:
-        """
-        Click element at 100% accurate coordinates.
-
-        Args:
-            element: Element dictionary from find_elements()
-
-        Returns:
-            True if click succeeded
-        """
-        return self.perform_action(element, "click")
-
-    def get_active_window_info(self) -> Dict[str, Any]:
-        """
-        Get information about the currently active window.
-
-        Returns:
-            Dictionary with window information
-        """
-        if not self.available:
-            return {}
+    def _traverse_and_collect(self, container, label, role, elements, depth=0):
+        """Traverse UI tree and collect matching elements with coordinates."""
+        if depth > 20:
+            return
 
         try:
-            from pywinauto import Desktop
+            matches = False
+            matched_text = None
 
-            desktop = Desktop(backend="uia")
-            window = desktop.windows()[0]
+            if label:
+                window_text = container.window_text()
+                if label.lower() in window_text.lower():
+                    matches = True
+                    matched_text = window_text
 
-            return {
-                "title": window.window_text(),
-                "class_name": window.class_name(),
-                "rect": window.rectangle(),
-            }
-        except Exception as e:
-            print(f"  ⚠️  Failed to get active window: {e}")
-            return {}
+            if matches and role:
+                ctrl_type = container.element_info.control_type
+                if role.lower() not in ctrl_type.lower():
+                    matches = False
+
+            if matches:
+                try:
+                    rect = container.rectangle()
+                    center_x = (rect.left + rect.right) // 2
+                    center_y = (rect.top + rect.bottom) // 2
+
+                    elements.append(
+                        {
+                            "center": (center_x, center_y),
+                            "bounds": (
+                                rect.left,
+                                rect.top,
+                                rect.width(),
+                                rect.height(),
+                            ),
+                            "role": container.element_info.control_type,
+                            "title": matched_text,
+                            "detection_method": "windows_uia",
+                            "confidence": 1.0,
+                        }
+                    )
+                except:
+                    pass
+
+            for child in container.children():
+                self._traverse_and_collect(child, label, role, elements, depth + 1)
+
+        except:
+            pass

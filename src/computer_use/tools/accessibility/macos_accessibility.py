@@ -5,6 +5,8 @@ macOS Accessibility API using atomacos for 100% accurate element interaction.
 from typing import List, Optional, Dict, Any
 import platform
 
+from ...utils.ui import print_success, print_warning, print_info, console
+
 
 class MacOSAccessibility:
     """
@@ -39,30 +41,31 @@ class MacOSAccessibility:
 
             try:
                 app = atomacos.getAppRefByBundleId("com.apple.finder")
-                print("  ✅ Accessibility API ready with 100% accurate coordinates!")
+
+                print_success("Accessibility API ready with 100% accurate coordinates")
             except Exception:
-                print("  ⚠️  Accessibility permissions not granted")
-                print(
-                    "  ℹ️  Enable in: System Settings → Privacy & Security → Accessibility"
+
+                print_warning("Accessibility permissions not granted")
+                print_info(
+                    "Enable in: System Settings → Privacy & Security → Accessibility"
                 )
                 self.available = False
 
         except Exception as e:
-            print(f"  ⚠️  Failed to initialize Accessibility: {e}")
+
+            print_warning(f"Failed to initialize Accessibility: {e}")
             self.available = False
 
     def click_element(self, label: str, app_name: Optional[str] = None) -> tuple:
         """
         Find and click element directly using accessibility API.
-        This is the primary method for interaction.
 
         Args:
-            label: Text to search for in element (matches AXIdentifier, AXAttributedDescription, etc.)
+            label: Text to search for in element
             app_name: Application name to search in
 
         Returns:
             Tuple of (success: bool, element: Optional[element])
-            Returns the element even if click fails, so caller can get coordinates
         """
         if not self.available:
             return (False, None)
@@ -72,49 +75,36 @@ class MacOSAccessibility:
             element = self._find_element(app, label)
 
             if element:
-                identifier = getattr(element, "AXIdentifier", "N/A")
-                elem_title = getattr(element, "AXTitle", "")
-                elem_desc = ""
-                if hasattr(element, "AXAttributedDescription"):
-                    try:
-                        elem_desc = (
-                            str(element.AXAttributedDescription).split("{")[0].strip()
-                        )
-                    except:
-                        pass
 
-                print(
-                    f"    🔍 Found element: identifier='{identifier}', title='{elem_title}', desc='{elem_desc}'"
-                )
+                identifier = getattr(element, "AXIdentifier", "N/A")
+                console.print(f"    [dim]Found: {identifier}[/dim]")
 
                 try:
                     self._perform_click(element)
-                    print(
-                        f"    ✅ Clicked '{identifier}' via Accessibility API (Press method)"
-                    )
+                    print_success(f"Clicked '{identifier}' via Accessibility")
                     return (True, element)
-                except Exception as click_error:
-                    print(f"    ⚠️  Native click failed: {click_error}")
+                except Exception as e:
+                    print_warning(f"Native click failed: {e}")
                     return (False, element)
 
             return (False, None)
 
         except Exception as e:
-            print(f"    ⚠️  Accessibility search failed: {e}")
+
+            print_warning(f"Accessibility search failed: {e}")
             return (False, None)
 
     def get_all_interactive_elements(
         self, app_name: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
-        Get all interactive elements (buttons, text fields, etc.) with their identifiers.
-        This allows the LLM to see what's available and choose the right identifier.
+        Get all interactive elements with their identifiers.
 
         Args:
             app_name: Application name to search in
 
         Returns:
-            List of elements with their AXIdentifier, AXRole, and description
+            List of elements with identifier, role, and description
         """
         if not self.available:
             return []
@@ -128,15 +118,14 @@ class MacOSAccessibility:
             for window in windows:
                 self._collect_interactive_elements(window, elements)
 
-        except Exception as e:
-            print(f"    ⚠️  Failed to collect elements: {e}")
+        except Exception:
+            pass
 
         return elements
 
     def get_app_window_bounds(self, app_name: Optional[str] = None) -> Optional[tuple]:
         """
-        Get the bounds of the app's main window.
-        Used to crop screenshots to only the app, preventing OCR from finding text in other apps.
+        Get the bounds of the app's main window for OCR cropping.
 
         Returns:
             (x, y, width, height) or None
@@ -164,10 +153,7 @@ class MacOSAccessibility:
     def _collect_interactive_elements(
         self, container, elements: List[Dict[str, Any]], depth=0
     ):
-        """
-        Recursively collect all interactive elements (buttons, text fields, etc.)
-        with their identifiers for LLM context.
-        """
+        """Recursively collect interactive elements for LLM context."""
         if depth > 20:
             return
 
@@ -226,11 +212,10 @@ class MacOSAccessibility:
     ) -> List[Dict[str, Any]]:
         """
         Find UI elements and return their coordinates.
-        Fallback method when direct clicking fails.
 
         Args:
             label: Element label or text to find
-            role: Accessibility role (Button, StaticText, etc.)
+            role: Accessibility role
             app_name: Application name
 
         Returns:
@@ -245,15 +230,17 @@ class MacOSAccessibility:
             app = self._get_app(app_name)
             windows = self._get_app_windows(app)
 
-            print(f"    🪟 Searching {len(windows)} window(s) for '{label}'")
+            console.print(
+                f"    [dim]Searching {len(windows)} window(s) for '{label}'[/dim]"
+            )
 
             for window in windows:
                 self._traverse_and_collect(window, label, role, elements)
 
-            print(f"  ✅ Found {len(elements)} elements")
+            console.print(f"  [green]Found {len(elements)} elements[/green]")
 
-        except Exception as e:
-            print(f"    Traversal error: {e}")
+        except Exception:
+            pass
 
         return elements
 
@@ -278,10 +265,7 @@ class MacOSAccessibility:
         return []
 
     def _find_element(self, app, label: str, depth=0):
-        """
-        Recursively find element by label.
-        Returns the actual atomacos element object for direct interaction.
-        """
+        """Recursively find element by label."""
         if depth > 20:
             return None
 
@@ -297,10 +281,7 @@ class MacOSAccessibility:
         return None
 
     def _search_tree_for_element(self, container, target_text, depth=0):
-        """
-        Recursively search accessibility tree for element with target text.
-        Searches AXIdentifier, AXAttributedDescription, AXTitle, AXValue, etc.
-        """
+        """Recursively search accessibility tree for element with target text."""
         if depth > 20:
             return None
 
@@ -334,11 +315,7 @@ class MacOSAccessibility:
         return None
 
     def _element_matches_text(self, element, target_text):
-        """
-        Check if element's text attributes match the target text.
-        EXACT MATCH ONLY - LLM must use the exact identifier we show it!
-        No fuzzy matching - forces LLM to be precise.
-        """
+        """Check if element's text attributes match the target text. EXACT MATCH ONLY."""
         try:
             if hasattr(element, "AXIdentifier") and element.AXIdentifier:
                 identifier = str(element.AXIdentifier).lower()
@@ -372,12 +349,7 @@ class MacOSAccessibility:
         return False
 
     def _perform_click(self, element):
-        """
-        Perform click action on element using atomacos.
-
-        Raises:
-            Exception if click fails
-        """
+        """Perform click action on element using atomacos."""
         try:
             if hasattr(element, "Press"):
                 element.Press()

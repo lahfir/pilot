@@ -35,7 +35,7 @@ class GUIAction(BaseModel):
 
 class ActionResult(BaseModel):
     """
-    Result of an action execution.
+    Result of an action execution with support for agent handoffs.
     """
 
     success: bool = Field(description="Whether the action succeeded")
@@ -56,6 +56,20 @@ class ActionResult(BaseModel):
     )
     data: Optional[dict] = Field(
         default=None, description="Additional data from action execution"
+    )
+    handoff_requested: bool = Field(
+        default=False,
+        description="Whether this agent requests to hand off to another agent",
+    )
+    suggested_agent: Optional[Literal["gui", "system", "browser"]] = Field(
+        default=None, description="Which agent should take over (if handoff requested)"
+    )
+    handoff_reason: Optional[str] = Field(
+        default=None, description="Why the handoff is needed"
+    )
+    handoff_context: Optional[dict] = Field(
+        default=None,
+        description="Context about what was attempted and what needs to be done",
     )
 
 

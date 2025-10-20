@@ -3,7 +3,7 @@ CrewAI crew configuration for computer use automation.
 """
 
 from pathlib import Path
-from crewai import Agent, Crew, Process
+from crewai import Agent
 from .config.llm_config import LLMConfig
 from .agents.coordinator import CoordinatorAgent
 from .agents.gui_agent import GUIAgent
@@ -11,6 +11,13 @@ from .agents.browser_agent import BrowserAgent
 from .agents.system_agent import SystemAgent
 from .utils.coordinate_validator import CoordinateValidator
 from .tools.platform_registry import PlatformToolRegistry
+from .utils.ui import (
+    print_task_analysis,
+    print_agent_start,
+    print_success,
+    print_failure,
+    print_handoff,
+)
 import yaml
 
 
@@ -21,7 +28,12 @@ class ComputerUseCrew:
     """
 
     def __init__(
-        self, capabilities, safety_checker, llm_client=None, vision_llm_client=None
+        self,
+        capabilities,
+        safety_checker,
+        llm_client=None,
+        vision_llm_client=None,
+        confirmation_manager=None,
     ):
         """
         Initialize crew with platform-specific tools.
@@ -31,9 +43,11 @@ class ComputerUseCrew:
             safety_checker: SafetyChecker instance
             llm_client: Optional LLM client for regular tasks
             vision_llm_client: Optional LLM client for vision tasks
+            confirmation_manager: CommandConfirmation instance for shell command approval
         """
         self.capabilities = capabilities
         self.safety_checker = safety_checker
+        self.confirmation_manager = confirmation_manager
 
         # Langchain LLMs for CrewAI agents
         self.llm = llm_client or LLMConfig.get_llm()
@@ -84,7 +98,9 @@ class ComputerUseCrew:
         self.coordinator_agent = CoordinatorAgent(self.llm)
         self.gui_agent = GUIAgent(self.tool_registry, self.vision_llm)
         self.browser_agent = BrowserAgent(self.tool_registry)
-        self.system_agent = SystemAgent(self.tool_registry, self.safety_checker)
+        self.system_agent = SystemAgent(
+            self.tool_registry, self.safety_checker, self.llm
+        )
 
     def _create_crew(self):
         """
@@ -170,59 +186,118 @@ class ComputerUseCrew:
         Returns:
             Result dictionary with execution details
         """
-        self._print_header("ANALYZING TASK")
-        print(f"  📝 {task}\n")
-
         analysis = await self.coordinator_agent.analyze_task(task)
-
-        self._print_section("TASK CLASSIFICATION")
-        print(f"  🎯 Type: {analysis.task_type.value.upper()}")
-        print(f"  🌐 Browser: {'Yes' if analysis.requires_browser else 'No'}")
-        print(f"  🖥️  GUI: {'Yes' if analysis.requires_gui else 'No'}")
-        print(f"  ⚙️  System: {'Yes' if analysis.requires_system else 'No'}")
-        print(f"  💭 Reasoning: {analysis.reasoning}\n")
+        print_task_analysis(task, analysis)
 
         results = []
         context = {"task": task, "previous_results": []}
 
         if analysis.requires_browser:
-            self._print_section("BROWSER AGENT EXECUTING")
+            print_agent_start("BROWSER")
             result = await self._execute_browser(task, context)
             results.append(result)
             context["previous_results"].append(result)
 
             if result.get("success"):
-                print(f"  ✅ Browser task completed\n")
+                print_success("Browser task completed")
             else:
-                print(
-                    f"  ❌ Browser task failed: {result.get('error', 'Unknown error')}\n"
+                print_failure(
+                    f"Browser task failed: {result.get('error', 'Unknown error')}"
                 )
                 return self._build_result(task, analysis, results, False)
 
         if analysis.requires_gui:
-            self._print_section("GUI AGENT EXECUTING")
+            print_agent_start("GUI")
             result = await self._execute_gui(task, context)
             results.append(result)
             context["previous_results"].append(result)
 
-            if result.get("success"):
-                print(f"  ✅ GUI task completed\n")
+            if result.get("handoff_requested"):
+                suggested = result.get("suggested_agent")
+                print_handoff("GUI", suggested.upper(), result.get("handoff_reason"))
+
+                context["handoff_context"] = result.get("handoff_context")
+
+                if suggested == "system":
+                    print_agent_start("SYSTEM (Handoff)")
+                    handoff_result = await self._execute_system(task, context)
+                    results.append(handoff_result)
+
+                    if handoff_result.get("success"):
+                        print_success("System agent completed handoff task")
+                        context["handoff_succeeded"] = True
+                    else:
+                        print_failure(
+                            f"System agent also failed: {handoff_result.get('error')}"
+                        )
+                        return self._build_result(task, analysis, results, False)
+                elif suggested == "browser":
+                    print_agent_start("BROWSER (Handoff)")
+                    handoff_result = await self._execute_browser(task, context)
+                    results.append(handoff_result)
+
+                    if handoff_result.get("success"):
+                        print_success("Browser agent completed handoff task")
+                        context["handoff_succeeded"] = True
+                    else:
+                        print_failure(
+                            f"Browser agent also failed: {handoff_result.get('error')}"
+                        )
+                        return self._build_result(task, analysis, results, False)
+            elif result.get("success"):
+                print_success("GUI task completed")
             else:
-                print(f"  ❌ GUI task failed: {result.get('error', 'Unknown error')}\n")
-                return self._build_result(task, analysis, results, False)
+                if not context.get("handoff_succeeded"):
+                    print_failure(
+                        f"GUI task failed: {result.get('error', 'Unknown error')}"
+                    )
+                    return self._build_result(task, analysis, results, False)
 
         if analysis.requires_system:
-            self._print_section("SYSTEM AGENT EXECUTING")
+            print_agent_start("SYSTEM")
             result = await self._execute_system(task, context)
             results.append(result)
 
-            if result.get("success"):
-                print(f"  ✅ System task completed\n")
+            if result.get("handoff_requested"):
+                suggested = result.get("suggested_agent")
+                print_handoff("SYSTEM", suggested.upper(), result.get("handoff_reason"))
+
+                context["handoff_context"] = result.get("handoff_context")
+
+                if suggested == "gui":
+                    print_agent_start("GUI (Handoff)")
+                    handoff_result = await self._execute_gui(task, context)
+                    results.append(handoff_result)
+
+                    if handoff_result.get("success"):
+                        print_success("GUI agent completed handoff task")
+                        context["handoff_succeeded"] = True
+                    else:
+                        print_failure(
+                            f"GUI agent also failed: {handoff_result.get('error')}"
+                        )
+                        return self._build_result(task, analysis, results, False)
+                elif suggested == "browser":
+                    print_agent_start("BROWSER (Handoff)")
+                    handoff_result = await self._execute_browser(task, context)
+                    results.append(handoff_result)
+
+                    if handoff_result.get("success"):
+                        print_success("Browser agent completed handoff task")
+                        context["handoff_succeeded"] = True
+                    else:
+                        print_failure(
+                            f"Browser agent also failed: {handoff_result.get('error')}"
+                        )
+                        return self._build_result(task, analysis, results, False)
+            elif result.get("success"):
+                print_success("System task completed")
             else:
-                print(
-                    f"  ❌ System task failed: {result.get('error', 'Unknown error')}\n"
-                )
-                return self._build_result(task, analysis, results, False)
+                if not context.get("handoff_succeeded"):
+                    print_failure(
+                        f"System task failed: {result.get('error', 'Unknown error')}"
+                    )
+                    return self._build_result(task, analysis, results, False)
 
         overall_success = all(r.get("success", False) for r in results)
 
@@ -240,7 +315,7 @@ class ComputerUseCrew:
         Browser-Use handles internal looping automatically.
         """
         print(f"  🔄 Browser-Use agent started (runs until task complete)...")
-        result = await self.browser_agent.execute_task(task)
+        result = await self.browser_agent.execute_task(task, context=context)
         return result
 
     async def _execute_gui(self, task: str, context: dict) -> dict:
@@ -248,7 +323,7 @@ class ComputerUseCrew:
         Execute GUI agent with multi-step planning.
         GUI agent handles its own step loop.
         """
-        result = await self.gui_agent.execute_task(task)
+        result = await self.gui_agent.execute_task(task, context=context)
 
         if hasattr(result, "dict"):
             return result.dict()
@@ -259,18 +334,10 @@ class ComputerUseCrew:
     async def _execute_system(self, task: str, context: dict) -> dict:
         """
         Execute system agent with context from previous agents.
-        Can use file paths from browser downloads.
+        Passes confirmation manager for command approval.
         """
-        browser_results = [
-            r
-            for r in context.get("previous_results", [])
-            if r.get("method_used") == "browser"
-        ]
-
-        if browser_results and browser_results[0].get("data"):
-            print(f"  📁 Using data from browser agent...")
-
-        result = await self.system_agent.execute_task(task)
+        context["confirmation_manager"] = self.confirmation_manager
+        result = await self.system_agent.execute_task(task, context)
         return result
 
     def _print_header(self, text: str):
