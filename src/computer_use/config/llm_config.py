@@ -1,16 +1,12 @@
 """
 Provider-agnostic LLM configuration system.
-Supports Langchain (CrewAI) and Browser-Use LLMs.
+Supports Langchain LLMs for CrewAI agents.
+Browser-Use handles its own LLM configuration internally.
 """
 
 import os
 from typing import Optional
 from dotenv import load_dotenv
-
-# Browser-Use LLMs (for Browser Agent)
-from browser_use import ChatOpenAI as BrowserChatOpenAI
-from browser_use import ChatAnthropic as BrowserChatAnthropic
-from browser_use import ChatGoogle as BrowserChatGoogle
 
 # Langchain LLMs (for CrewAI agents)
 from langchain_openai import ChatOpenAI
@@ -23,9 +19,11 @@ load_dotenv()
 
 class LLMConfig:
     """
-    Universal LLM configuration supporting multiple providers.
-    - Langchain LLMs for CrewAI agents (coordinator, GUI, system)
-    - Browser-Use LLMs for browser automation
+    LLM configuration for CrewAI agents.
+    Supports multiple providers: OpenAI, Anthropic, Google, Ollama.
+
+    - General LLM: Used by Coordinator and System agents
+    - Vision LLM: Used by GUI agent for screenshot analysis
     """
 
     @staticmethod
@@ -113,48 +111,3 @@ class LLMConfig:
             model = default_vision_models.get(provider)
 
         return LLMConfig.get_llm(provider, model)
-
-    @staticmethod
-    def get_browser_llm(provider: Optional[str] = None, model: Optional[str] = None):
-        """
-        Get Browser-Use compatible LLM for browser automation.
-
-        Args:
-            provider: LLM provider (openai, anthropic, google)
-            model: Specific model name
-
-        Returns:
-            Browser-Use LLM instance
-        """
-        provider = provider or os.getenv("LLM_PROVIDER", "openai")
-        model = model or os.getenv("LLM_MODEL")
-
-        if provider == "openai":
-            return LLMConfig._get_browser_openai_llm(model)
-        elif provider == "anthropic":
-            return LLMConfig._get_browser_anthropic_llm(model)
-        elif provider == "google":
-            return LLMConfig._get_browser_google_llm(model)
-        else:
-            raise ValueError(f"Browser-Use doesn't support provider: {provider}")
-
-    @staticmethod
-    def _get_browser_openai_llm(model: Optional[str] = None):
-        """Get Browser-Use OpenAI LLM"""
-        model_name = model or "gpt-4o-mini"
-        api_key = os.getenv("OPENAI_API_KEY")
-        return BrowserChatOpenAI(model=model_name, api_key=api_key)
-
-    @staticmethod
-    def _get_browser_anthropic_llm(model: Optional[str] = None):
-        """Get Browser-Use Anthropic LLM"""
-        model_name = model or "claude-3-5-sonnet-20241022"
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        return BrowserChatAnthropic(model=model_name, api_key=api_key)
-
-    @staticmethod
-    def _get_browser_google_llm(model: Optional[str] = None):
-        """Get Browser-Use Google LLM"""
-        model_name = model or "gemini-2.0-flash-exp"
-        api_key = os.getenv("GOOGLE_API_KEY")
-        return BrowserChatGoogle(model=model_name, api_key=api_key)

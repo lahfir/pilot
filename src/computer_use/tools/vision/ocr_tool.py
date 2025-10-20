@@ -76,7 +76,10 @@ class OCRTool:
             text_lower = text.lower()
 
             if fuzzy:
-                is_match = target_lower in text_lower or text_lower in target_lower
+                if len(text_lower) < 3:
+                    is_match = text_lower == target_lower
+                else:
+                    is_match = target_lower in text_lower or text_lower in target_lower
             else:
                 is_match = text_lower == target_lower
 
@@ -150,4 +153,3 @@ class OCRTool:
                 )
 
         return extracted
-

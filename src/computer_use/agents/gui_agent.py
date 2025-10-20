@@ -2,7 +2,7 @@
 GUI agent with screenshot-driven loop (like Browser-Use).
 """
 
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from PIL import Image
 from ..schemas.actions import ActionResult
 from ..utils.ui import (
@@ -15,6 +15,10 @@ from ..utils.ui import (
 )
 from pydantic import BaseModel, Field
 import asyncio
+
+if TYPE_CHECKING:
+    from ..tools.platform_registry import PlatformToolRegistry
+    from langchain_core.language_models import BaseChatModel
 
 
 class GUIAction(BaseModel):
@@ -43,7 +47,11 @@ class GUIAgent:
     Takes screenshot → LLM decides action → Executes → Repeats until done.
     """
 
-    def __init__(self, tool_registry, llm_client=None):
+    def __init__(
+        self,
+        tool_registry: "PlatformToolRegistry",
+        llm_client: Optional["BaseChatModel"] = None,
+    ) -> None:
         """
         Initialize GUI agent.
 
@@ -51,13 +59,16 @@ class GUIAgent:
             tool_registry: PlatformToolRegistry instance
             llm_client: Vision-capable LLM for screenshot analysis
         """
-        self.tool_registry = tool_registry
-        self.llm_client = llm_client
-        self.max_steps = 15
-        self.current_app = None
-        self.action_history = []
+        self.tool_registry: "PlatformToolRegistry" = tool_registry
+        self.llm_client: Optional["BaseChatModel"] = llm_client
+        self.max_steps: int = 15
+        self.current_app: Optional[str] = None
+        self.action_history: List[Dict[str, Any]] = []
+        self.context: Dict[str, Any] = {}
 
-    async def execute_task(self, task: str, context: dict = None) -> ActionResult:
+    async def execute_task(
+        self, task: str, context: Optional[Dict[str, Any]] = None
+    ) -> ActionResult:
         """
         Execute GUI task using screenshot-driven loop.
         Similar to Browser-Use: screenshot → analyze → act → repeat.
@@ -109,6 +120,34 @@ class GUIAgent:
 
             print_step(step, action.action, action.target, action.reasoning)
 
+            if len(self.action_history) >= 4:
+                recent = self.action_history[-4:]
+                targets = [h["target"] for h in recent]
+
+                if len(set(targets)) == 2:
+                    is_alternating = all(
+                        targets[i] != targets[i + 1] for i in range(len(targets) - 1)
+                    )
+                    if is_alternating:
+                        print_warning(
+                            f"Back-and-forth loop detected: {targets[0]} ↔ {targets[1]}"
+                        )
+                        return ActionResult(
+                            success=False,
+                            action_taken=f"Stuck alternating between {targets[0]} and {targets[1]}",
+                            method_used="loop_detection",
+                            confidence=0.0,
+                            error=f"Back-and-forth loop: {targets[0]} ↔ {targets[1]}",
+                            handoff_requested=True,
+                            suggested_agent="system",
+                            handoff_reason=f"GUI stuck in loop, System agent might handle better",
+                            handoff_context={
+                                "original_task": task,
+                                "loop_pattern": targets,
+                                "current_app": self.current_app,
+                            },
+                        )
+
             if (
                 last_action
                 and last_action.action == action.action
@@ -116,7 +155,7 @@ class GUIAgent:
             ):
                 repeated_actions += 1
                 if repeated_actions >= 2:
-                    print(f"    ⚠️  WARNING: Repeated same action 3 times - stopping!")
+                    print_warning(f"Repeated same action 3 times - stopping!")
                     return ActionResult(
                         success=False,
                         action_taken=f"Stuck in loop: {action.action} → {action.target}",
@@ -207,6 +246,7 @@ class GUIAgent:
                 data={
                     "steps": step,
                     "final_action": last_action.action if last_action else None,
+                    "task_complete": True,
                 },
             )
         else:
@@ -248,12 +288,26 @@ class GUIAgent:
         history_context = ""
         if action_history and len(action_history) > 0:
             history_context = "\n\nACTION HISTORY (what you've done so far):\n"
-            for h in action_history[-5:]:
-                status = "SUCCESS" if h.get("success") else "FAILED"
+            for h in action_history[-8:]:
+                status = "✅" if h.get("success") else "❌"
                 history_context += (
-                    f"  [{status}] Step {h['step']}: {h['action']} -> {h['target']}\n"
+                    f"  {status} Step {h['step']}: {h['action']} -> {h['target']}\n"
                 )
-            history_context += "\nREMEMBER: Use this history to make smart decisions! If you copied something, you need to paste it."
+
+            if len(action_history) >= 4:
+                recent_targets = [h["target"] for h in action_history[-4:]]
+                if len(set(recent_targets)) == 2:
+                    is_alternating = all(
+                        recent_targets[i] != recent_targets[i + 1]
+                        for i in range(len(recent_targets) - 1)
+                    )
+                    if is_alternating:
+                        history_context += f"\n⚠️  WARNING: You're alternating between {recent_targets[0]} and {recent_targets[1]}! This is a loop!\n⚠️  You need to do something DIFFERENT or hand off to another approach!\n"
+
+            history_context += "\n💡 SMART TIPS:\n"
+            history_context += "  • If you copied, you must paste!\n"
+            history_context += "  • If action failed, try a different approach!\n"
+            history_context += "  • If you're going back and forth, STOP and mark done or try keyboard!\n"
 
         accessibility_context = ""
         if accessibility_elements and len(accessibility_elements) > 0:
@@ -293,44 +347,97 @@ class GUIAgent:
                 previous_work_context += "\n🔥 IMPORTANT: Don't repeat what was already done! Build on previous work!\n"
 
         prompt = f"""
-Analyze this screenshot carefully and decide the NEXT action to accomplish the task.
+You are a GUI automation agent. Analyze the screenshot and decide the NEXT single action.
 
 TASK: {task}
 Current Step: {step}{last_action_text}{history_context}{previous_work_context}{accessibility_context}
 
-CRITICAL: LOOK AT THE SCREENSHOT FIRST!
-- What's currently on screen?
-- Is there old data that needs clearing?
-- What's the current state of the app?
-- What needs to happen NEXT?
+═══════════════════════════════════════════════════════════
+STEP 1: OBSERVE THE SCREENSHOT
+═══════════════════════════════════════════════════════════
+- What application is open?
+- What folder/page are you currently in?
+- What UI elements are visible?
+- What's the current state?
+
+═══════════════════════════════════════════════════════════
+STEP 2: UNDERSTAND THE WORKFLOW
+═══════════════════════════════════════════════════════════
+
+Common workflows you MUST understand:
+
+📋 COPY/PASTE FILES:
+  1. Navigate to source location
+  2. Select the file (single click)
+  3. Copy it (right-click → Copy, or use keyboard Cmd+C on Mac)
+  4. Navigate to destination location
+  5. Paste it (right-click → Paste, or use keyboard Cmd+V on Mac)
+  6. If task says "open", then open the pasted file
+
+⚠️  CRITICAL: You CANNOT paste before you copy!
+⚠️  CRITICAL: Double-clicking opens a file, it does NOT copy it!
+
+🧮 CALCULATOR:
+  - Type the full expression (e.g., "2+2")
+  - Press Enter with input_text="\\n"
+
+═══════════════════════════════════════════════════════════
+STEP 3: DECIDE NEXT ACTION
+═══════════════════════════════════════════════════════════
 
 Available actions:
-- open_app: Launch an application
-- click: Click on a UI element (use accessibility identifier if available, or exact visible text)
-- double_click: Double-click on an element
-- right_click: Right-click for context menu
-- type: Type text or keyboard input (can also type special keys like '\n' for Enter/Return)
+- open_app: Launch application
+- click: Single click (select items, click buttons)
+- double_click: Open files/folders
+- right_click: Open context menu (for Copy, Paste, etc.)
+- type: Type text or special keys (\\n = Enter)
 - scroll: Scroll up/down
-- read: Extract information from screen
-- done: Task is complete
+- read: Extract text from screen
+- done: Mark task complete
 
-Guidelines:
-1. OBSERVE the screenshot - check current state before acting
-2. PREFER TYPING/KEYBOARD: Use keyboard over clicking when possible
-3. For clicks with accessibility identifiers: Use EXACT identifier from list
-   - See "AllClear (Button)"? Use target="AllClear"
-4. For clicks without identifiers: Use visible text from screenshot
-   - Use what you actually SEE in the image
-   - For files: use partial name if full name is long
-5. NEVER REPEAT: Don't do the same action twice
-6. MARK DONE: If task is complete, set is_complete=True
+Action selection rules:
+✅ Use accessibility identifiers when available (100% accurate)
+✅ Use visible text from screenshot for OCR fallback
+✅ For file operations: click to select, right-click for menu
+✅ Check history to avoid repeating failed actions
+✅ If stuck after 2 failures → mark done (let system agent try)
 
-Examples:
-  GOOD: type "2+2" then type "\n" then done
-  GOOD: click "Document" (from screenshot)
-  BAD: click same thing twice
+═══════════════════════════════════════════════════════════
+EXAMPLES OF SMART DECISIONS
+═══════════════════════════════════════════════════════════
 
-Be smart. Observe, act, complete.
+Task: "Copy image from Downloads to Documents"
+  Current: In Downloads folder, see image.png
+  ❌ BAD: double_click → image.png (opens it, doesn't copy!)
+  ❌ BAD: click → Documents (haven't copied anything yet!)
+  ✅ GOOD: click → image.png (select it first)
+  
+  Next step after selecting:
+  ✅ GOOD: right_click → image.png (opens context menu with Copy)
+  
+  After copying:
+  ✅ GOOD: click → Documents (now navigate to destination)
+  
+  In Documents:
+  ✅ GOOD: right_click → empty space (opens menu with Paste)
+
+Task: "Calculate 5+3"
+  ✅ GOOD: type → "5+3"
+  ✅ GOOD: type → "\\n" (press Enter)
+  ❌ BAD: click → "5", click → "+", click → "3" (too slow!)
+
+Task: "Find file and email it"
+  Current: Can't find email option in GUI
+  ✅ GOOD: mark is_complete=False (let system agent use CLI)
+
+═══════════════════════════════════════════════════════════
+
+Now, based on the screenshot and your history, what is the NEXT action?
+Think step-by-step:
+1. Where am I now?
+2. What have I already done?
+3. What's the NEXT step in the workflow?
+4. What action accomplishes that step?
 """
 
         try:
@@ -427,7 +534,7 @@ Be smart. Observe, act, complete.
         except Exception as e:
             return {"success": False, "method": "process", "error": str(e)}
 
-    async def _wait_for_app_ready(self, app_name: str):
+    async def _wait_for_app_ready(self, app_name: str) -> None:
         """
         Smart dynamic wait for app to be ready.
         Checks if app has accessible windows with interactive elements.

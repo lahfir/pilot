@@ -53,9 +53,6 @@ class ComputerUseCrew:
         self.llm = llm_client or LLMConfig.get_llm()
         self.vision_llm = vision_llm_client or LLMConfig.get_vision_llm()
 
-        # Browser-Use LLM for browser automation
-        self.browser_llm = LLMConfig.get_browser_llm()
-
         coordinate_validator = CoordinateValidator(
             capabilities.screen_resolution[0], capabilities.screen_resolution[1]
         )
@@ -64,7 +61,6 @@ class ComputerUseCrew:
             capabilities,
             safety_checker=safety_checker,
             coordinate_validator=coordinate_validator,
-            browser_llm_client=self.browser_llm,
         )
 
         self.agents_config = self._load_yaml_config("agents.yaml")
@@ -246,6 +242,12 @@ class ComputerUseCrew:
                         return self._build_result(task, analysis, results, False)
             elif result.get("success"):
                 print_success("GUI task completed")
+
+                if result.get("data", {}).get("task_complete"):
+                    print_success(
+                        "Task fully completed by GUI agent - skipping System agent"
+                    )
+                    return self._build_result(task, analysis, results, True)
             else:
                 if not context.get("handoff_succeeded"):
                     print_failure(
@@ -253,7 +255,7 @@ class ComputerUseCrew:
                     )
                     return self._build_result(task, analysis, results, False)
 
-        if analysis.requires_system:
+        if analysis.requires_system and not context.get("task_complete"):
             print_agent_start("SYSTEM")
             result = await self._execute_system(task, context)
             results.append(result)
