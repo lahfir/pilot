@@ -19,7 +19,9 @@ from .utils.ui import (
     print_handoff,
     print_warning,
     print_info,
+    console,
 )
+from .schemas.browser_output import BrowserOutput
 import yaml
 
 
@@ -214,9 +216,21 @@ class ComputerUseCrew:
                     return self._build_result(task, analysis, results, True)
             elif browser_completed_attempt:
                 print_warning("Browser completed attempt but couldn't fully succeed")
-                print_info(
-                    f"Output: {result.get('data', {}).get('output', 'No output')}"
-                )
+                output_data = result.get("data", {}).get("output", {})
+                if isinstance(output_data, dict):
+                    try:
+                        browser_output = BrowserOutput(**output_data)
+                        print_info(f"Browser says: {browser_output.text}")
+                        if browser_output.has_files():
+                            print_info(
+                                f"Files available: {browser_output.get_file_count()} file(s)"
+                            )
+                            for file_path in browser_output.files[:3]:
+                                console.print(f"  [dim]• {file_path}[/dim]")
+                    except Exception:
+                        print_info(f"Output: {output_data}")
+                else:
+                    print_info(f"Output: {output_data}")
             else:
                 print_failure(
                     f"Browser task failed: {result.get('error', 'Unknown error')}"

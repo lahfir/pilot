@@ -2,7 +2,15 @@
 Browser automation tool using Browser-Use library.
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional, TYPE_CHECKING
+from pathlib import Path
+import tempfile
+
+from ..schemas.actions import ActionResult
+from ..schemas.browser_output import BrowserOutput, FileDetail
+
+if TYPE_CHECKING:
+    from browser_use.agent.views import AgentHistoryList  # noqa: F401
 
 
 class BrowserTool:
@@ -38,9 +46,7 @@ class BrowserTool:
             print("Browser-Use not available. Install with: pip install browser-use")
             return False
 
-    async def execute_task(
-        self, task: str, url: Optional[str] = None
-    ) -> Dict[str, Any]:
+    async def execute_task(self, task: str, url: Optional[str] = None) -> ActionResult:
         """
         Execute a web automation task using Browser-Use Agent.
 
@@ -52,100 +58,144 @@ class BrowserTool:
             url: Optional starting URL
 
         Returns:
-            Result dictionary with status and data
+            ActionResult with browser output and file tracking
         """
         if not self.available:
-            return {
-                "success": False,
-                "error": "Browser-Use not initialized. Install with: pip install browser-use",
-            }
+            return ActionResult(
+                success=False,
+                action_taken="Browser initialization failed",
+                method_used="browser",
+                confidence=0.0,
+                error="Browser-Use not initialized. Install with: pip install browser-use",
+            )
 
         if not self.llm_client:
-            return {
-                "success": False,
-                "error": "No LLM client provided for Browser-Use Agent",
-            }
+            return ActionResult(
+                success=False,
+                action_taken="No LLM client provided",
+                method_used="browser",
+                confidence=0.0,
+                error="No LLM client provided for Browser-Use Agent",
+            )
 
         try:
             from browser_use import Agent, BrowserSession, BrowserProfile
+            from browser_use.agent.views import AgentHistoryList
 
             full_task = f"Navigate to {url} and {task}" if url else task
+
+            temp_dir = Path(tempfile.mkdtemp(prefix="browser_agent_"))
 
             browser_session = BrowserSession(browser_profile=BrowserProfile())
 
             agent = Agent(
-                task=full_task, llm=self.llm_client, browser_session=browser_session
+                task=full_task,
+                llm=self.llm_client,
+                browser_session=browser_session,
+                max_failures=5,  # Allow more retries for complex tasks
             )
 
-            result = await agent.run()
+            # Limit to 30 steps max to prevent infinite loops
+            result: AgentHistoryList = await agent.run(max_steps=30)
 
             await browser_session.kill()
 
-            has_errors = False
-            error_msgs = []
-            final_output = None
-            agent_called_done = False
-            task_completed_successfully = False
-            files_to_display = []
+            agent_called_done = result.is_done()
+            task_completed_successfully = result.is_successful()
+            final_output = result.final_result()
 
-            if result and hasattr(result, "errors") and result.errors():
-                has_errors = True
-                error_msgs = [str(e) for e in result.errors() if e]
+            downloaded_files = []
+            file_details = []
 
-            if result and hasattr(result, "history"):
-                for item in result.history:
-                    if hasattr(item, "result") and item.result:
-                        for r in item.result:
-                            if hasattr(r, "error") and r.error:
-                                has_errors = True
-                                error_msgs.append(r.error)
-
-                    if hasattr(item, "model_output") and item.model_output:
-                        if (
-                            hasattr(item.model_output, "done")
-                            and item.model_output.done
-                        ):
-                            agent_called_done = True
-                            if hasattr(item.model_output.done, "text"):
-                                final_output = item.model_output.done.text
-                            if hasattr(item.model_output.done, "success"):
-                                task_completed_successfully = (
-                                    item.model_output.done.success
+            if result.history and len(result.history) > 0:
+                last_result = result.history[-1].result
+                if last_result and len(last_result) > 0:
+                    attachments = last_result[-1].attachments
+                    if attachments:
+                        for attachment in attachments:
+                            attachment_path = Path(attachment)
+                            if attachment_path.exists():
+                                downloaded_files.append(str(attachment_path.absolute()))
+                                file_details.append(
+                                    FileDetail(
+                                        path=str(attachment_path.absolute()),
+                                        name=attachment_path.name,
+                                        size=attachment_path.stat().st_size,
+                                    )
                                 )
-                            if hasattr(item.model_output.done, "files_to_display"):
-                                files_to_display = (
-                                    item.model_output.done.files_to_display
-                                )
+
+            browser_data_dir = temp_dir / "browseruse_agent_data"
+            if browser_data_dir.exists():
+                for file_path in browser_data_dir.rglob("*"):
+                    if file_path.is_file():
+                        downloaded_files.append(str(file_path.absolute()))
+                        file_details.append(
+                            FileDetail(
+                                path=str(file_path.absolute()),
+                                name=file_path.name,
+                                size=file_path.stat().st_size,
+                            )
+                        )
+
+            error_list = result.errors()
+            has_errors = any(e for e in error_list if e)
+            error_msgs = [str(e) for e in error_list if e]
+
+            browser_output = BrowserOutput(
+                text=final_output or "Task completed",
+                files=downloaded_files,
+                file_details=file_details,
+                work_directory=str(temp_dir),
+            )
 
             if agent_called_done:
-                return {
-                    "success": task_completed_successfully,
-                    "message": f"Browser task completed: {task}",
-                    "data": {
+                return ActionResult(
+                    success=(
+                        task_completed_successfully
+                        if task_completed_successfully is not None
+                        else False
+                    ),
+                    action_taken=f"Browser task: {task}",
+                    method_used="browser",
+                    confidence=1.0 if task_completed_successfully else 0.5,
+                    data={
                         "result": str(result),
-                        "output": final_output or "Task completed",
-                        "task_complete": agent_called_done,
-                        "files": files_to_display,
+                        "output": browser_output.model_dump(),
+                        "task_complete": True,
                     },
-                }
+                )
             elif has_errors and error_msgs:
-                return {
-                    "success": False,
-                    "error": "; ".join(error_msgs),
-                    "data": {"result": str(result), "output": final_output},
-                }
+                return ActionResult(
+                    success=False,
+                    action_taken=f"Browser task failed: {task}",
+                    method_used="browser",
+                    confidence=0.0,
+                    error="; ".join(error_msgs),
+                    data={
+                        "result": str(result),
+                        "output": browser_output.model_dump(),
+                    },
+                )
 
-            return {
-                "success": True,
-                "message": f"Browser task completed: {task}",
-                "data": {
+            return ActionResult(
+                success=True,
+                action_taken=f"Browser task: {task}",
+                method_used="browser",
+                confidence=0.9,
+                data={
                     "result": str(result),
-                    "output": final_output or "Task completed successfully",
+                    "output": browser_output.model_dump(),
                 },
-            }
+            )
 
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return ActionResult(
+                success=False,
+                action_taken=f"Browser task exception: {task}",
+                method_used="browser",
+                confidence=0.0,
+                error=str(e),
+            )
 
     async def close(self):
         """

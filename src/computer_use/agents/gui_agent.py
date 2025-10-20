@@ -5,6 +5,7 @@ GUI agent with screenshot-driven loop (like Browser-Use).
 from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from PIL import Image
 from ..schemas.actions import ActionResult
+from ..schemas.browser_output import BrowserOutput
 from ..utils.ui import (
     print_info,
     print_step,
@@ -326,22 +327,52 @@ class GUIAgent:
         if self.context and self.context.get("previous_results"):
             prev_results = self.context.get("previous_results", [])
             if prev_results:
-                previous_work_context = "\n\nPREVIOUS AGENT WORK:\n"
+                previous_work_context = "\n\n" + "=" * 60 + "\n"
+                previous_work_context += "PREVIOUS AGENT WORK (Build on this!):\n"
+                previous_work_context += "=" * 60 + "\n"
+
                 for i, res in enumerate(prev_results, 1):
                     agent_type = res.get("method_used", "unknown")
                     action = res.get("action_taken", "")
                     success = "✅" if res.get("success") else "❌"
                     previous_work_context += (
-                        f"  {success} Agent {i} ({agent_type}): {action}\n"
+                        f"\n{success} Agent {i} ({agent_type}): {action}\n"
                     )
+
                     if res.get("data"):
                         data = res.get("data", {})
-                        if "output" in data:
-                            previous_work_context += f"     Output: {data['output']}\n"
-                        if "files" in data and data["files"]:
-                            previous_work_context += (
-                                f"     Files: {', '.join(data['files'])}\n"
-                            )
+                        output = data.get("output")
+
+                        if isinstance(output, dict):
+                            try:
+                                browser_output = BrowserOutput(**output)
+                                previous_work_context += (
+                                    f"\n📝 Summary:\n{browser_output.text}\n"
+                                )
+
+                                if browser_output.has_files():
+                                    previous_work_context += (
+                                        f"\n📁 DOWNLOADED FILES (use these paths!):\n"
+                                    )
+                                    for file_path in browser_output.files:
+                                        previous_work_context += f"   • {file_path}\n"
+
+                                    previous_work_context += f"\n📊 File Details:\n"
+                                    for file_detail in browser_output.file_details:
+                                        size_kb = file_detail.size / 1024
+                                        previous_work_context += f"   • {file_detail.name} ({size_kb:.1f} KB)\n"
+                                        previous_work_context += (
+                                            f"     Path: {file_detail.path}\n"
+                                        )
+                            except Exception:
+                                if output.get("text"):
+                                    previous_work_context += (
+                                        f"\n📝 Summary:\n{output['text']}\n"
+                                    )
+
+                        elif isinstance(output, str):
+                            previous_work_context += f"     Output: {output}\n"
+
                         if "downloaded_file" in data:
                             previous_work_context += (
                                 f"     Downloaded: {data['downloaded_file']}\n"
@@ -350,7 +381,10 @@ class GUIAgent:
                             previous_work_context += (
                                 f"     Location: {data['file_location']}\n"
                             )
-                previous_work_context += "\n🔥 IMPORTANT: Don't repeat what was already done! Build on previous work!\n"
+
+                previous_work_context += "\n" + "=" * 60 + "\n"
+                previous_work_context += "🎯 YOUR JOB: Use the files/data above to complete the current task!\n"
+                previous_work_context += "=" * 60 + "\n"
 
         prompt = f"""
 You are a GUI automation agent. Analyze the screenshot and decide the NEXT single action.
