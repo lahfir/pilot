@@ -1,0 +1,38 @@
+---
+globs: *.md,*.mdx,*.rst,*.txt
+description: Documentation and README guidelines
+---
+
+# Documentation Standards
+
+## README Files
+
+- Include clear project description and purpose
+- Provide installation and setup instructions
+- Document all dependencies and requirements
+- Include usage examples and API documentation
+- Add troubleshooting section for common issues
+
+## Code Documentation
+
+- Use docstrings for all public functions and classes
+- Include parameter types and descriptions
+- Document return values and possible exceptions
+- Provide usage examples in docstrings
+- Keep documentation up-to-date with code changes
+
+## API Documentation
+
+- Document all endpoints and their parameters
+- Include request/response examples
+- Document authentication requirements
+- Specify error codes and their meanings
+- Provide rate limiting information if applicable
+
+## Inline Documentation
+
+- Use docstrings instead of comments
+- Explain complex business logic
+- Document non-obvious implementation decisions
+- Include references to external documentation
+- Keep documentation concise but comprehensive

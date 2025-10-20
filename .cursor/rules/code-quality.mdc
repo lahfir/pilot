@@ -1,0 +1,33 @@
+---
+alwaysApply: true
+description: Code quality and structure guidelines
+---
+
+# Code Quality Rules
+
+## File Size Limit
+
+- Each file must be less than 400 lines of code (LOC)
+- If a file exceeds this limit, refactor by extracting functionality into separate modules
+- Break down large functions into smaller, focused functions
+
+## Documentation Standards
+
+- **NEVER** use inline comments (`//` or `#`)
+- **ONLY** use docstrings for documentation
+- All functions, classes, and modules must have comprehensive docstrings
+- Docstrings should explain the purpose, parameters, return values, and any exceptions
+
+## Code Organization
+
+- Write modular and clean code with zero redundancy
+- Follow DRY (Don't Repeat Yourself) principle strictly
+- Extract common functionality into reusable utilities
+- Use composition over inheritance when possible
+
+## Documentation Reference
+
+- Always refer to official documentation when implementing features
+- Do not make assumptions about API behavior
+- Verify implementation details against source documentation
+- When in doubt, consult the documentation rather than guessing

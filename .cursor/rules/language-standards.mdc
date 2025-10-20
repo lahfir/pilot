@@ -1,0 +1,38 @@
+---
+globs: *.js,*.jsx,*.ts,*.tsx,*.py,*.java,*.go,*.rs
+description: Language-specific coding standards
+---
+
+# Language-Specific Standards
+
+## JavaScript/TypeScript
+
+- Use TypeScript for type safety when available
+- Prefer `const` and `let` over `var`
+- Use arrow functions for short, simple functions
+- Implement proper error handling with try-catch blocks
+- Use async/await over promises when possible
+
+## Python
+
+- Follow PEP 8 style guidelines
+- Use type hints for function parameters and return values
+- Implement proper exception handling
+- Use list/dict comprehensions when appropriate
+- Follow the principle of least surprise
+
+## General Principles
+
+- Use meaningful variable and function names
+- Keep functions small and focused (single responsibility)
+- Avoid deep nesting (max 3-4 levels)
+- Use early returns to reduce complexity
+- Implement proper input validation
+
+## Error Handling
+
+- Always handle errors gracefully
+- Provide meaningful error messages
+- Log errors appropriately
+- Don't suppress errors silently
+- Use specific exception types when available

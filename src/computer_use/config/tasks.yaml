@@ -1,0 +1,75 @@
+analyze_task:
+  description: >
+    Analyze the user's request: "{task}"
+
+    Determine:
+    1. What type of task this is (browser, GUI, system, or hybrid)
+    2. Which agents are needed to accomplish this
+    3. What are the specific steps required
+    4. Estimated complexity and number of actions
+
+    Provide a structured analysis with clear reasoning.
+  expected_output: >
+    A TaskAnalysis object with task_type, requirements for each agent type,
+    detailed reasoning, action plan as list of steps, and estimated_steps count.
+  agent: coordinator
+
+browser_task:
+  description: >
+    Execute the following browser-based task: "{task}"
+
+    Use Browser-Use to:
+    - Navigate to required websites
+    - Interact with web elements
+    - Extract or download data
+    - Complete the requested action
+
+    Return detailed results of what was accomplished.
+  expected_output: >
+    A detailed report of the browser automation including:
+    - Actions taken
+    - URLs visited
+    - Data extracted or files downloaded
+    - Success status
+  agent: browser_agent
+
+gui_task:
+  description: >
+    Execute the following desktop GUI task: "{task}"
+
+    Use the multi-tier accuracy system:
+    1. First try accessibility APIs for 100% accuracy
+    2. Fall back to OCR/CV if needed
+    3. Use vision model as last resort
+
+    Always validate coordinates before clicking.
+    Take screenshots to verify results.
+  expected_output: >
+    An ActionResult object with:
+    - Success status
+    - Method used (accessibility, ocr, cv, or vision)
+    - Actions taken
+    - Confidence level
+    - Any errors encountered
+  agent: gui_agent
+
+system_task:
+  description: >
+    Execute the following system operation: "{task}"
+
+    Steps:
+    1. Validate the operation for safety
+    2. Check if confirmation is needed for destructive actions
+    3. Execute the command or file operation
+    4. Verify the result
+
+    Never execute dangerous commands without confirmation.
+  expected_output: >
+    A SystemCommand execution result with:
+    - Command executed
+    - Working directory
+    - Output or result
+    - Success status
+    - Whether confirmation was required
+  agent: system_agent
+

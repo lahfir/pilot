@@ -1,0 +1,41 @@
+---
+alwaysApply: true
+description: Project structure and organization guidelines
+---
+
+# Project Structure Rules
+
+## Folder Organization
+
+- Maintain a very clear and modular folder structure
+- Use descriptive folder names that reflect their purpose
+- Group related functionality together
+- Separate concerns into distinct directories
+
+## Directory Structure Guidelines
+
+```
+src/
+├── components/     # Reusable UI components
+├── services/       # Business logic and API calls
+├── utils/          # Utility functions and helpers
+├── types/          # Type definitions (TypeScript)
+├── constants/      # Application constants
+├── hooks/          # Custom React hooks (if applicable)
+├── pages/          # Page components
+└── tests/          # Test files
+```
+
+## File Naming Conventions
+
+- Use kebab-case for file names: `user-service.js`
+- Use PascalCase for component files: `UserProfile.jsx`
+- Use descriptive names that clearly indicate purpose
+- Avoid abbreviations unless they are widely understood
+
+## Module Organization
+
+- One main export per file
+- Use index files for clean imports
+- Keep related functionality in the same module
+- Avoid circular dependencies

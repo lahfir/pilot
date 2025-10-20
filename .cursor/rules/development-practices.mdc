@@ -1,0 +1,34 @@
+---
+alwaysApply: true
+description: Development practices and accuracy guidelines
+---
+
+# Development Practices
+
+## Accuracy and Documentation
+
+- **DO NOT HALLUCINATE** - Only implement what is explicitly requested
+- Always refer to official documentation for implementation details
+- Verify all assumptions against source documentation
+- When implementing APIs or libraries, check the official docs first
+
+## Code Implementation
+
+- Only code what's necessary - avoid over-engineering
+- Implement features incrementally and test each step
+- Focus on the core functionality first, then add enhancements
+- Avoid premature optimization
+
+## Documentation Requirements
+
+- Before implementing any feature, consult the relevant documentation
+- Use official examples and patterns from documentation
+- If documentation is unclear, ask for clarification rather than assuming
+- Reference specific documentation sections when implementing features
+
+## Testing and Validation
+
+- Test implementations against documented behavior
+- Validate that code works as documented
+- Ensure error handling follows documented patterns
+- Verify edge cases are handled according to documentation
