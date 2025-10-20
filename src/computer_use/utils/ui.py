@@ -218,9 +218,13 @@ def print_task_result(result: dict):
     content = f"[bold]Task:[/bold] {result.get('task', 'Unknown')}\n\n"
 
     handoffs = []
+    outputs = []
     if result.get("results"):
         content += "[bold]Execution Steps:[/bold]\n\n"
         for i, res in enumerate(result["results"], 1):
+            if not res:
+                continue
+
             status = "✅" if res.get("success") else "❌"
             method = res.get("method_used", "unknown")
             action = res.get("action_taken", "")
@@ -229,6 +233,11 @@ def print_task_result(result: dict):
 
             if res.get("error"):
                 content += f"     [red]Error: {res['error']}[/red]\n"
+
+            if res.get("data", {}).get("output"):
+                outputs.append(
+                    {"step": i, "method": method, "output": res["data"]["output"]}
+                )
 
             if res.get("handoff_requested"):
                 handoffs.append(
@@ -245,6 +254,12 @@ def print_task_result(result: dict):
             content += f"  🤝 [cyan]{handoff['from']}[/cyan] → [yellow]{handoff['to']}[/yellow]\n"
             if handoff["reason"]:
                 content += f"     [dim]Reason: {handoff['reason']}[/dim]\n"
+
+    if outputs:
+        content += "\n[bold green]📄 Results:[/bold green]\n\n"
+        for output in outputs:
+            content += f"[cyan]{output['method'].upper()}:[/cyan]\n"
+            content += f"{output['output']}\n\n"
 
     panel = Panel(
         content,

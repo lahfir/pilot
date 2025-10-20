@@ -3,9 +3,12 @@ Main entry point for computer use automation agent.
 """
 
 import asyncio
+import sys
 from .utils.platform_detector import detect_platform
 from .utils.safety_checker import SafetyChecker
 from .utils.command_confirmation import CommandConfirmation
+from .utils.permissions import check_and_request_permissions
+from .utils.logging_config import setup_logging
 from .utils.ui import (
     print_banner,
     print_platform_info,
@@ -20,7 +23,13 @@ async def main():
     """
     Main execution function.
     """
+    setup_logging()
+
     print_banner()
+
+    if not check_and_request_permissions():
+        console.print("[yellow]Exiting due to missing permissions.[/yellow]")
+        sys.exit(1)
 
     print_section_header("Platform Detection", "🔍")
     capabilities = detect_platform()

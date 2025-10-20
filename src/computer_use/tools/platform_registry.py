@@ -27,6 +27,7 @@ class PlatformToolRegistry:
         capabilities,
         safety_checker=None,
         coordinate_validator=None,
+        llm_client=None,
     ):
         """
         Initialize tool registry with platform capabilities.
@@ -35,10 +36,12 @@ class PlatformToolRegistry:
             capabilities: PlatformCapabilities object
             safety_checker: Optional SafetyChecker instance
             coordinate_validator: Optional CoordinateValidator instance
+            llm_client: Optional LLM client for browser agent
         """
         self.capabilities = capabilities
         self.safety_checker = safety_checker
         self.coordinate_validator = coordinate_validator
+        self.llm_client = llm_client
         self.tools = self._initialize_tools()
 
     def _initialize_tools(self) -> Dict[str, Any]:
@@ -68,7 +71,7 @@ class PlatformToolRegistry:
         tools["input"] = InputTool(validator=self.coordinate_validator)
         tools["process"] = ProcessTool()
         tools["file"] = FileTool(safety_checker=self.safety_checker)
-        tools["browser"] = BrowserTool()
+        tools["browser"] = BrowserTool(llm_client=self.llm_client)
 
         return tools
 

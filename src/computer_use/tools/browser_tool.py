@@ -16,9 +16,9 @@ class BrowserTool:
         Initialize browser tool with Browser-Use.
 
         Args:
-            llm_client: LLM client for Browser-Use Agent
+            llm_client: LLM client for browser agent (from LLMConfig)
         """
-        self.browser = None
+        self.browser_session = None
         self.llm_client = llm_client
         self.available = self._initialize_browser()
 
@@ -30,9 +30,9 @@ class BrowserTool:
             True if initialization successful
         """
         try:
-            from browser_use import Browser
+            from browser_use import BrowserSession
 
-            self.Browser = Browser
+            self.BrowserSession = BrowserSession
             return True
         except ImportError:
             print("Browser-Use not available. Install with: pip install browser-use")
@@ -67,19 +67,58 @@ class BrowserTool:
             }
 
         try:
-            from browser_use import Agent
+            from browser_use import Agent, BrowserSession, BrowserProfile
 
             full_task = f"Navigate to {url} and {task}" if url else task
 
-            # Browser-Use Agent with its own Browser session management
-            agent = Agent(task=full_task, llm=self.llm_client)
+            browser_session = BrowserSession(browser_profile=BrowserProfile())
+
+            agent = Agent(
+                task=full_task, llm=self.llm_client, browser_session=browser_session
+            )
 
             result = await agent.run()
+
+            await browser_session.kill()
+
+            has_errors = False
+            error_msgs = []
+            final_output = None
+
+            if result and hasattr(result, "errors") and result.errors():
+                has_errors = True
+                error_msgs = [str(e) for e in result.errors() if e]
+
+            if result and hasattr(result, "history"):
+                for item in result.history:
+                    if hasattr(item, "result") and item.result:
+                        for r in item.result:
+                            if hasattr(r, "error") and r.error:
+                                has_errors = True
+                                error_msgs.append(r.error)
+
+                    if hasattr(item, "model_output") and item.model_output:
+                        if (
+                            hasattr(item.model_output, "done")
+                            and item.model_output.done
+                        ):
+                            if hasattr(item.model_output.done, "text"):
+                                final_output = item.model_output.done.text
+
+            if has_errors and error_msgs:
+                return {
+                    "success": False,
+                    "error": "; ".join(error_msgs),
+                    "data": {"result": str(result)},
+                }
 
             return {
                 "success": True,
                 "message": f"Browser task completed: {task}",
-                "data": {"result": str(result)},
+                "data": {
+                    "result": str(result),
+                    "output": final_output or "Task completed successfully",
+                },
             }
 
         except Exception as e:
@@ -90,4 +129,8 @@ class BrowserTool:
         Close browser instance if needed.
         Browser-Use handles cleanup automatically.
         """
-        pass
+        if self.browser_session:
+            try:
+                await self.browser_session.kill()
+            except Exception:
+                pass

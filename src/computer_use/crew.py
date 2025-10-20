@@ -33,6 +33,7 @@ class ComputerUseCrew:
         safety_checker,
         llm_client=None,
         vision_llm_client=None,
+        browser_llm_client=None,
         confirmation_manager=None,
     ):
         """
@@ -43,15 +44,17 @@ class ComputerUseCrew:
             safety_checker: SafetyChecker instance
             llm_client: Optional LLM client for regular tasks
             vision_llm_client: Optional LLM client for vision tasks
+            browser_llm_client: Optional LLM client for browser automation
             confirmation_manager: CommandConfirmation instance for shell command approval
         """
         self.capabilities = capabilities
         self.safety_checker = safety_checker
         self.confirmation_manager = confirmation_manager
 
-        # Langchain LLMs for CrewAI agents
+        # LLMs for different agents
         self.llm = llm_client or LLMConfig.get_llm()
         self.vision_llm = vision_llm_client or LLMConfig.get_vision_llm()
+        self.browser_llm = browser_llm_client or LLMConfig.get_browser_llm()
 
         coordinate_validator = CoordinateValidator(
             capabilities.screen_resolution[0], capabilities.screen_resolution[1]
@@ -61,6 +64,7 @@ class ComputerUseCrew:
             capabilities,
             safety_checker=safety_checker,
             coordinate_validator=coordinate_validator,
+            llm_client=self.browser_llm,
         )
 
         self.agents_config = self._load_yaml_config("agents.yaml")
@@ -316,7 +320,7 @@ class ComputerUseCrew:
         Execute browser agent with loop until completion.
         Browser-Use handles internal looping automatically.
         """
-        print(f"  🔄 Browser-Use agent started (runs until task complete)...")
+        print("  🔄 Browser-Use agent started (runs until task complete)...")
         result = await self.browser_agent.execute_task(task, context=context)
         return result
 
