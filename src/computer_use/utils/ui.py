@@ -211,68 +211,14 @@ def print_handoff(from_agent: str, to_agent: str, reason: str):
     console.print()
 
 
-def print_task_result(result: dict):
+def print_task_result(result):
     """
     Display final task result.
     """
-    console.print()
-
-    success = result.get("overall_success", False)
-    title = "✅ Task Complete" if success else "❌ Task Failed"
-    style = "green" if success else "red"
-
-    content = f"[bold]Task:[/bold] {result.get('task', 'Unknown')}\n\n"
-
-    handoffs = []
-    outputs = []
-    if result.get("results"):
-        content += "[bold]Execution Steps:[/bold]\n\n"
-        for i, res in enumerate(result["results"], 1):
-            if not res or not isinstance(res, dict):
-                continue
-
-            status = "✅" if res.get("success") else "❌"
-            method = res.get("method_used", "unknown")
-            action = res.get("action_taken", "")
-
-            content += f"  {status} [cyan]Step {i}:[/cyan] [{method}] {action}\n"
-
-            if res.get("error"):
-                content += f"     [red]Error: {res['error']}[/red]\n"
-
-            data = res.get("data")
-            if data and isinstance(data, dict) and data.get("output"):
-                outputs.append({"step": i, "method": method, "output": data["output"]})
-
-            if res.get("handoff_requested"):
-                handoffs.append(
-                    {
-                        "from": "GUI" if "gui" in method.lower() else "SYSTEM",
-                        "to": res.get("suggested_agent", "unknown").upper(),
-                        "reason": res.get("handoff_reason", ""),
-                    }
-                )
-
-    if handoffs:
-        content += "\n[bold magenta]Agent Handoffs:[/bold magenta]\n\n"
-        for handoff in handoffs:
-            content += f"  🤝 [cyan]{handoff['from']}[/cyan] → [yellow]{handoff['to']}[/yellow]\n"
-            if handoff["reason"]:
-                content += f"     [dim]Reason: {handoff['reason']}[/dim]\n"
-
-    if outputs:
-        content += "\n[bold green]📄 Results:[/bold green]\n\n"
-        for output in outputs:
-            content += f"[cyan]{output['method'].upper()}:[/cyan]\n"
-            content += f"{output['output']}\n\n"
-
-    panel = Panel(
-        content,
-        title=title,
-        border_style=style,
-        box=box.DOUBLE,
-    )
-    console.print(panel)
+    if result.success:
+        console.print(f"\n[green]✓ Completed in {result.iterations} step(s)[/green]")
+    else:
+        console.print(f"\n[red]✗ Failed after {result.iterations} step(s)[/red]")
 
 
 def print_action_history(history: list):

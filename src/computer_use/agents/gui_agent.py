@@ -117,7 +117,6 @@ class GUIAgent:
         self.current_app = None
         self.action_history = []
 
-
         while step < self.max_steps and not task_complete:
             step += 1
 
@@ -248,7 +247,6 @@ class GUIAgent:
                     )
             else:
                 consecutive_failures = 0
-                print_success("Success")
                 current_coords = step_result.get("coordinates")
                 if current_coords:
                     x, y = current_coords
@@ -274,9 +272,6 @@ class GUIAgent:
 
             last_action = action
             task_complete = action.is_complete
-
-            status = "✅ Task complete" if task_complete else "⏳ Continuing..."
-            console.print(f"  [dim]{status}[/dim]")
 
             if not task_complete:
                 await asyncio.sleep(0.5)

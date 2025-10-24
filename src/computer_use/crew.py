@@ -147,7 +147,9 @@ class ComputerUseCrew:
                 context.completed = True
                 break
 
-            console.print(f"[dim]{iteration}.[/dim] {decision.agent} → {decision.subtask}")
+            console.print(
+                f"[dim]{iteration}.[/dim] {decision.agent} → {decision.subtask}"
+            )
 
             agent = agents_map.get(decision.agent)
             if not agent:
