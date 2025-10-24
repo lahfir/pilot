@@ -154,7 +154,7 @@ class ComputerUseCrew:
             if not agent:
                 break
 
-            result = await agent.execute_task(
+            result: ActionResult = await agent.execute_task(
                 decision.subtask, context=context.model_dump()
             )
 

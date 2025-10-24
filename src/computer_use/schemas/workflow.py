@@ -2,8 +2,11 @@
 Workflow planning schemas for intelligent task decomposition.
 """
 
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Literal
 from pydantic import BaseModel, Field
+
+
+AgentType = Literal["browser", "gui", "system"]
 
 
 class AgentResult(BaseModel):
@@ -11,7 +14,7 @@ class AgentResult(BaseModel):
     Result from a single agent execution.
     """
 
-    agent: str = Field(description="Agent type that executed")
+    agent: AgentType = Field(description="Agent type that executed")
     subtask: str = Field(description="Subtask that was executed")
     success: bool = Field(description="Whether execution succeeded")
     data: Optional[dict[str, Any]] = Field(default=None, description="Result data")
@@ -35,7 +38,7 @@ class CoordinatorDecision(BaseModel):
     Decision from coordinator about next action.
     """
 
-    agent: str = Field(description="Which agent to use: 'browser', 'gui', or 'system'")
+    agent: AgentType = Field(description="Which agent to use")
     subtask: str = Field(description="Specific task for this agent")
     reasoning: str = Field(description="Why this agent and subtask")
     is_complete: bool = Field(default=False, description="Is the entire task complete?")
@@ -48,7 +51,7 @@ class WorkflowResult(BaseModel):
 
     success: bool = Field(description="Whether task completed successfully")
     iterations: int = Field(description="Number of iterations taken")
-    agents_used: List[str] = Field(description="List of agent types used")
+    agents_used: List[AgentType] = Field(description="List of agent types used")
     results: List[AgentResult] = Field(description="Results from each agent")
 
 
