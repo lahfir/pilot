@@ -145,8 +145,8 @@ install_python_deps() {
     
     # Install platform-specific dependencies
     if [ "$OS" = "macos" ]; then
-        print_info "Installing macOS accessibility libraries (atomacos)..."
-        if uv sync --extra macos --quiet 2>&1 | grep -v "^$"; then
+        print_info "Installing macOS dependencies (atomacos, Vision Framework, etc.)..."
+        if uv sync --extra macos 2>&1; then
             print_success "Core + macOS dependencies installed"
         else
             print_error "Failed to install dependencies"
@@ -154,7 +154,7 @@ install_python_deps() {
         fi
     elif [ "$OS" = "windows" ]; then
         print_info "Installing Windows UI Automation libraries (pywinauto)..."
-        if uv sync --extra windows --quiet 2>&1 | grep -v "^$"; then
+        if uv sync --extra windows 2>&1; then
             print_success "Core + Windows dependencies installed"
         else
             print_error "Failed to install dependencies"
@@ -162,7 +162,7 @@ install_python_deps() {
         fi
     elif [ "$OS" = "linux" ]; then
         print_info "Installing Linux AT-SPI libraries..."
-        if uv sync --extra linux --quiet 2>&1 | grep -v "^$"; then
+        if uv sync --extra linux 2>&1; then
             print_success "Core + Linux dependencies installed"
         else
             print_error "Failed to install dependencies"
@@ -182,7 +182,7 @@ install_python_deps() {
         fi
     else
         print_warning "Unknown OS - installing core dependencies only"
-        if uv sync --quiet 2>&1 | grep -v "^$"; then
+        if uv sync 2>&1; then
             print_success "Core dependencies installed"
         else
             print_error "Failed to install core dependencies"
@@ -191,18 +191,15 @@ install_python_deps() {
     fi
 }
 
-# Install platform-specific dependencies
-install_platform_deps() {
-    print_step "Installing Platform-Specific Dependencies"
+# Check platform-specific requirements
+check_platform_requirements() {
+    print_step "Checking Platform Requirements"
     
     case $OS in
         macos)
-            print_info "Installing macOS accessibility frameworks..."
-            uv pip install pyobjc-framework-ApplicationServices pyobjc-framework-Cocoa pyobjc-framework-Quartz --quiet
-            print_success "macOS frameworks installed"
-            
             print_warning "You may need to grant accessibility permissions:"
             print_info "System Settings → Privacy & Security → Accessibility → Add Terminal"
+            print_success "macOS platform configured"
             ;;
         
         linux)
@@ -227,13 +224,11 @@ install_platform_deps() {
             ;;
         
         windows)
-            print_info "Installing Windows UI automation libraries..."
-            uv pip install pywinauto comtypes --quiet
-            print_success "Windows libraries installed"
+            print_success "Windows platform configured"
             ;;
         
         *)
-            print_warning "Unknown OS - skipping platform-specific dependencies"
+            print_warning "Unknown OS - platform may not be fully supported"
             ;;
     esac
 }
@@ -395,7 +390,7 @@ main() {
     install_uv
     check_python
     install_python_deps
-    install_platform_deps
+    check_platform_requirements
     setup_env_file
     prompt_api_keys
     test_installation
