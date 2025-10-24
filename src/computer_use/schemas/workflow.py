@@ -2,8 +2,22 @@
 Workflow planning schemas for intelligent task decomposition.
 """
 
-from typing import List, Dict, Any
+from typing import List
 from pydantic import BaseModel, Field
+
+
+class ResourceRequirement(BaseModel):
+    """
+    A resource needed to complete the task.
+    """
+
+    resource_type: str = Field(
+        description="Type of resource: 'application', 'website', 'file', or 'service'"
+    )
+    name: str = Field(
+        description="Name of the resource (e.g., 'Calculator.app', 'Google Chrome', 'design_file.png')"
+    )
+    purpose: str = Field(description="Why this resource is needed for the task")
 
 
 class TaskUnderstanding(BaseModel):
@@ -18,8 +32,9 @@ class TaskUnderstanding(BaseModel):
     potential_challenges: List[str] = Field(
         default_factory=list, description="What might go wrong or block progress"
     )
-    resource_requirements: Dict[str, Any] = Field(
-        default_factory=dict, description="Files, apps, websites needed"
+    resource_requirements: List[ResourceRequirement] = Field(
+        default_factory=list,
+        description="Resources needed to complete the task (apps, websites, files)",
     )
 
 

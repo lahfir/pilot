@@ -6,7 +6,7 @@ Bridges our specialized agents with CrewAI's tool execution system.
 from typing import TYPE_CHECKING, Any
 import asyncio
 from crewai.tools import BaseTool
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from ..schemas.browser_output import BrowserOutput
 
@@ -14,6 +14,24 @@ if TYPE_CHECKING:
     from ..agents.browser_agent import BrowserAgent  # noqa: F401
     from ..agents.gui_agent import GUIAgent  # noqa: F401
     from ..agents.system_agent import SystemAgent  # noqa: F401
+
+
+class BrowserToolInput(BaseModel):
+    """Input schema for browser automation tool."""
+
+    task: str = Field(description="Natural language description of the web task to perform")
+
+
+class GUIToolInput(BaseModel):
+    """Input schema for GUI automation tool."""
+
+    task: str = Field(description="Natural language description of the GUI task to perform")
+
+
+class SystemToolInput(BaseModel):
+    """Input schema for system operations tool."""
+
+    task: str = Field(description="Natural language description of the system operation to perform")
 
 
 class BrowserAutomationTool(BaseTool):
@@ -34,8 +52,9 @@ class BrowserAutomationTool(BaseTool):
     Input: Natural language task description (e.g., "Research convertible sofa designs from Pinterest")
     Output: Task results with file paths and extracted data
     """
+    args_schema: type[BaseModel] = BrowserToolInput
 
-    browser_agent: Any = Field(description="Browser agent instance")
+    browser_agent: Any = Field(description="Browser agent instance", exclude=True)
 
     def _run(self, task: str) -> str:
         """
@@ -90,8 +109,9 @@ class GUIAutomationTool(BaseTool):
     Input: Task description with specific app and actions
     Output: Result of GUI interaction
     """
+    args_schema: type[BaseModel] = GUIToolInput
 
-    gui_agent: Any = Field(description="GUI agent instance")
+    gui_agent: Any = Field(description="GUI agent instance", exclude=True)
 
     def _run(self, task: str) -> str:
         """
@@ -129,9 +149,10 @@ class SystemOperationsTool(BaseTool):
     Input: Task description with file operations or commands needed
     Output: Result of system operations
     """
+    args_schema: type[BaseModel] = SystemToolInput
 
-    system_agent: Any = Field(description="System agent instance")
-    confirmation_manager: Any = Field(description="Command confirmation manager")
+    system_agent: Any = Field(description="System agent instance", exclude=True)
+    confirmation_manager: Any = Field(description="Command confirmation manager", exclude=True)
 
     def _run(self, task: str) -> str:
         """
