@@ -13,6 +13,7 @@ from .utils.coordinate_validator import CoordinateValidator
 from .tools.platform_registry import PlatformToolRegistry
 from .schemas.actions import ActionResult
 from .schemas.browser_output import BrowserOutput
+from .schemas.workflow import WorkflowContext, AgentResult, WorkflowResult
 from .utils.ui import (
     print_task_analysis,
     print_agent_start,
@@ -108,7 +109,7 @@ class ComputerUseCrew:
             self.tool_registry, self.safety_checker, self.llm
         )
 
-    async def execute_task(self, task: str) -> dict:
+    async def execute_task(self, task: str) -> WorkflowResult:
         """
         Execute task using coordinator for planning, then direct agent execution.
 
@@ -125,60 +126,59 @@ class ComputerUseCrew:
         """
         console.print(f"\n[bold cyan]🎯 Task:[/bold cyan] {task}\n")
 
-        # PHASE 1: Get intelligent workflow plan
-        console.print("[bold]Creating intelligent workflow plan...[/bold]")
+        agents_map = {
+            "browser": self.browser_agent,
+            "gui": self.gui_agent,
+            "system": self.system_agent,
+        }
 
-        understanding = await self.coordinator_agent._understand_intent(task)
-        workflow = await self.coordinator_agent._plan_workflow(understanding)
+        context = WorkflowContext(original_task=task)
 
-        console.print(f"[green]✓ Created {len(workflow.steps)} step plan[/green]\n")
+        max_iterations = 5
+        iteration = 0
 
-        # PHASE 2: Execute steps sequentially with our agents
-        results = []
-        context = {"previous_results": []}
+        while not context.completed and iteration < max_iterations:
+            iteration += 1
+            console.print(f"[bold]Step {iteration}[/bold]")
 
-        for i, step in enumerate(workflow.steps, 1):
-            console.print(f"[bold]Step {i}/{len(workflow.steps)}: {step.role}[/bold]")
+            decision = await self.coordinator_agent.decide_next_action(task, context)
 
-            # Get the right agent
-            if step.agent_type == "browser":
-                agent = self.browser_agent
-            elif step.agent_type == "gui":
-                agent = self.gui_agent
-            elif step.agent_type == "system":
-                agent = self.system_agent
-            else:
-                console.print(f"[red]Unknown agent type: {step.agent_type}[/red]")
-                continue
-
-            # Execute with context
-            result = await agent.execute_task(step.instructions, context=context)
-            results.append(result)
-            context["previous_results"].append(
-                {
-                    "agent": step.agent_type,
-                    "result": (
-                        result.__dict__ if hasattr(result, "__dict__") else str(result)
-                    ),
-                }
-            )
-
-            if result.success:
-                console.print(f"[green]✓ Step {i} completed[/green]\n")
-            else:
-                console.print(f"[red]✗ Step {i} failed: {result.error}[/red]\n")
+            if decision.is_complete:
+                console.print("[green]✓ Task complete![/green]\n")
+                context.completed = True
                 break
 
-        return {
-            "success": all(r.success for r in results),
-            "result": (
-                results[-1].__dict__
-                if results and hasattr(results[-1], "__dict__")
-                else "No results"
-            ),
-            "tasks_completed": len([r for r in results if r.success]),
-            "total_steps": len(workflow.steps),
-        }
+            console.print(f"[cyan]→ {decision.agent}: {decision.subtask}[/cyan]\n")
+
+            agent = agents_map.get(decision.agent)
+            if not agent:
+                break
+
+            result = await agent.execute_task(
+                decision.subtask, context=context.model_dump()
+            )
+
+            agent_result = AgentResult(
+                agent=decision.agent,
+                subtask=decision.subtask,
+                success=result.success,
+                data=result.data if result.success else None,
+                error=result.error if not result.success else None,
+            )
+            context.agent_results.append(agent_result)
+
+            if result.success:
+                console.print("[green]✓ Done[/green]\n")
+            else:
+                console.print(f"[red]✗ Failed: {result.error}[/red]\n")
+                break
+
+        return WorkflowResult(
+            success=context.completed,
+            iterations=iteration,
+            agents_used=[r.agent for r in context.agent_results],
+            results=context.agent_results,
+        )
 
     async def execute_task_legacy(self, task: str) -> dict:
         """

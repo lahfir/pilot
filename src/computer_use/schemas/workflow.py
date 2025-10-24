@@ -2,8 +2,54 @@
 Workflow planning schemas for intelligent task decomposition.
 """
 
-from typing import List
+from typing import List, Optional, Any
 from pydantic import BaseModel, Field
+
+
+class AgentResult(BaseModel):
+    """
+    Result from a single agent execution.
+    """
+
+    agent: str = Field(description="Agent type that executed")
+    subtask: str = Field(description="Subtask that was executed")
+    success: bool = Field(description="Whether execution succeeded")
+    data: Optional[dict[str, Any]] = Field(default=None, description="Result data")
+    error: Optional[str] = Field(default=None, description="Error if failed")
+
+
+class WorkflowContext(BaseModel):
+    """
+    Shared context across agent handoffs.
+    """
+
+    original_task: str = Field(description="Original user task")
+    agent_results: List[AgentResult] = Field(
+        default_factory=list, description="Results from previous agents"
+    )
+    completed: bool = Field(default=False, description="Whether task is complete")
+
+
+class CoordinatorDecision(BaseModel):
+    """
+    Decision from coordinator about next action.
+    """
+
+    agent: str = Field(description="Which agent to use: 'browser', 'gui', or 'system'")
+    subtask: str = Field(description="Specific task for this agent")
+    reasoning: str = Field(description="Why this agent and subtask")
+    is_complete: bool = Field(default=False, description="Is the entire task complete?")
+
+
+class WorkflowResult(BaseModel):
+    """
+    Final result from workflow execution.
+    """
+
+    success: bool = Field(description="Whether task completed successfully")
+    iterations: int = Field(description="Number of iterations taken")
+    agents_used: List[str] = Field(description="List of agent types used")
+    results: List[AgentResult] = Field(description="Results from each agent")
 
 
 class ResourceRequirement(BaseModel):
