@@ -400,7 +400,7 @@ class GUIAgent:
             for res in self.context.agent_results:
                 success = "✅" if res.success else "❌"
                 previous_work_context += f"{success} {res.agent}: {res.subtask}\n"
-                
+
                 # Include actual data content if available
                 if res.data and isinstance(res.data, dict):
                     # If there's text/content, include it
@@ -411,14 +411,26 @@ class GUIAgent:
                         elif isinstance(output, dict) and output.get("text"):
                             text = output["text"]
                             previous_work_context += f"   DATA: {text[:1000]}{'...' if len(text) > 1000 else ''}\n"
-                    
+
                     # If there are files, mention them
                     if res.data.get("files"):
-                        previous_work_context += f"   Files: {', '.join(res.data['files'])}\n"
-                    
+                        previous_work_context += (
+                            f"   Files: {', '.join(res.data['files'])}\n"
+                        )
+
                     # Include any other relevant data fields
                     for key, value in res.data.items():
-                        if key not in ["output", "files", "task_complete", "steps", "final_action"] and value:
+                        if (
+                            key
+                            not in [
+                                "output",
+                                "files",
+                                "task_complete",
+                                "steps",
+                                "final_action",
+                            ]
+                            and value
+                        ):
                             if isinstance(value, str) and len(value) < 200:
                                 previous_work_context += f"   {key}: {value}\n"
 

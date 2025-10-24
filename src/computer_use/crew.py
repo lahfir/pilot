@@ -153,11 +153,15 @@ class ComputerUseCrew:
             iteration += 1
 
             decision = await self.coordinator_agent.decide_next_action(task, context)
-            
+
             # Show coordinator decision
             console.print()
-            console.print(f"[bold magenta]🧠 Coordinator → Step {iteration}[/bold magenta]")
-            console.print(f"  [cyan]Agent:[/cyan] [bold white]{decision.agent.upper()}[/bold white]")
+            console.print(
+                f"[bold magenta]🧠 Coordinator → Step {iteration}[/bold magenta]"
+            )
+            console.print(
+                f"  [cyan]Agent:[/cyan] [bold white]{decision.agent.upper()}[/bold white]"
+            )
             console.print(f"  [cyan]Task:[/cyan] {decision.subtask}")
             console.print(f"  [dim]Reasoning: {decision.reasoning}[/dim]")
 
@@ -175,7 +179,7 @@ class ComputerUseCrew:
                     print_handoff(
                         last_agent.upper(),
                         decision.agent.upper(),
-                        f"Switching to {decision.agent} agent for next subtask"
+                        f"Switching to {decision.agent} agent for next subtask",
                     )
 
             # Show agent execution start
