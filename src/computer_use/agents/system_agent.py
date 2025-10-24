@@ -76,6 +76,7 @@ class SystemAgent:
 
         handoff_context = context.get("handoff_context") if context else None
         confirmation_manager = context.get("confirmation_manager") if context else None
+        previous_results = context.get("previous_results", []) if context else []
 
         if not confirmation_manager:
             return ActionResult(
@@ -113,7 +114,7 @@ class SystemAgent:
                 )
 
             command_decision = await self._get_next_command(
-                task, handoff_context, last_output, step
+                task, handoff_context, previous_results, last_output, step
             )
 
             console.print(f"\n[bold cyan]Step {step}:[/bold cyan]")
@@ -197,6 +198,7 @@ class SystemAgent:
         self,
         task: str,
         handoff_context: Optional[Dict],
+        previous_results: list,
         last_output: str,
         step: int,
     ) -> ShellCommand:
@@ -206,6 +208,7 @@ class SystemAgent:
         Args:
             task: Original task
             handoff_context: Context from handoff
+            previous_results: Results from previous agents (browser, GUI)
             last_output: Output from last command
             step: Current step number
 
@@ -217,6 +220,55 @@ You are a shell command agent. Generate ONE shell command at a time to accomplis
 
 TASK: {task}
 """
+
+        if previous_results:
+            prompt += "\n" + "=" * 60 + "\n"
+            prompt += "PREVIOUS AGENT WORK (Use this information!):\n"
+            prompt += "=" * 60 + "\n"
+
+            for i, res in enumerate(previous_results, 1):
+                agent_type = res.get("method_used", "unknown")
+                action = res.get("action_taken", "")
+                success = "✅" if res.get("success") else "❌"
+                prompt += f"\n{success} Agent {i} ({agent_type}): {action}\n"
+
+                if res.get("data"):
+                    data = res.get("data", {})
+                    output = data.get("output")
+
+                    if isinstance(output, dict):
+                        try:
+                            from ..schemas.browser_output import BrowserOutput
+
+                            browser_output = BrowserOutput(**output)
+                            prompt += f"\n📝 Summary:\n{browser_output.text}\n"
+
+                            if browser_output.has_files():
+                                prompt += "\n📁 DOWNLOADED FILES (use these paths!):\n"
+                                for file_path in browser_output.files:
+                                    prompt += f"   • {file_path}\n"
+
+                                prompt += "\n📊 File Details:\n"
+                                for file_detail in browser_output.file_details:
+                                    size_kb = file_detail.size / 1024
+                                    prompt += (
+                                        f"   • {file_detail.name} ({size_kb:.1f} KB)\n"
+                                    )
+                                    prompt += f"     Path: {file_detail.path}\n"
+                        except Exception:
+                            if output.get("text"):
+                                prompt += f"\n📝 Summary:\n{output['text']}\n"
+                            if output.get("files"):
+                                prompt += "\n📁 Files:\n"
+                                for file_path in output.get("files", []):
+                                    prompt += f"   • {file_path}\n"
+
+                    elif isinstance(output, str):
+                        prompt += f"     Output: {output}\n"
+
+            prompt += "\n" + "=" * 60 + "\n"
+            prompt += "🎯 YOUR JOB: Use the files/data above in your commands!\n"
+            prompt += "=" * 60 + "\n\n"
 
         if handoff_context:
             prompt += f"""

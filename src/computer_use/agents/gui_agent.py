@@ -396,9 +396,7 @@ class GUIAgent:
                                 )
 
                                 if browser_output.has_files():
-                                    previous_work_context += (
-                                        "\n📁 DOWNLOADED FILES (use these paths!):\n"
-                                    )
+                                    previous_work_context += "\n📁 DOWNLOADED FILES (use these EXACT paths!):\n"
                                     for file_path in browser_output.files:
                                         previous_work_context += f"   • {file_path}\n"
 
@@ -409,6 +407,12 @@ class GUIAgent:
                                         previous_work_context += (
                                             f"     Path: {file_detail.path}\n"
                                         )
+
+                                    previous_work_context += "\n⚠️  CRITICAL: Use the EXACT file paths above!\n"
+                                    previous_work_context += "      Do NOT assume files are in Downloads or Photos!\n"
+                                    previous_work_context += (
+                                        "      Navigate to the exact path shown!\n"
+                                    )
                             except Exception:
                                 if output.get("text"):
                                     previous_work_context += (
@@ -432,21 +436,28 @@ class GUIAgent:
                 previous_work_context += "=" * 60 + "\n"
 
         prompt = f"""
-You are a GUI automation agent. Analyze the screenshot and decide the NEXT single action.
+You are a GUI automation agent. You MUST be analytical and observant.
 
 TASK: {task}
 Current Step: {step}{last_action_text}{history_context}{previous_work_context}{accessibility_context}
 
 ═══════════════════════════════════════════════════════════
-STEP 1: OBSERVE THE SCREENSHOT
+🔍 CRITICAL: ANALYZE BEFORE ACTING!
 ═══════════════════════════════════════════════════════════
-- What application is open?
-- What folder/page are you currently in?
-- What UI elements are visible?
-- What's the current state?
+
+BEFORE deciding any action, you MUST first observe the current state:
+
+1. What application/window is open? (System Settings, Finder, etc.)
+2. What specific section/page am I in? (Wallpaper, Desktop, General, etc.)
+3. What UI elements are VISIBLE RIGHT NOW? (buttons, menus, options)
+4. What options are ALREADY AVAILABLE? (don't guess - look!)
+
+⚠️  DO NOT guess what might be there!
+⚠️  DO NOT assume - look at what's ACTUALLY visible!
+⚠️  ONLY interact with elements you can see or that are in accessibility list!
 
 ═══════════════════════════════════════════════════════════
-STEP 2: UNDERSTAND THE WORKFLOW
+WORKFLOW UNDERSTANDING
 ═══════════════════════════════════════════════════════════
 
 Common workflows you MUST understand:
@@ -467,7 +478,7 @@ Common workflows you MUST understand:
   - Press Enter with input_text="\\n"
 
 ═══════════════════════════════════════════════════════════
-STEP 3: DECIDE NEXT ACTION
+ACTION DECISION PROCESS
 ═══════════════════════════════════════════════════════════
 
 Available actions:
@@ -480,7 +491,12 @@ Available actions:
 - read: Extract text from screen
 - done: Mark task complete
 
-Action selection rules:
+🎯 Action selection strategy:
+1. First check accessibility_elements list - use exact identifiers
+2. Then look for visible text/buttons in the screenshot
+3. Choose action based on what's ACTUALLY AVAILABLE NOW
+4. Don't assume UI elements exist - verify first!
+
 ✅ Use accessibility identifiers when available (100% accurate)
 ✅ Use visible text from screenshot for OCR fallback
 ✅ For file operations: click to select, right-click for menu
@@ -517,12 +533,45 @@ Task: "Find file and email it"
 
 ═══════════════════════════════════════════════════════════
 
-Now, based on the screenshot and your history, what is the NEXT action?
-Think step-by-step:
-1. Where am I now?
-2. What have I already done?
-3. What's the NEXT step in the workflow?
-4. What action accomplishes that step?
+🧠 DECISION FRAMEWORK
+═══════════════════════════════════════════════════════════
+Now decide your NEXT action using this framework:
+
+1. CURRENT STATE: What do I see on screen RIGHT NOW?
+   - App/window open: ___
+   - Section/page: ___
+   - Visible UI elements: ___
+
+2. PROGRESS CHECK: What have I accomplished?
+   - Review action_history
+   - What worked? What failed?
+
+3. NEXT LOGICAL STEP: Based on CURRENT STATE (not assumptions)
+   - What's the immediate next step?
+   - Is the element I need VISIBLE or in accessibility list?
+   - If not visible, do I need to navigate/scroll first?
+
+4. CHOOSE ACTION: Pick the right action for the visible element
+   - Use exact identifier if in accessibility_elements
+   - Use exact visible text if using OCR
+   - Don't invent element names!
+
+⚠️  Your 'reasoning' field MUST include your observation of current state!
+
+Example reasoning formats:
+
+GOOD: "I see System Settings is open. Wallpaper option is visible in the sidebar. Clicking it directly to go to wallpaper settings."
+
+GOOD: "Screen shows Wallpaper settings with downloaded files visible. I can see the Eiffel Tower image at /private/tmp/..., clicking directly on it."
+
+BAD: "Need to add image" (no observation!)
+BAD: "Going to Desktop & Dock" (inefficient - why not go directly to Wallpaper?)
+BAD: "Image should be in Photos" (assuming instead of using the actual path!)
+
+CRITICAL WORKFLOW RULES:
+1. If you see the target UI element ALREADY VISIBLE → click it directly!
+2. If you have an exact file path → navigate to it, don't assume it's elsewhere!
+3. Take the SHORTEST path - don't go through unnecessary menus!
 """
 
         try:
@@ -900,11 +949,12 @@ Think step-by-step:
 
     async def _type_text(self, text: Optional[str]) -> ActionExecutionResult:
         """
-        Type text at current cursor position.
+        Type or paste text at current cursor position.
+        Uses paste (clipboard) for large text blocks (>100 chars) for speed.
         Supports special characters like '\n' for Enter/Return key.
 
         Args:
-            text: Text to type
+            text: Text to type or paste
 
         Returns:
             ActionExecutionResult with typing details
@@ -921,6 +971,10 @@ Think step-by-step:
                 import pyautogui
 
                 pyautogui.press("return")
+            elif len(text) > 100:
+                # Use paste for large text blocks (much faster!)
+                print(f"    📋 Pasting large text ({len(text)} chars)...")
+                input_tool.paste_text(text)
             else:
                 print(f"    ⌨️  Typing: '{text}'")
                 input_tool.type_text(text)

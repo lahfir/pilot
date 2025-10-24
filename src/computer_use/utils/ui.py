@@ -92,7 +92,7 @@ def print_platform_info(capabilities):
 
 def print_task_analysis(task: str, analysis):
     """
-    Display task analysis in panel.
+    Display task analysis in panel with sub-task breakdown.
     """
     content = f"""
 [bold]Task:[/bold] {task}
@@ -106,9 +106,40 @@ def print_task_analysis(task: str, analysis):
 [yellow]Reasoning:[/yellow] {analysis.reasoning}
 """
 
+    # Add sub-task breakdown if available
+    if any(
+        [
+            analysis.browser_subtask,
+            analysis.gui_subtask,
+            analysis.system_subtask,
+        ]
+    ):
+        content += "\n[magenta]Task Breakdown:[/magenta]\n"
+
+        if analysis.browser_subtask:
+            content += f"""
+  [bold cyan]🌐 Browser Agent:[/bold cyan]
+    [dim]→[/dim] {analysis.browser_subtask.objective}
+    [dim]📦 Output:[/dim] {analysis.browser_subtask.expected_output}
+"""
+
+        if analysis.gui_subtask:
+            content += f"""
+  [bold green]🖥️  GUI Agent:[/bold green]
+    [dim]→[/dim] {analysis.gui_subtask.objective}
+    [dim]📦 Output:[/dim] {analysis.gui_subtask.expected_output}
+"""
+
+        if analysis.system_subtask:
+            content += f"""
+  [bold yellow]⚙️  System Agent:[/bold yellow]
+    [dim]→[/dim] {analysis.system_subtask.objective}
+    [dim]📦 Output:[/dim] {analysis.system_subtask.expected_output}
+"""
+
     panel = Panel(
         content,
-        title="🎯 Task Analysis",
+        title="🎯 Task Analysis & Breakdown",
         border_style="blue",
         box=box.DOUBLE,
     )

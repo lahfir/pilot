@@ -5,6 +5,7 @@ Browser automation tool using Browser-Use library.
 from typing import Optional, TYPE_CHECKING
 from pathlib import Path
 import tempfile
+import glob
 
 from ..schemas.actions import ActionResult
 from ..schemas.browser_output import BrowserOutput, FileDetail
@@ -136,6 +137,26 @@ class BrowserTool:
                                 size=file_path.stat().st_size,
                             )
                         )
+
+            browser_use_download_dirs = glob.glob(
+                str(Path(tempfile.gettempdir()) / "browser-use-downloads-*")
+            )
+            for download_dir in browser_use_download_dirs:
+                download_path = Path(download_dir)
+                if download_path.exists():
+                    for file_path in download_path.rglob("*"):
+                        if (
+                            file_path.is_file()
+                            and str(file_path.absolute()) not in downloaded_files
+                        ):
+                            downloaded_files.append(str(file_path.absolute()))
+                            file_details.append(
+                                FileDetail(
+                                    path=str(file_path.absolute()),
+                                    name=file_path.name,
+                                    size=file_path.stat().st_size,
+                                )
+                            )
 
             error_list = result.errors()
             has_errors = any(e for e in error_list if e)

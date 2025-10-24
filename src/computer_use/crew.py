@@ -199,7 +199,15 @@ class ComputerUseCrew:
 
         if analysis.requires_browser:
             print_agent_start("BROWSER")
-            result = await self._execute_browser(task, context)
+            browser_task = (
+                analysis.browser_subtask.objective if analysis.browser_subtask else task
+            )
+            if analysis.browser_subtask:
+                context["expected_output"] = analysis.browser_subtask.expected_output
+                print_info(f"📋 Sub-task: {browser_task}")
+                print_info(f"📦 Expected: {analysis.browser_subtask.expected_output}")
+
+            result = await self._execute_browser(browser_task, context)
             results.append(result)
             context["previous_results"].append(result.model_dump())
 
@@ -216,7 +224,9 @@ class ComputerUseCrew:
                     print_success("Task fully completed by Browser agent")
                     return self._build_result(task, analysis, results, True)
             elif browser_completed_attempt:
-                print_warning("Browser completed attempt but couldn't fully succeed")
+                print_warning(
+                    "Browser agent called done() but failed - cannot proceed to next agent"
+                )
                 if result.data and "output" in result.data:
                     output_data = result.data["output"]
                     if isinstance(output_data, dict):
@@ -233,13 +243,25 @@ class ComputerUseCrew:
                             print_info(f"Output: {output_data}")
                     else:
                         print_info(f"Output: {output_data}")
+
+                if analysis.requires_gui or analysis.requires_system:
+                    print_failure(
+                        "Subsequent agents require browser output - task cannot continue"
+                    )
+                return self._build_result(task, analysis, results, False)
             else:
                 print_failure(f"Browser task failed: {result.error or 'Unknown error'}")
                 return self._build_result(task, analysis, results, False)
 
         if analysis.requires_gui:
             print_agent_start("GUI")
-            result = await self._execute_gui(task, context)
+            gui_task = analysis.gui_subtask.objective if analysis.gui_subtask else task
+            if analysis.gui_subtask:
+                context["expected_output"] = analysis.gui_subtask.expected_output
+                print_info(f"📋 Sub-task: {gui_task}")
+                print_info(f"📦 Expected: {analysis.gui_subtask.expected_output}")
+
+            result = await self._execute_gui(gui_task, context)
             results.append(result)
             context["previous_results"].append(result.model_dump())
 
@@ -294,7 +316,15 @@ class ComputerUseCrew:
 
         if analysis.requires_system and not context.get("task_complete"):
             print_agent_start("SYSTEM")
-            result = await self._execute_system(task, context)
+            system_task = (
+                analysis.system_subtask.objective if analysis.system_subtask else task
+            )
+            if analysis.system_subtask:
+                context["expected_output"] = analysis.system_subtask.expected_output
+                print_info(f"📋 Sub-task: {system_task}")
+                print_info(f"📦 Expected: {analysis.system_subtask.expected_output}")
+
+            result = await self._execute_system(system_task, context)
             results.append(result)
 
             if result.handoff_requested:

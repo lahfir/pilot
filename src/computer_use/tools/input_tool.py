@@ -134,6 +134,33 @@ class InputTool:
         pyautogui.write(text, interval=interval)
         return True
 
+    def paste_text(self, text: str) -> bool:
+        """
+        Paste text using clipboard (much faster than typing).
+        Copies text to clipboard and uses Cmd+V (macOS) or Ctrl+V (other).
+
+        Args:
+            text: Text to paste
+
+        Returns:
+            True if paste completed
+        """
+        import pyperclip
+        import platform
+
+        # Copy to clipboard
+        pyperclip.copy(text)
+        time.sleep(0.1)  # Brief pause for clipboard
+
+        # Paste using platform-specific shortcut
+        if platform.system() == "Darwin":  # macOS
+            pyautogui.hotkey("command", "v")
+        else:  # Windows/Linux
+            pyautogui.hotkey("ctrl", "v")
+
+        time.sleep(0.2)  # Brief pause for paste to complete
+        return True
+
     def press_key(self, key: str) -> bool:
         """
         Press a single key.

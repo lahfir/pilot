@@ -3,6 +3,7 @@ Task classification and analysis schemas.
 """
 
 from enum import Enum
+from typing import Optional
 from pydantic import BaseModel, Field
 
 
@@ -17,10 +18,23 @@ class TaskType(str, Enum):
     HYBRID = "hybrid"
 
 
+class AgentSubTask(BaseModel):
+    """
+    Specific sub-task for an individual agent.
+    """
+
+    objective: str = Field(
+        description="Clear, specific objective for this agent to accomplish"
+    )
+    expected_output: str = Field(
+        description="What this agent should produce or deliver to the next agent"
+    )
+
+
 class TaskAnalysis(BaseModel):
     """
-    Task classification for agent delegation.
-    Coordinator ONLY classifies - agents handle execution planning.
+    Task classification and breakdown for intelligent agent delegation.
+    Coordinator analyzes the task and creates specific sub-tasks for each agent.
     """
 
     task_type: TaskType = Field(description="Primary type of task to execute")
@@ -34,3 +48,15 @@ class TaskAnalysis(BaseModel):
         description="Whether the task needs system/file operations"
     )
     reasoning: str = Field(description="One sentence explanation of classification")
+    browser_subtask: Optional[AgentSubTask] = Field(
+        default=None,
+        description="Specific sub-task for browser agent if required",
+    )
+    gui_subtask: Optional[AgentSubTask] = Field(
+        default=None,
+        description="Specific sub-task for GUI agent if required",
+    )
+    system_subtask: Optional[AgentSubTask] = Field(
+        default=None,
+        description="Specific sub-task for system agent if required",
+    )
