@@ -6,7 +6,6 @@ from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from PIL import Image
 from enum import Enum
 from ..schemas.actions import ActionResult
-from ..schemas.browser_output import BrowserOutput
 from ..schemas.tool_types import ActionExecutionResult
 from ..utils.ui import (
     print_info,
@@ -333,207 +332,54 @@ class GUIAgent:
 
         history_context = ""
         if action_history and len(action_history) > 0:
-            history_context = "\n\nACTION HISTORY (what you've done so far):\n"
-            for h in action_history[-8:]:
+            history_context = "\n\nHISTORY:\n"
+            for h in action_history[-5:]:
                 status = "✅" if h.get("success") else "❌"
-                history_context += (
-                    f"  {status} Step {h['step']}: {h['action']} -> {h['target']}\n"
-                )
-
-            if len(action_history) >= 4:
-                recent_targets = [h["target"] for h in action_history[-4:]]
-                if len(set(recent_targets)) == 2:
-                    is_alternating = all(
-                        recent_targets[i] != recent_targets[i + 1]
-                        for i in range(len(recent_targets) - 1)
-                    )
-                    if is_alternating:
-                        history_context += f"\n⚠️  WARNING: You're alternating between {recent_targets[0]} and {recent_targets[1]}! This is a loop!\n⚠️  You need to do something DIFFERENT or hand off to another approach!\n"
-
-            history_context += "\n💡 SMART TIPS:\n"
-            history_context += "  • If you copied, you must paste!\n"
-            history_context += "  • If action failed, try a different approach!\n"
-            history_context += "  • If you're going back and forth, STOP and mark done or try keyboard!\n"
+                history_context += f"{status} {h['action']} → {h['target']}\n"
 
         accessibility_context = ""
         if accessibility_elements and len(accessibility_elements) > 0:
-            accessibility_context = "\n\nAVAILABLE ACCESSIBILITY ELEMENTS (use these identifiers for 100% accuracy):\n"
-            for elem in accessibility_elements[:30]:  # Show first 30 elements
+            accessibility_context = "\n\nACCESSIBILITY ELEMENTS:\n"
+            for elem in accessibility_elements[:20]:
                 identifier = elem.get("identifier", "")
                 role = elem.get("role", "")
-                desc = elem.get("description", "")
                 if identifier:
-                    accessibility_context += f"  • {identifier} ({role})"
-                    if desc and desc != identifier:
-                        accessibility_context += f" - {desc}"
-                    accessibility_context += "\n"
+                    accessibility_context += f"• {identifier} ({role})\n"
 
         previous_work_context = ""
-        if self.context and self.context.get("previous_results"):
-            prev_results = self.context.get("previous_results", [])
-            if prev_results:
-                previous_work_context = "\n\n" + "=" * 60 + "\n"
-                previous_work_context += "PREVIOUS AGENT WORK (Build on this!):\n"
-                previous_work_context += "=" * 60 + "\n"
-
-                for i, res in enumerate(prev_results, 1):
-                    agent_type = res.get("method_used", "unknown")
-                    action = res.get("action_taken", "")
+        if self.context and self.context.get("agent_results"):
+            results = self.context.get("agent_results", [])
+            if results:
+                previous_work_context = "\n\nPREVIOUS WORK:\n"
+                for res in results:
+                    agent = res.get("agent", "")
+                    subtask = res.get("subtask", "")
                     success = "✅" if res.get("success") else "❌"
-                    previous_work_context += (
-                        f"\n{success} Agent {i} ({agent_type}): {action}\n"
-                    )
-
+                    previous_work_context += f"{success} {agent}: {subtask}\n"
                     if res.get("data"):
-                        data = res.get("data", {})
-                        output = data.get("output")
+                        data = res.get("data")
+                        if isinstance(data, dict) and data.get("files"):
+                            previous_work_context += f"   Files: {', '.join(data['files'])}\n"
 
-                        if isinstance(output, dict):
-                            try:
-                                browser_output = BrowserOutput(**output)
-                                previous_work_context += (
-                                    f"\n📝 Summary:\n{browser_output.text}\n"
-                                )
-
-                                if browser_output.has_files():
-                                    previous_work_context += (
-                                        "\n📁 DOWNLOADED FILES (use these paths!):\n"
-                                    )
-                                    for file_path in browser_output.files:
-                                        previous_work_context += f"   • {file_path}\n"
-
-                                    previous_work_context += "\n📊 File Details:\n"
-                                    for file_detail in browser_output.file_details:
-                                        size_kb = file_detail.size / 1024
-                                        previous_work_context += f"   • {file_detail.name} ({size_kb:.1f} KB)\n"
-                                        previous_work_context += (
-                                            f"     Path: {file_detail.path}\n"
-                                        )
-                            except Exception:
-                                if output.get("text"):
-                                    previous_work_context += (
-                                        f"\n📝 Summary:\n{output['text']}\n"
-                                    )
-
-                        elif isinstance(output, str):
-                            previous_work_context += f"     Output: {output}\n"
-
-                        if "downloaded_file" in data:
-                            previous_work_context += (
-                                f"     Downloaded: {data['downloaded_file']}\n"
-                            )
-                        if "file_location" in data:
-                            previous_work_context += (
-                                f"     Location: {data['file_location']}\n"
-                            )
-
-                previous_work_context += "\n" + "=" * 60 + "\n"
-                previous_work_context += "🎯 YOUR JOB: Use the files/data above to complete the current task!\n"
-                previous_work_context += "=" * 60 + "\n"
+        actions_list = "\n".join([f"- {action.value}" for action in GUIActionType])
 
         prompt = f"""
-You are a GUI automation agent. Analyze the screenshot and decide the NEXT single action.
+You are a GUI automation agent. Analyze the screenshot and decide the NEXT action.
 
 TASK: {task}
-Current Step: {step}{last_action_text}{history_context}{previous_work_context}{accessibility_context}
+Step: {step}{last_action_text}{history_context}{previous_work_context}{accessibility_context}
 
-═══════════════════════════════════════════════════════════
-STEP 1: OBSERVE THE SCREENSHOT
-═══════════════════════════════════════════════════════════
-- What application is open?
-- What folder/page are you currently in?
-- What UI elements are visible?
-- What's the current state?
+AVAILABLE ACTIONS:
+{actions_list}
 
-═══════════════════════════════════════════════════════════
-STEP 2: UNDERSTAND THE WORKFLOW
-═══════════════════════════════════════════════════════════
+GUIDELINES:
+• Use open_app with app name (e.g., "Calculator") to launch apps - don't click icons
+• Use accessibility identifiers when available (100% accurate)
+• For typing: type full expressions, use "\\n" for Enter key
+• Check your history - don't repeat failed actions
+• If stuck or can't proceed → set is_complete and explain
 
-Common workflows you MUST understand:
-
-📋 COPY/PASTE FILES:
-  1. Navigate to source location
-  2. Select the file (single click)
-  3. Copy it (right-click → Copy, or use keyboard Cmd+C on Mac)
-  4. Navigate to destination location
-  5. Paste it (right-click → Paste, or use keyboard Cmd+V on Mac)
-  6. If task says "open", then open the pasted file
-
-⚠️  CRITICAL: You CANNOT paste before you copy!
-⚠️  CRITICAL: Double-clicking opens a file, it does NOT copy it!
-
-🧮 CALCULATOR:
-  - Type the full expression (e.g., "2+2")
-  - Press Enter with input_text="\\n"
-
-═══════════════════════════════════════════════════════════
-STEP 3: DECIDE NEXT ACTION
-═══════════════════════════════════════════════════════════
-
-Available actions:
-- open_app: Launch application (use app name: "Calculator", "Notes", "Safari", etc.)
-- click: Single click (select items, click buttons)
-- double_click: Open files/folders
-- right_click: Open context menu (for Copy, Paste, etc.)
-- type: Type text or special keys (\\n = Enter)
-- scroll: Scroll up/down
-- read: Extract text from screen
-- done: Mark task complete
-
-Action selection rules:
-⚡ OPENING APPS: ALWAYS use open_app action with app name (e.g., target="Calculator")
-   ❌ NEVER try to click desktop icons or dock icons to open apps
-   ✅ ALWAYS: open_app → "Calculator"
-✅ Use accessibility identifiers when available (100% accurate)
-✅ Use visible text from screenshot for OCR fallback
-✅ For file operations: click to select, right-click for menu
-✅ Check history to avoid repeating failed actions
-✅ If stuck after 2 failures → mark done (let system agent try)
-
-═══════════════════════════════════════════════════════════
-EXAMPLES OF SMART DECISIONS
-═══════════════════════════════════════════════════════════
-
-Task: "Open Calculator and calculate 5+3"
-  ❌ BAD: click → "Calculator icon on desktop" (slow, unreliable!)
-  ✅ GOOD: open_app → "Calculator" (fast, direct!)
-  
-  After Calculator opens:
-  ✅ GOOD: type → "5+3"
-  ✅ GOOD: type → "\\n" (press Enter)
-
-Task: "Copy image from Downloads to Documents"
-  Current: In Downloads folder, see image.png
-  ❌ BAD: double_click → image.png (opens it, doesn't copy!)
-  ❌ BAD: click → Documents (haven't copied anything yet!)
-  ✅ GOOD: click → image.png (select it first)
-  
-  Next step after selecting:
-  ✅ GOOD: right_click → image.png (opens context menu with Copy)
-  
-  After copying:
-  ✅ GOOD: click → Documents (now navigate to destination)
-  
-  In Documents:
-  ✅ GOOD: right_click → empty space (opens menu with Paste)
-
-Task: "Calculate 5+3" (assume Calculator already open)
-  ✅ GOOD: type → "5+3"
-  ✅ GOOD: type → "\\n" (press Enter)
-  ❌ BAD: click → "5", click → "+", click → "3" (too slow!)
-
-Task: "Find file and email it"
-  Current: Can't find email option in GUI
-  ✅ GOOD: mark is_complete=False (let system agent use CLI)
-
-═══════════════════════════════════════════════════════════
-
-Now, based on the screenshot and your history, what is the NEXT action?
-Think step-by-step:
-1. Where am I now?
-2. What have I already done?
-3. What's the NEXT step in the workflow?
-4. What action accomplishes that step?
+What's the next action to make progress on the task?
 """
 
         try:
