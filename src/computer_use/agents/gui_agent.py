@@ -471,7 +471,7 @@ STEP 3: DECIDE NEXT ACTION
 ═══════════════════════════════════════════════════════════
 
 Available actions:
-- open_app: Launch application
+- open_app: Launch application (use app name: "Calculator", "Notes", "Safari", etc.)
 - click: Single click (select items, click buttons)
 - double_click: Open files/folders
 - right_click: Open context menu (for Copy, Paste, etc.)
@@ -481,6 +481,9 @@ Available actions:
 - done: Mark task complete
 
 Action selection rules:
+⚡ OPENING APPS: ALWAYS use open_app action with app name (e.g., target="Calculator")
+   ❌ NEVER try to click desktop icons or dock icons to open apps
+   ✅ ALWAYS: open_app → "Calculator"
 ✅ Use accessibility identifiers when available (100% accurate)
 ✅ Use visible text from screenshot for OCR fallback
 ✅ For file operations: click to select, right-click for menu
@@ -490,6 +493,14 @@ Action selection rules:
 ═══════════════════════════════════════════════════════════
 EXAMPLES OF SMART DECISIONS
 ═══════════════════════════════════════════════════════════
+
+Task: "Open Calculator and calculate 5+3"
+  ❌ BAD: click → "Calculator icon on desktop" (slow, unreliable!)
+  ✅ GOOD: open_app → "Calculator" (fast, direct!)
+  
+  After Calculator opens:
+  ✅ GOOD: type → "5+3"
+  ✅ GOOD: type → "\\n" (press Enter)
 
 Task: "Copy image from Downloads to Documents"
   Current: In Downloads folder, see image.png
@@ -506,7 +517,7 @@ Task: "Copy image from Downloads to Documents"
   In Documents:
   ✅ GOOD: right_click → empty space (opens menu with Paste)
 
-Task: "Calculate 5+3"
+Task: "Calculate 5+3" (assume Calculator already open)
   ✅ GOOD: type → "5+3"
   ✅ GOOD: type → "\\n" (press Enter)
   ❌ BAD: click → "5", click → "+", click → "3" (too slow!)

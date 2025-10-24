@@ -126,7 +126,7 @@ class ComputerUseCrew:
         """
         console.print(f"\n[bold cyan]🎯 Task:[/bold cyan] {task}\n")
 
-        agents_map = {
+        agents_map: dict[str, BrowserAgent | GUIAgent | SystemAgent] = {
             "browser": self.browser_agent,
             "gui": self.gui_agent,
             "system": self.system_agent,
