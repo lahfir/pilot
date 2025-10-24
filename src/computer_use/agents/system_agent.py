@@ -3,35 +3,13 @@ System agent that uses shell commands dynamically.
 LLM generates commands iteratively based on output.
 """
 
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 import subprocess
-from pydantic import BaseModel, Field
-from ..schemas.actions import ActionResult, CommandResult
+from ..schemas.actions import ActionResult, CommandResult, ShellCommand
 from ..utils.ui import print_info, print_success, print_failure, console
 
 if TYPE_CHECKING:
     from ..schemas.workflow import WorkflowContext
-
-
-class ShellCommand(BaseModel):
-    """
-    Shell command decision from LLM.
-    """
-
-    command: str = Field(
-        description="Shell command to execute (e.g., 'ls ~/Documents')"
-    )
-    reasoning: str = Field(description="Why this command is needed")
-    is_complete: bool = Field(default=False, description="Is the task fully complete?")
-    needs_handoff: bool = Field(
-        default=False, description="Does this need another agent (e.g., GUI)?"
-    )
-    handoff_agent: Optional[str] = Field(
-        default=None, description="Which agent to handoff to: 'gui' or 'browser'"
-    )
-    handoff_reason: Optional[str] = Field(
-        default=None, description="Why handoff is needed"
-    )
 
 
 class SystemAgent:
@@ -63,7 +41,7 @@ class SystemAgent:
 
         Args:
             task: Natural language task description
-            context: Optional context from other agents (handoff info)
+            context: Optional WorkflowContext from previous agents
 
         Returns:
             ActionResult with task status
@@ -77,25 +55,6 @@ class SystemAgent:
                 error="System agent requires LLM",
             )
 
-        handoff_context = context.get("handoff_context") if context else None
-        confirmation_manager = context.get("confirmation_manager") if context else None
-
-        if not confirmation_manager:
-            return ActionResult(
-                success=False,
-                action_taken="No confirmation manager",
-                method_used="system",
-                confidence=0.0,
-                error="System agent requires confirmation manager for safety",
-            )
-
-        if handoff_context:
-            print_info("Received handoff from GUI agent")
-            console.print(
-                f"  [dim]Failed action: {handoff_context.get('failed_action')}[/dim]"
-            )
-            console.print("  [dim]Will use CLI instead...[/dim]\n")
-
         self.command_history = []
         step = 0
         task_complete = False
@@ -106,17 +65,8 @@ class SystemAgent:
         while step < self.max_steps and not task_complete:
             step += 1
 
-            if confirmation_manager.is_denied():
-                return ActionResult(
-                    success=False,
-                    action_taken="User stopped agent",
-                    method_used="system_shell",
-                    confidence=0.0,
-                    error="User denied command execution",
-                )
-
             command_decision = await self._get_next_command(
-                task, handoff_context, last_output, step
+                task, context, last_output, step
             )
 
             console.print(f"\n[bold cyan]Step {step}:[/bold cyan]")
@@ -143,17 +93,6 @@ class SystemAgent:
 
             if command:
                 console.print(f"  [yellow]Command:[/yellow] [cyan]{command}[/cyan]")
-
-                allowed, reason = confirmation_manager.request_confirmation(command)
-
-                if not allowed:
-                    return ActionResult(
-                        success=False,
-                        action_taken=f"Command denied: {command}",
-                        method_used="system_shell",
-                        confidence=0.0,
-                        error=f"User {reason} command",
-                    )
 
                 result = self._execute_command(command)
                 self.command_history.append(
@@ -199,7 +138,7 @@ class SystemAgent:
     async def _get_next_command(
         self,
         task: str,
-        handoff_context: Optional[Dict],
+        context: "WorkflowContext | None",
         last_output: str,
         step: int,
     ) -> ShellCommand:
@@ -208,7 +147,7 @@ class SystemAgent:
 
         Args:
             task: Original task
-            handoff_context: Context from handoff
+            context: WorkflowContext with previous agent results
             last_output: Output from last command
             step: Current step number
 
@@ -221,13 +160,12 @@ You are a shell command agent. Generate ONE shell command at a time to accomplis
 TASK: {task}
 """
 
-        if handoff_context:
-            prompt += f"""
-HANDOFF CONTEXT:
-- GUI agent failed: {handoff_context.get("failed_action")} → {handoff_context.get("failed_target")}
-- Current app: {handoff_context.get("current_app")}
-- You need to accomplish this via shell commands
-"""
+        if context and context.agent_results:
+            prompt += "\n\nPREVIOUS AGENT WORK:\n"
+            for res in context.agent_results:
+                status = "✅" if res.success else "❌"
+                prompt += f"{status} {res.agent}: {res.subtask}\n"
+            prompt += "\n"
 
         if self.command_history:
             prompt += "\nCOMMAND HISTORY:\n"

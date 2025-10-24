@@ -18,6 +18,27 @@ class CommandResult(BaseModel):
     error: Optional[str] = Field(default=None, description="stderr or error message")
 
 
+class ShellCommand(BaseModel):
+    """
+    Shell command decision from LLM for system agent.
+    """
+
+    command: str = Field(
+        description="Shell command to execute (e.g., 'ls ~/Documents')"
+    )
+    reasoning: str = Field(description="Why this command is needed")
+    is_complete: bool = Field(default=False, description="Is the task fully complete?")
+    needs_handoff: bool = Field(
+        default=False, description="Does this need another agent (e.g., GUI)?"
+    )
+    handoff_agent: Optional[str] = Field(
+        default=None, description="Which agent to handoff to: 'gui' or 'browser'"
+    )
+    handoff_reason: Optional[str] = Field(
+        default=None, description="Why handoff is needed"
+    )
+
+
 class GUIAction(BaseModel):
     """
     Structured action for GUI automation.
