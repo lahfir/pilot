@@ -361,7 +361,7 @@ class PermissionChecker:
                 )
                 console.print()
 
-                wait = console.input(
+                console.input(
                     "[bold cyan]Press Enter after granting permissions...[/bold cyan] "
                 )
                 return True

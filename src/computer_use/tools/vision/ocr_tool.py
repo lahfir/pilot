@@ -128,7 +128,7 @@ class OCRTool:
                 )
                 continue
 
-        console.print(f"      [OCR] All engines exhausted, no match found")
+        console.print("      [OCR] All engines exhausted, no match found")
         return []
 
     def extract_all_text(self, screenshot: Image.Image) -> List[OCRResult]:
@@ -147,7 +147,7 @@ class OCRTool:
 
         # Try each engine in priority order until we get results
         for idx, engine in enumerate(self.fallback_engines):
-            engine_name = engine.__class__.__name__.replace("Engine", "").replace(
+            engine.__class__.__name__.replace("Engine", "").replace(
                 "OCR", ""
             )
 

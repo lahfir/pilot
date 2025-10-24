@@ -1,9 +1,10 @@
 """
 CrewAI crew configuration for computer use automation.
+Uses CrewAI's built-in orchestration with memory and context passing.
 """
 
 from pathlib import Path
-from crewai import Agent
+from crewai import Agent, Crew, Process
 from .config.llm_config import LLMConfig
 from .agents.coordinator import CoordinatorAgent
 from .agents.gui_agent import GUIAgent
@@ -182,6 +183,72 @@ class ComputerUseCrew:
 
     async def execute_task(self, task: str) -> dict:
         """
+        Execute task using CrewAI's intelligent orchestration.
+
+        Coordinator analyzes task and creates intelligent Task objects.
+        CrewAI handles execution with memory and context passing.
+
+        Args:
+            task: Natural language task description
+
+        Returns:
+            Result dictionary with execution details
+        """
+        console.print(f"\n[bold cyan]🎯 Task:[/bold cyan] {task}\n")
+
+        # PHASE 1: Create intelligent tasks via coordinator
+        console.print("[bold]Creating intelligent workflow plan...[/bold]")
+
+        available_agents = {
+            "browser": self.browser_agent.create_crewai_agent(),
+            "gui": self.gui_agent.create_crewai_agent(),
+            "system": self.system_agent.create_crewai_agent(self.confirmation_manager),
+        }
+
+        tasks = await self.coordinator_agent.create_intelligent_tasks(
+            task, available_agents
+        )
+
+        console.print(f"[green]✓ Created {len(tasks)} intelligent tasks[/green]\n")
+
+        # PHASE 2: Create CrewAI Crew with memory
+        crew = Crew(
+            agents=list(available_agents.values()),
+            tasks=tasks,
+            process=Process.sequential,
+            memory=True,
+            verbose=True,
+            full_output=True,
+        )
+
+        # PHASE 3: Let CrewAI orchestrate (handles context passing automatically)
+        console.print("[bold]🚀 Starting CrewAI orchestration...[/bold]\n")
+
+        try:
+            result = await crew.kickoff_async()
+
+            console.print(
+                "\n[bold green]✅ Task completed successfully![/bold green]\n"
+            )
+
+            return {
+                "success": True,
+                "result": str(result),
+                "tasks_completed": len(tasks),
+                "crew_output": result,
+            }
+        except Exception as e:
+            console.print(f"\n[bold red]❌ Task failed: {str(e)}[/bold red]\n")
+            return {
+                "success": False,
+                "error": str(e),
+                "tasks_attempted": len(tasks),
+            }
+
+    async def execute_task_legacy(self, task: str) -> dict:
+        """
+        LEGACY: Old manual execution method (kept for fallback).
+
         Execute task with sequential agent coordination and data passing.
         Agents execute in order with context from previous agents.
 
@@ -191,7 +258,39 @@ class ComputerUseCrew:
         Returns:
             Result dictionary with execution details
         """
-        analysis = await self.coordinator_agent.analyze_task(task)
+        from .schemas.task_analysis import TaskAnalysis
+
+        # Simple classification for legacy mode
+        task_lower = task.lower()
+        requires_browser = any(
+            word in task_lower
+            for word in ["research", "web", "download", "internet", "search", "online"]
+        )
+        requires_gui = any(
+            word in task_lower
+            for word in ["app", "calculator", "notes", "stickies", "numbers", "open"]
+        )
+        requires_system = any(
+            word in task_lower
+            for word in ["file", "folder", "copy", "move", "organize", "command"]
+        )
+
+        task_type = (
+            "hybrid"
+            if sum([requires_browser, requires_gui, requires_system]) > 1
+            else (
+                "browser" if requires_browser else "gui" if requires_gui else "system"
+            )
+        )
+
+        analysis = TaskAnalysis(
+            task_type=task_type,
+            requires_browser=requires_browser,
+            requires_gui=requires_gui,
+            requires_system=requires_system,
+            reasoning="Legacy classification",
+        )
+
         print_task_analysis(task, analysis)
 
         results = []

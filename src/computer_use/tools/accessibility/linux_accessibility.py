@@ -39,7 +39,7 @@ class LinuxAccessibility:
             self.desktop = pyatspi.Registry.getDesktop(0)
 
             try:
-                apps = list(self.desktop)
+                list(self.desktop)
                 from ...utils.ui import print_success
 
                 print_success("Accessibility API ready with 100% accurate coordinates")

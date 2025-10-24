@@ -41,7 +41,7 @@ class WindowsAccessibility:
 
             try:
                 desktop = Desktop(backend="uia")
-                windows = desktop.windows()
+                desktop.windows()
                 from ...utils.ui import print_success
 
                 print_success("Accessibility API ready with 100% accurate coordinates")

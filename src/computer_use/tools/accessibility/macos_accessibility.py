@@ -40,7 +40,7 @@ class MacOSAccessibility:
             self.atomacos = atomacos
 
             try:
-                app = atomacos.getAppRefByBundleId("com.apple.finder")
+                atomacos.getAppRefByBundleId("com.apple.finder")
 
                 print_success("Accessibility API ready with 100% accurate coordinates")
             except Exception:
