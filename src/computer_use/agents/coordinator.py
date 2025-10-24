@@ -40,86 +40,78 @@ You are an intelligent task coordinator. Your job is to:
 
 Original Task: "{task}"
 
-IMPORTANT PRINCIPLES:
-- Each agent should have a SPECIFIC, FOCUSED sub-task
-- Sub-tasks should be sequential - each agent completes their part and hands off
-- Browser agent: Research, gather data, download files, extract information
-- GUI agent: Interact with desktop apps, open files, enter data, manipulate UI
-- System agent: File operations, folder management, terminal commands
+CRITICAL AGENT RESPONSIBILITIES - READ CAREFULLY:
 
-TASK BREAKDOWN GUIDELINES:
+Browser Agent - Web & Internet:
+- Research and gather information from websites
+- Download files, extract data, take screenshots
+- STOPS after gathering data - does NOT touch desktop apps
 
-For Browser Agent:
-- Objective: What SPECIFIC information/data to research and gather
-- Expected Output: What data/information will be extracted (as text, screenshots, or downloaded files)
-- The browser agent should STOP after gathering the data - NOT try to open desktop apps
-- IMPORTANT: Only specify "download file" or "save as CSV" if the user EXPLICITLY asks for it
-- If user just wants information, browser can extract it as text (no download needed)
+GUI Agent - Desktop Applications:
+- Open and interact with ANY desktop application
+- Click buttons, type text, copy/paste, scroll, navigate menus
+- Handle ALL user interactions with apps (Calculator, Notes, Settings, ANY app)
+- Use clipboard to copy results and paste into other apps
+- EVERYTHING involving opening/using desktop apps = GUI Agent
 
-For GUI Agent:
-- Objective: What SPECIFIC desktop app interaction is needed (use data from previous agent)
-- Expected Output: What should be accomplished in the desktop app
-- Can reference files/data from browser agent if applicable
+System Agent - File System & Shell:
+- File/folder operations via terminal (copy, move, delete, search)
+- Shell commands that don't need GUI
+- Use ONLY when task is purely file/folder management
+- NOT for interacting with GUI applications
 
-For System Agent:
-- Objective: What SPECIFIC file/folder operations are needed
-- Expected Output: What files/folders should exist after completion
+REASONING FRAMEWORK - Think Through These Questions:
 
-EXAMPLES:
+Q1: What is the END GOAL?
+→ What state should exist after completion?
+→ What artifact/result/change should be observable?
 
-Task: "Research Nvidia stock and enter data in Numbers app"
-- requires_browser: true
-- requires_gui: true
-- requires_system: false
-- browser_subtask:
-  - objective: "Research and gather Nvidia stock performance data from financial websites (current price, volume, market cap, etc.)"
-  - expected_output: "Stock performance data extracted as text with key metrics"
-- gui_subtask:
-  - objective: "Open Numbers app, create new document, and manually enter the stock data from browser agent into a formatted table"
-  - expected_output: "Numbers document with Nvidia stock data displayed in a table"
+Q2: What INPUTS are needed?
+→ Does it need information from the internet? (Browser Agent)
+→ Does it need files from the file system? (System Agent)
+→ Does it need data from another app? (Depends on sequence)
 
-Task: "Research Tesla quarterly earnings and save as PDF"
-- requires_browser: true
-- requires_gui: false
-- requires_system: false
-- browser_subtask:
-  - objective: "Find Tesla quarterly earnings report and download it as PDF"
-  - expected_output: "Tesla earnings PDF file downloaded to Downloads folder"
+Q3: What ACTIONS are required?
+→ Visiting websites, extracting data, downloading? (Browser Agent)
+→ Opening apps, clicking, typing, copying, pasting? (GUI Agent)
+→ Creating folders, moving files, shell operations? (System Agent)
 
-Task: "Research Nvidia stock performance"
-- requires_browser: true
-- requires_gui: false
-- requires_system: false
-- browser_subtask:
-  - objective: "Research current Nvidia stock performance including price, volume, market cap, and recent trends"
-  - expected_output: "Stock performance summary with key metrics extracted as text"
+Q4: What is the NATURAL SEQUENCE?
+→ Data must be gathered BEFORE it can be used
+→ Files must exist BEFORE they can be opened
+→ Results must be computed BEFORE they can be pasted
 
-Task: "Download image of Eiffel Tower and set as desktop wallpaper"
-- requires_browser: true
-- requires_gui: true
-- requires_system: false
-- browser_subtask:
-  - objective: "Search for and download a high-quality image of the Eiffel Tower"
-  - expected_output: "Downloaded image file saved to Downloads folder"
-- gui_subtask:
-  - objective: "Open System Preferences, navigate to Desktop settings, and set the downloaded image as wallpaper"
-  - expected_output: "Desktop wallpaper changed to Eiffel Tower image"
+DECISION TREE:
 
-Task: "Open Calculator app"
-- requires_browser: false
-- requires_gui: true
-- requires_system: false
-- gui_subtask:
-  - objective: "Launch the Calculator application"
-  - expected_output: "Calculator app open and ready"
+Does task mention websites, search, research, download from web?
+→ YES: requires_browser = true
+→ Browser objective: What to find/download + where to save it
+→ Browser output: The data/file that will be available for next agent
 
-Task: "Create a folder called Projects in Documents"
-- requires_browser: false
-- requires_gui: false
-- requires_system: true
-- system_subtask:
-  - objective: "Create a new folder named 'Projects' in the Documents directory"
-  - expected_output: "Projects folder exists in ~/Documents/"
+Does task involve desktop applications (any app with UI)?
+→ YES: requires_gui = true
+→ GUI objective: What app interactions needed + data flow between apps
+→ GUI output: What will be visible/changed in the app
+
+Does task involve ONLY file operations with no GUI needed?
+→ YES: requires_system = true
+→ System objective: What file/folder operations needed
+→ System output: What files/folders will exist
+
+CRITICAL THINKING PATTERNS:
+
+Pattern: "Get X from web and put in APP"
+→ Browser: Get X → GUI: Open APP and use X
+
+Pattern: "Calculate X in APP1 and show in APP2"  
+→ GUI: Open APP1, compute X, copy result, open APP2, paste result
+→ (Single GUI task - it handles multi-app workflows!)
+
+Pattern: "Find file and do something with it"
+→ System: Locate file → GUI: Open and interact with file
+
+Pattern: "Research X"
+→ Browser only (gather and return data)
 
 Now analyze this task and provide the breakdown:
 """

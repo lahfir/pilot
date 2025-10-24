@@ -279,6 +279,79 @@ class LinuxAccessibility:
         except Exception:
             return False
 
+    def get_running_app_names(self) -> List[str]:
+        """
+        Get names of all currently running applications.
+
+        Returns:
+            List of running application names
+        """
+        if not self.available:
+            return []
+
+        try:
+            app_names = []
+            for app in self.desktop:
+                try:
+                    if hasattr(app, "name") and app.name:
+                        app_names.append(app.name)
+                except:
+                    continue
+            return app_names
+        except Exception:
+            return []
+
+    def get_frontmost_app_name(self) -> Optional[str]:
+        """
+        Get the name of the application with an active window.
+
+        Returns:
+            Name of app with active window, or None if unavailable
+        """
+        if not self.available:
+            return None
+
+        try:
+            for app in self.desktop:
+                try:
+                    for i in range(app.childCount):
+                        try:
+                            window = app.getChildAtIndex(i)
+                            state_set = window.getState()
+                            if state_set.contains(self.pyatspi.STATE_ACTIVE):
+                                return app.name
+                        except:
+                            continue
+                except:
+                    continue
+            return None
+        except Exception:
+            return None
+
+    def is_app_frontmost(self, app_name: str) -> bool:
+        """
+        Check if an application has an active window.
+
+        Args:
+            app_name: Application name to check
+
+        Returns:
+            True if app has active window, False otherwise
+        """
+        if not self.available:
+            return False
+
+        frontmost_name = self.get_frontmost_app_name()
+        if not frontmost_name:
+            return False
+
+        app_lower = app_name.lower().strip()
+        front_lower = frontmost_name.lower().strip()
+
+        if app_lower in front_lower or front_lower in app_lower:
+            return True
+        return False
+
     def _get_app(self, app_name: Optional[str] = None):
         """Get application reference by name or active app."""
         try:

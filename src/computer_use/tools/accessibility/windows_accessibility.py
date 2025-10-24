@@ -176,6 +176,74 @@ class WindowsAccessibility:
         except Exception:
             return False
 
+    def get_running_app_names(self) -> List[str]:
+        """
+        Get names of all currently running applications.
+
+        Returns:
+            List of running application names
+        """
+        if not self.available:
+            return []
+
+        try:
+            desktop = self.Desktop(backend="uia")
+            windows = desktop.windows()
+            app_names = []
+            seen = set()
+            for window in windows:
+                name = window.window_text()
+                if name and name not in seen:
+                    app_names.append(name)
+                    seen.add(name)
+            return app_names
+        except Exception:
+            return []
+
+    def get_frontmost_app_name(self) -> Optional[str]:
+        """
+        Get the name of the frontmost (active) application window.
+
+        Returns:
+            Name of frontmost app, or None if unavailable
+        """
+        if not self.available:
+            return None
+
+        try:
+            desktop = self.Desktop(backend="uia")
+            windows = desktop.windows()
+            for window in windows:
+                if window.has_focus():
+                    return window.window_text()
+            return None
+        except Exception:
+            return None
+
+    def is_app_frontmost(self, app_name: str) -> bool:
+        """
+        Check if an application window is currently the foreground (active) window.
+
+        Args:
+            app_name: Application name to check
+
+        Returns:
+            True if app is in foreground, False otherwise
+        """
+        if not self.available:
+            return False
+
+        frontmost_name = self.get_frontmost_app_name()
+        if not frontmost_name:
+            return False
+
+        app_lower = app_name.lower().strip()
+        front_lower = frontmost_name.lower().strip()
+
+        if app_lower in front_lower or front_lower in app_lower:
+            return True
+        return False
+
     def get_app_window_bounds(self, app_name: Optional[str] = None) -> Optional[tuple]:
         """
         Get the bounds of the app's main window for OCR cropping.

@@ -136,6 +136,58 @@ class GUIAgent:
                     process_tool.launch_app(self.current_app)
                     await asyncio.sleep(0.3)
 
+            if self.current_app:
+                accessibility_tool = self.tool_registry.get_tool("accessibility")
+                if accessibility_tool and accessibility_tool.available:
+                    if hasattr(accessibility_tool, "is_app_frontmost"):
+                        max_attempts = 3
+                        for attempt in range(max_attempts):
+                            if accessibility_tool.is_app_frontmost(self.current_app):
+                                break
+
+                            if attempt == 0:
+                                print_warning(
+                                    f"{self.current_app} is not frontmost - bringing to front"
+                                )
+                            else:
+                                print_warning(
+                                    f"Retry {attempt}/{max_attempts - 1}: Activating {self.current_app}"
+                                )
+
+                            process_tool = self.tool_registry.get_tool("process")
+                            if process_tool:
+                                process_tool.launch_app(self.current_app)
+                                await asyncio.sleep(1.0 + (attempt * 0.5))
+
+                        if not accessibility_tool.is_app_frontmost(self.current_app):
+                            frontmost = None
+                            if hasattr(accessibility_tool, "get_frontmost_app_name"):
+                                frontmost = accessibility_tool.get_frontmost_app_name()
+
+                            error_msg = f"Failed to bring {self.current_app} to front after {max_attempts} attempts"
+                            if frontmost:
+                                error_msg += f" (frontmost: {frontmost})"
+
+                            print_failure(error_msg)
+
+                            return ActionResult(
+                                success=False,
+                                action_taken=f"Failed to activate {self.current_app}",
+                                method_used="accessibility",
+                                data={
+                                    "error": f"Could not activate {self.current_app}. Please close other windows and try again.",
+                                    "frontmost_app": frontmost,
+                                },
+                            )
+                    elif not accessibility_tool.is_app_running(self.current_app):
+                        print_warning(
+                            f"{self.current_app} is not running - relaunching"
+                        )
+                        process_tool = self.tool_registry.get_tool("process")
+                        if process_tool:
+                            process_tool.launch_app(self.current_app)
+                            await asyncio.sleep(1.2)
+
             screenshot_tool = self.tool_registry.get_tool("screenshot")
             screenshot = screenshot_tool.capture()
 
@@ -205,6 +257,22 @@ class GUIAgent:
                     )
             else:
                 repeated_actions = 0
+
+            if self.current_app and action.action != GUIActionType.OPEN_APP:
+                accessibility_tool = self.tool_registry.get_tool("accessibility")
+                if (
+                    accessibility_tool
+                    and accessibility_tool.available
+                    and hasattr(accessibility_tool, "is_app_frontmost")
+                ):
+                    if not accessibility_tool.is_app_frontmost(self.current_app):
+                        print_warning(
+                            f"Pre-action check: {self.current_app} not frontmost, reactivating"
+                        )
+                        process_tool = self.tool_registry.get_tool("process")
+                        if process_tool:
+                            process_tool.launch_app(self.current_app)
+                            await asyncio.sleep(0.5)
 
             step_result = await self._execute_action(action, screenshot)
 
@@ -276,6 +344,13 @@ class GUIAgent:
 
             last_action = action
             task_complete = action.is_complete
+
+            if task_complete and not step_result.get("success"):
+                print_warning(
+                    "Agent marked complete but last action FAILED - forcing continue"
+                )
+                task_complete = False
+                action.is_complete = False
 
             status = "✅ Task complete" if task_complete else "⏳ Continuing..."
             console.print(f"  [dim]{status}[/dim]")
@@ -457,25 +532,43 @@ BEFORE deciding any action, you MUST first observe the current state:
 ⚠️  ONLY interact with elements you can see or that are in accessibility list!
 
 ═══════════════════════════════════════════════════════════
-WORKFLOW UNDERSTANDING
+META-COGNITIVE REASONING: HOW TO THINK ABOUT ANY WORKFLOW
 ═══════════════════════════════════════════════════════════
 
-Common workflows you MUST understand:
+When facing ANY task, ask yourself these fundamental questions:
 
-📋 COPY/PASTE FILES:
-  1. Navigate to source location
-  2. Select the file (single click)
-  3. Copy it (right-click → Copy, or use keyboard Cmd+C on Mac)
-  4. Navigate to destination location
-  5. Paste it (right-click → Paste, or use keyboard Cmd+V on Mac)
-  6. If task says "open", then open the pasted file
+1. STATE ANALYSIS: "What do I see RIGHT NOW?"
+   → What app is open? What's displayed?
+   → Is there existing content/value/selection?
+   → What UI elements are available?
 
-⚠️  CRITICAL: You CANNOT paste before you copy!
-⚠️  CRITICAL: Double-clicking opens a file, it does NOT copy it!
+2. GOAL DECOMPOSITION: "What needs to happen?"
+   → Break complex goal into atomic steps
+   → Identify dependencies (what must happen first?)
+   → Recognize data flow (where does data come from/go to?)
 
-🧮 CALCULATOR:
-  - Type the full expression (e.g., "2+2")
-  - Press Enter with input_text="\\n"
+3. PRE-CONDITION CHECK: "Is the system ready?"
+   → If input field has old value → must clear first
+   → If nothing selected → must select first
+   → If wrong app → must switch first
+   → If element not visible → must navigate/scroll first
+
+4. ACTION SEQUENCING: "What's the logical order?"
+   → Data flow: Get → Process → Store
+   → Multi-app flow: Do in APP1 → Copy → Open APP2 → Paste
+   → File operations: Select → Action (copy/open/delete)
+   
+5. VERIFICATION: "Did it work?"
+   → Check visual feedback (selection highlight, new window, changed value)
+   → If failed → analyze why, try alternative approach
+
+UNIVERSAL PRINCIPLES FOR ANY WORKFLOW:
+
+• State Awareness: Always observe BEFORE acting
+• Clean Slate: Clear old data before entering new data
+• Causality: Understand what depends on what
+• Atomicity: One clear action at a time
+• Feedback: Verify each step worked before continuing
 
 ═══════════════════════════════════════════════════════════
 ACTION DECISION PROCESS
@@ -486,7 +579,7 @@ Available actions:
 - click: Single click (select items, click buttons)
 - double_click: Open files/folders
 - right_click: Open context menu (for Copy, Paste, etc.)
-- type: Type text or special keys (\\n = Enter)
+- type: Type text or use keyboard shortcuts when appropriate
 - scroll: Scroll up/down
 - read: Extract text from screen
 - done: Mark task complete
@@ -504,74 +597,148 @@ Available actions:
 ✅ If stuck after 2 failures → mark done (let system agent try)
 
 ═══════════════════════════════════════════════════════════
-EXAMPLES OF SMART DECISIONS
+STRATEGIC DECISION MAKING
 ═══════════════════════════════════════════════════════════
 
-Task: "Copy image from Downloads to Documents"
-  Current: In Downloads folder, see image.png
-  ❌ BAD: double_click → image.png (opens it, doesn't copy!)
-  ❌ BAD: click → Documents (haven't copied anything yet!)
-  ✅ GOOD: click → image.png (select it first)
-  
-  Next step after selecting:
-  ✅ GOOD: right_click → image.png (opens context menu with Copy)
-  
-  After copying:
-  ✅ GOOD: click → Documents (now navigate to destination)
-  
-  In Documents:
-  ✅ GOOD: right_click → empty space (opens menu with Paste)
+🧠 Think like a problem solver, not a script follower!
 
-Task: "Calculate 5+3"
-  ✅ GOOD: type → "5+3"
-  ✅ GOOD: type → "\\n" (press Enter)
-  ❌ BAD: click → "5", click → "+", click → "3" (too slow!)
+Pattern Recognition:
+- See similar tasks? Apply similar strategies
+- Different context? Adapt your approach
+- No obvious path? Break down the goal
 
-Task: "Find file and email it"
-  Current: Can't find email option in GUI
-  ✅ GOOD: mark is_complete=False (let system agent use CLI)
+Efficiency Thinking:
+- Multiple ways to do something? Choose fastest
+- Typing vs clicking? Typing is usually faster for text
+- Direct path vs navigation? Direct path when possible
+
+Failure Recovery:
+- Action failed? Ask "why did it fail?"
+- Element not found? Look for alternatives
+- Wrong location? Use navigation tools
+- Can't proceed? Consider if another agent should handle it
+
+Strategic Questions to Ask Yourself:
+1. "What am I trying to accomplish?" (understand the goal)
+2. "What do I currently see?" (observe state)
+3. "What's missing?" (identify gap)
+4. "What tools do I have?" (accessibility, OCR, keyboard, mouse)
+5. "What's the most efficient path?" (plan approach)
+6. "Did it work?" (verify result)
+7. "What's plan B?" (have backup)
 
 ═══════════════════════════════════════════════════════════
 
-🧠 DECISION FRAMEWORK
+🧠 CHAIN-OF-THOUGHT REASONING FRAMEWORK:
 ═══════════════════════════════════════════════════════════
-Now decide your NEXT action using this framework:
 
-1. CURRENT STATE: What do I see on screen RIGHT NOW?
-   - App/window open: ___
-   - Section/page: ___
-   - Visible UI elements: ___
+Your reasoning MUST demonstrate logical thinking through 3 steps:
 
-2. PROGRESS CHECK: What have I accomplished?
-   - Review action_history
-   - What worked? What failed?
+STEP 1: OBSERVATION (What IS)
+→ State current application and visible UI
+→ Note existing values/selections
+→ Identify available actions
 
-3. NEXT LOGICAL STEP: Based on CURRENT STATE (not assumptions)
-   - What's the immediate next step?
-   - Is the element I need VISIBLE or in accessibility list?
-   - If not visible, do I need to navigate/scroll first?
+STEP 2: ANALYSIS (What NEEDS to happen)
+→ Compare current state to goal state
+→ Identify the gap
+→ Consider dependencies and preconditions
 
-4. CHOOSE ACTION: Pick the right action for the visible element
-   - Use exact identifier if in accessibility_elements
-   - Use exact visible text if using OCR
-   - Don't invent element names!
+STEP 3: DECISION (What I WILL do)
+→ Choose action based on analysis
+→ Justify why this action progresses toward goal
+→ Have backup plan if primary approach fails
 
-⚠️  Your 'reasoning' field MUST include your observation of current state!
+QUALITY INDICATORS:
 
-Example reasoning formats:
+Good Reasoning = Specific observations + Logical connection + Clear action
+"Current location is X. Need to reach Y. Will use Z method because [reason]."
 
-GOOD: "I see System Settings is open. Wallpaper option is visible in the sidebar. Clicking it directly to go to wallpaper settings."
+Bad Reasoning = Vague statements + Assumptions + No justification
+"Should click something" / "Probably need to..." / "Going to try..."
 
-GOOD: "Screen shows Wallpaper settings with downloaded files visible. I can see the Eiffel Tower image at /private/tmp/..., clicking directly on it."
+CRITICAL DECISION PRINCIPLES:
+• Directness: Use shortest path to goal
+• Context Awareness: Use data from previous steps/agents
+• Precision: Target exact elements, not random ones
+• Adaptability: Have Plan B if Plan A fails
 
-BAD: "Need to add image" (no observation!)
-BAD: "Going to Desktop & Dock" (inefficient - why not go directly to Wallpaper?)
-BAD: "Image should be in Photos" (assuming instead of using the actual path!)
+═══════════════════════════════════════════════════════════
+🔧 ADAPTIVE INTELLIGENCE: NEVER GIVE UP, THINK DIFFERENTLY
+═══════════════════════════════════════════════════════════
 
-CRITICAL WORKFLOW RULES:
-1. If you see the target UI element ALREADY VISIBLE → click it directly!
-2. If you have an exact file path → navigate to it, don't assume it's elsewhere!
-3. Take the SHORTEST path - don't go through unnecessary menus!
+Failure is feedback. When approach A doesn't work, systematically try B, C, D:
+
+ADAPTIVE THINKING PROCESS:
+
+1. RECOGNIZE FAILURE: "My action didn't produce expected result"
+
+2. DIAGNOSE WHY: 
+   → Element not visible? (need to scroll/navigate)
+   → Element doesn't exist? (look for alternative UI patterns)
+   → Wrong precondition? (need to select/clear something first)
+   → Wrong app/window? (need to switch context)
+
+3. GENERATE ALTERNATIVES:
+   → If direct element fails → look for alternative UI controls
+   → If typing fails → try menu/button clicks
+   → If clicking fails → try keyboard shortcuts
+   → If can't find by name → use add/choose/browse controls
+
+4. NEVER mark complete on failure - try different approach first!
+
+📍 SPATIAL NAVIGATION INTELLIGENCE:
+═══════════════════════════════════════════════════════════
+
+Core Concept: Current State → Goal State Gap Analysis
+
+For ANY navigation task (files, settings, menus):
+
+1. LOCATE YOURSELF: "Where am I currently?"
+2. LOCATE TARGET: "Where do I need to be?"
+3. COMPUTE GAP: "What's the difference?"
+4. CHOOSE METHOD: "What's the optimal path?"
+
+Navigation Method Hierarchy:
+  Priority 1: Direct jump (keyboard shortcuts, search, path input)
+  Priority 2: Visible navigation (menus, breadcrumbs, back/forward)
+  Priority 3: Alternative access (right-click, drag-drop, alternative controls)
+
+Context Data Usage:
+→ Previous agents provide exact coordinates (paths, values, locations)
+→ Use THEIR output, not assumptions
+→ Extract what's relevant: If given "/path/to/file.ext", extract both directory AND filename
+→ Navigate to directory first, THEN select specific item
+
+Universal Pattern:
+  OBSERVE current state
+  → EXTRACT target from context
+  → IDENTIFY gap
+  → SELECT fastest method to bridge gap
+  → EXECUTE and verify
+
+🎯 COMPLETION DECISION LOGIC:
+═══════════════════════════════════════════════════════════
+
+is_complete = True IF AND ONLY IF:
+→ Goal state achieved (observable change happened)
+→ No more actions required
+→ Last action succeeded
+
+is_complete = False IF ANY OF:
+→ Last action failed
+→ Goal not yet reached
+→ Alternative approaches still available
+→ Task in progress but not finished
+
+CRITICAL: Failure ≠ Completion
+Failure = Signal to try different approach
+Completion = Task successfully accomplished
+
+Resilience Formula:
+  Attempt A failed? → Try B
+  Attempt B failed? → Try C
+  All attempts failed? → Mark failure, don't pretend success
 """
 
         try:
@@ -584,7 +751,6 @@ CRITICAL WORKFLOW RULES:
             screenshot.save(buffered, format="PNG")
             img_str = base64.b64encode(buffered.getvalue()).decode()
 
-            # Create message with image
             from langchain_core.messages import HumanMessage
 
             message = HumanMessage(
@@ -602,7 +768,6 @@ CRITICAL WORKFLOW RULES:
 
         except Exception as e:
             print(f"    ⚠️  LLM analysis failed: {e}, using fallback")
-            # Fallback for first step
             if step == 1 and "settings" in task.lower():
                 return GUIAction(
                     action=GUIActionType.OPEN_APP,
@@ -670,15 +835,82 @@ CRITICAL WORKFLOW RULES:
         try:
             result = process_tool.open_application(app_name)
             if result.get("success"):
+                await self._wait_for_app_ready(app_name)
+
                 self.current_app = app_name
                 print(f"    📱 Tracking current app: {app_name}")
 
-                await self._wait_for_app_ready(app_name)
             return ActionExecutionResult(
                 success=result.get("success", False), method="process"
             )
         except Exception as e:
             return ActionExecutionResult(success=False, method="process", error=str(e))
+
+    async def _is_valid_target_app(
+        self, candidate_app: str, requested_app: str, running_apps: list
+    ) -> bool:
+        """
+        Check if candidate app is valid using LLM to intelligently match.
+
+        Args:
+            candidate_app: The frontmost app name
+            requested_app: The app we tried to open
+            running_apps: List of all running applications
+
+        Returns:
+            True if candidate is a valid target app
+        """
+        from pydantic import BaseModel, Field
+
+        class AppValidation(BaseModel):
+            """Validation result for target app."""
+
+            is_valid: bool = Field(
+                description="True if candidate is the correct app, False otherwise"
+            )
+            reasoning: str = Field(description="Brief explanation of decision")
+
+        candidate_lower = candidate_app.lower().strip()
+        requested_lower = requested_app.lower().strip()
+
+        if requested_lower in candidate_lower or candidate_lower in requested_lower:
+            return True
+
+        if not self.llm_client:
+            return False
+
+        try:
+            import asyncio
+
+            structured_llm = self.llm_client.with_structured_output(AppValidation)
+
+            running_apps_limited = running_apps[:20] if running_apps else []
+            running_apps_str = "\n".join(
+                [f"  - {app}" for app in running_apps_limited if app]
+            )
+
+            prompt = f"""Requested: "{requested_app}"
+Frontmost: "{candidate_app}"
+
+All running apps:
+{running_apps_str}
+
+Is "{candidate_app}" the target app for "{requested_app}"?
+
+Consider:
+- OS renames (e.g., "System Preferences" → "System Settings")
+- Partial matches acceptable
+- System UI elements (notifications, docks, taskbars) are NOT target apps
+- File pickers, dialogs FROM target app ARE valid"""
+
+            result = await asyncio.wait_for(structured_llm.ainvoke(prompt), timeout=3.0)
+            return result.is_valid
+
+        except asyncio.TimeoutError:
+            print("    ⚠️  LLM validation timeout")
+            return False
+        except Exception:
+            return False
 
     async def _wait_for_app_ready(self, app_name: str) -> None:
         """
@@ -950,11 +1182,18 @@ CRITICAL WORKFLOW RULES:
     async def _type_text(self, text: Optional[str]) -> ActionExecutionResult:
         """
         Type or paste text at current cursor position.
-        Uses paste (clipboard) for large text blocks (>100 chars) for speed.
+
+        Intelligently pastes (via clipboard) for:
+        - File paths (starts with / or ~ or contains path separators)
+        - URLs (http/https)
+        - Long text (>50 chars)
+
+        Waits 1.5s before typing to allow dialogs/fields to fully open.
         Supports special characters like '\n' for Enter/Return key.
+        Supports keyboard shortcuts like 'cmd+shift+g' or 'ctrl+c'.
 
         Args:
-            text: Text to type or paste
+            text: Text to type or paste (or keyboard shortcut)
 
         Returns:
             ActionExecutionResult with typing details
@@ -964,16 +1203,28 @@ CRITICAL WORKFLOW RULES:
                 success=False, method="type", error="No text provided"
             )
 
+        await asyncio.sleep(1.5)
+
         input_tool = self.tool_registry.get_tool("input")
         try:
-            if text == "\\n" or text == "\n":
+            if "+" in text and len(text.split("+")) <= 4:
+                keys = [k.strip().lower() for k in text.split("+")]
+                key_map = {
+                    "cmd": "command",
+                    "ctrl": "ctrl",
+                    "alt": "alt",
+                    "shift": "shift",
+                }
+                mapped_keys = [key_map.get(k, k) for k in keys]
+                print(f"    ⌨️  Hotkey: {' + '.join(mapped_keys)}")
+                input_tool.hotkey(*mapped_keys)
+            elif text == "\\n" or text == "\n":
                 print("    ⌨️  Pressing Enter/Return key")
                 import pyautogui
 
                 pyautogui.press("return")
-            elif len(text) > 100:
-                # Use paste for large text blocks (much faster!)
-                print(f"    📋 Pasting large text ({len(text)} chars)...")
+            elif self._should_paste(text):
+                print(f"    📋 Pasting text ({len(text)} chars)...")
                 input_tool.paste_text(text)
             else:
                 print(f"    ⌨️  Typing: '{text}'")
@@ -981,6 +1232,35 @@ CRITICAL WORKFLOW RULES:
             return ActionExecutionResult(success=True, method="type", typed_text=text)
         except Exception as e:
             return ActionExecutionResult(success=False, method="type", error=str(e))
+
+    def _should_paste(self, text: str) -> bool:
+        """
+        Determine if text should be pasted instead of typed.
+
+        Returns True if:
+        - Text is a file path (starts with / or ~, or contains path separators)
+        - Text is longer than 50 characters
+        - Text contains URLs
+
+        Args:
+            text: Text to evaluate
+
+        Returns:
+            True if should paste, False if should type
+        """
+        if len(text) > 50:
+            return True
+
+        if text.startswith("/") or text.startswith("~"):
+            return True
+
+        if "\\" in text or ("/" in text and len(text) > 20):
+            return True
+
+        if text.startswith("http://") or text.startswith("https://"):
+            return True
+
+        return False
 
     async def _scroll(self, direction: str = "down") -> ActionExecutionResult:
         """
@@ -1020,7 +1300,6 @@ CRITICAL WORKFLOW RULES:
         Returns:
             ActionExecutionResult with double-click details
         """
-        # Try to find element first
         result = await self._click_element(target, screenshot)
         if result.get("success") and result.get("coordinates"):
             x, y = result["coordinates"]
@@ -1043,7 +1322,6 @@ CRITICAL WORKFLOW RULES:
         Returns:
             ActionExecutionResult with right-click details
         """
-        # Try to find element first
         result = await self._click_element(target, screenshot)
         if result.get("success") and result.get("coordinates"):
             x, y = result["coordinates"]

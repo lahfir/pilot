@@ -271,40 +271,92 @@ TASK: {task}
             prompt += "=" * 60 + "\n\n"
 
         if handoff_context:
-            prompt += f"""
-HANDOFF CONTEXT:
-- GUI agent failed: {handoff_context.get("failed_action")} → {handoff_context.get("failed_target")}
-- Current app: {handoff_context.get("current_app")}
-- You need to accomplish this via shell commands
-"""
+            prompt += "\n" + "=" * 60 + "\n"
+            prompt += "HANDOFF FROM GUI AGENT:\n"
+            prompt += "=" * 60 + "\n"
+            prompt += f"GUI agent tried: {handoff_context.get('failed_action')} → {handoff_context.get('failed_target')}\n"
+            prompt += f"Current app: {handoff_context.get('current_app')}\n"
+            prompt += f"Reason for handoff: {handoff_context.get('error', 'Element not found in GUI')}\n"
+            prompt += "\n🎯 YOUR JOB: Complete this task using shell commands since GUI approach failed\n"
+            prompt += "=" * 60 + "\n\n"
 
         if self.command_history:
-            prompt += "\nCOMMAND HISTORY:\n"
-            for i, cmd in enumerate(self.command_history[-3:], 1):
-                prompt += f"  {i}. {cmd['command']}\n"
-                if cmd["output"]:
-                    prompt += f"     Output: {cmd['output'][:100]}...\n"
+            prompt += "\n" + "=" * 60 + "\n"
+            prompt += "YOUR COMMAND HISTORY (What you've tried):\n"
+            prompt += "=" * 60 + "\n"
+            failed_commands = []
+            successful_steps = []
+
+            for i, cmd in enumerate(self.command_history[-5:], 1):
+                success_marker = "✅" if cmd.get("success") else "❌"
+                prompt += f"{success_marker} Step {i}: {cmd['command']}\n"
+
+                if cmd.get("output"):
+                    output_preview = cmd["output"][:200].strip()
+                    prompt += f"   Output: {output_preview}\n"
+
+                if not cmd.get("success"):
+                    failed_commands.append(cmd["command"])
+                else:
+                    successful_steps.append((cmd["command"], cmd.get("output", "")))
+
+            if successful_steps:
+                prompt += "\n✅ SUCCESSFUL STEPS - Build on these:\n"
+                for cmd, output in successful_steps[-2:]:
+                    prompt += f"   • {cmd}\n"
+                    if output:
+                        prompt += f"     Result: {output[:100].strip()}\n"
+
+            if failed_commands:
+                prompt += "\n❌ FAILED COMMANDS - DO NOT REPEAT:\n"
+                for failed_cmd in failed_commands:
+                    prompt += f"   • {failed_cmd}\n"
+                prompt += "\n💡 Try a DIFFERENT approach for what failed!\n"
+
+            prompt += "=" * 60 + "\n"
 
         if last_output:
             prompt += f"\nLAST OUTPUT:\n{last_output}\n"
 
         prompt += f"""
-GUIDELINES:
-1. Generate ONE command to progress toward the goal
-2. Common commands:
-   - ls ~/Documents (see what's there)
-   - cp source dest (copy files)
-   - mv source dest (move files)
-   - open file (open with default app)
-   - find ~/Documents -name "*.png" (search for files)
+STRATEGIC GUIDELINES:
 
-3. If task needs GUI interaction (e.g., edit file content), set needs_handoff=true
+1. WORKFLOW THINKING:
+   - Analyze what you accomplished so far
+   - If you found a file → copy/move/open it (progress!)
+   - If command failed → try DIFFERENT approach (don't repeat!)
+   - Sequence matters: find → copy → open (NOT: find → find → find)
 
-4. Set is_complete=true when task is fully done
+2. LEARN FROM FAILURES:
+   - Command not found? Use alternative commands
+   - Permission denied? Try different approach
+   - Path doesn't exist? Check what's available first
 
-5. Use full paths (~/Documents, ~/Downloads, etc.)
+3. CROSS-PLATFORM COMMANDS:
+   - List files: ls, find
+   - Copy/move: cp, mv
+   - Open files: Detect platform and use appropriate command
+   - Random selection: Use available tools (head, tail, sort)
+   - If tool doesn't exist, find alternatives!
+
+4. PROBLEM-SOLVING:
+   - Previous step succeeded? Build on it, don't redo it
+   - Got output with file path? Use that path in next command
+   - Task has multiple steps? Complete them in sequence
+   - Don't assume - verify results first
+
+5. COMPLETION:
+   - Set is_complete=true ONLY when ALL steps are done
+   - If task needs GUI (editing file content, visual interaction), set needs_handoff=true
+   - Use full paths (~/Documents, ~/Downloads, etc.)
 
 CURRENT STEP: {step}
+
+⚠️  CRITICAL RULES:
+- DO NOT repeat failed commands
+- DO NOT repeat successful steps
+- DO build on previous success
+- DO try different approaches when stuck
 
 Generate the next command:
 """

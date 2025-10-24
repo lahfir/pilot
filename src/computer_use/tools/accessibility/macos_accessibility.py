@@ -26,7 +26,7 @@ class MacOSAccessibility:
             return False
 
         try:
-            import atomacos
+            import atomacos  # noqa: F401
 
             return True
         except ImportError:
@@ -40,7 +40,7 @@ class MacOSAccessibility:
             self.atomacos = atomacos
 
             try:
-                app = atomacos.getAppRefByBundleId("com.apple.finder")
+                atomacos.getAppRefByBundleId("com.apple.finder")
 
                 print_success("Accessibility API ready with 100% accurate coordinates")
             except Exception:
@@ -111,10 +111,25 @@ class MacOSAccessibility:
             app = self._get_app(app_name)
             windows = self._get_app_windows(app)
 
+            print(f"    Searching {len(windows)} window(s) for interactive elements")
+
             for window in windows:
                 self._collect_interactive_elements(window, elements)
 
-        except Exception:
+            if len(elements) == 0 and len(windows) > 0:
+                frontmost = self.atomacos.NativeUIElement.getFrontmostApp()
+                if frontmost and hasattr(frontmost, "AXTitle"):
+                    frontmost_name = str(frontmost.AXTitle)
+                    if frontmost_name.lower() != (app_name or "").lower():
+                        print(
+                            f"    ⚠️  Frontmost app is '{frontmost_name}', trying that instead"
+                        )
+                        frontmost_windows = self._get_app_windows(frontmost)
+                        for window in frontmost_windows:
+                            self._collect_interactive_elements(window, elements)
+
+        except Exception as e:
+            print(f"    ⚠️  Accessibility search error: {e}")
             pass
 
         return elements
@@ -176,7 +191,7 @@ class MacOSAccessibility:
                     try:
                         desc_obj = container.AXAttributedDescription
                         description = str(desc_obj).split("{")[0].strip()
-                    except:
+                    except Exception:
                         pass
 
                 if not description:
@@ -197,7 +212,7 @@ class MacOSAccessibility:
                 for child in container.AXChildren:
                     self._collect_interactive_elements(child, elements, depth + 1)
 
-        except:
+        except Exception:
             pass
 
     def find_elements(
@@ -233,6 +248,18 @@ class MacOSAccessibility:
             for window in windows:
                 self._traverse_and_collect(window, label, role, elements)
 
+            if len(elements) == 0 and app_name:
+                frontmost = self.atomacos.NativeUIElement.getFrontmostApp()
+                if frontmost and hasattr(frontmost, "AXTitle"):
+                    frontmost_name = str(frontmost.AXTitle)
+                    if frontmost_name.lower() != app_name.lower():
+                        console.print(
+                            f"    [yellow]⚠️  Also checking frontmost app: {frontmost_name}[/yellow]"
+                        )
+                        frontmost_windows = self._get_app_windows(frontmost)
+                        for window in frontmost_windows:
+                            self._traverse_and_collect(window, label, role, elements)
+
             console.print(f"  [green]Found {len(elements)} elements[/green]")
 
         except Exception:
@@ -265,6 +292,90 @@ class MacOSAccessibility:
             return app is not None
         except Exception:
             return False
+
+    def get_running_app_names(self) -> List[str]:
+        """
+        Get names of all currently running applications.
+
+        Returns:
+            List of running application names
+        """
+        if not self.available:
+            return []
+
+        try:
+            import subprocess
+
+            result = subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    'tell application "System Events" to get name of every application process',
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            apps_string = result.stdout.strip()
+            app_names = [app.strip() for app in apps_string.split(",")]
+            return app_names
+        except Exception:
+            return []
+
+    def get_frontmost_app_name(self) -> Optional[str]:
+        """
+        Get the name of the frontmost (active) application using AppleScript.
+        This is more reliable than atomacos as it ignores transient system UI.
+
+        Returns:
+            Name of frontmost app, or None if unavailable
+        """
+        if not self.available:
+            return None
+
+        try:
+            import subprocess
+
+            result = subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    'tell application "System Events" to get name of first application process whose frontmost is true',
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=2,
+            )
+            app_name = result.stdout.strip()
+            return app_name if app_name else None
+        except Exception:
+            return None
+
+    def is_app_frontmost(self, app_name: str) -> bool:
+        """
+        Check if an application is currently the frontmost (active) app.
+        Uses fuzzy matching to handle partial names and child windows.
+
+        Args:
+            app_name: Application name to check
+
+        Returns:
+            True if app or related windows are frontmost, False otherwise
+        """
+        if not self.available:
+            return False
+
+        frontmost_name = self.get_frontmost_app_name()
+        if not frontmost_name:
+            return False
+
+        app_lower = app_name.lower().strip()
+        front_lower = frontmost_name.lower().strip()
+
+        if app_lower in front_lower or front_lower in app_lower:
+            return True
+        return False
 
     def _get_app_windows(self, app):
         """Get all windows for an application."""
@@ -324,7 +435,7 @@ class MacOSAccessibility:
                     if result:
                         return result
 
-        except:
+        except Exception:
             pass
 
         return None
@@ -345,7 +456,7 @@ class MacOSAccessibility:
                     desc_str = str(element.AXAttributedDescription).lower()
                     if desc_str == target_text:
                         return True
-                except:
+                except Exception:
                     pass
 
             if hasattr(element, "AXTitle") and element.AXTitle:
@@ -358,7 +469,7 @@ class MacOSAccessibility:
                 if value == target_text:
                     return True
 
-        except:
+        except Exception:
             pass
 
         return False
@@ -437,12 +548,12 @@ class MacOSAccessibility:
                             "confidence": 1.0,
                         }
                     )
-                except:
+                except Exception:
                     pass
 
             if hasattr(container, "AXChildren") and container.AXChildren:
                 for child in container.AXChildren:
                     self._traverse_and_collect(child, label, role, elements, depth + 1)
 
-        except:
+        except Exception:
             pass

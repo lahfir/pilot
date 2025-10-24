@@ -93,13 +93,10 @@ class BrowserTool:
                 task=full_task,
                 llm=self.llm_client,
                 browser_session=browser_session,
-                max_failures=5,  # Allow more retries for complex tasks
+                max_failures=5,
             )
 
-            # Limit to 30 steps max to prevent infinite loops
             result: AgentHistoryList = await agent.run(max_steps=30)
-
-            await browser_session.kill()
 
             agent_called_done = result.is_done()
             task_completed_successfully = result.is_successful()
@@ -107,6 +104,42 @@ class BrowserTool:
 
             downloaded_files = []
             file_details = []
+
+            search_locations = [
+                Path(tempfile.gettempdir()),
+                Path("/tmp"),
+                Path("/private/tmp"),
+            ]
+
+            seen_dirs = set()
+            for temp_base in search_locations:
+                if not temp_base.exists():
+                    continue
+
+                search_pattern = str(temp_base / "browser-use-downloads-*")
+                found_dirs = glob.glob(search_pattern)
+
+                for download_dir in found_dirs:
+                    download_path = Path(download_dir).resolve()
+                    if str(download_path) in seen_dirs:
+                        continue
+                    seen_dirs.add(str(download_path))
+
+                    if download_path.exists():
+                        for file_path in download_path.rglob("*"):
+                            if file_path.is_file():
+                                abs_path = str(file_path.absolute())
+                                if abs_path not in downloaded_files:
+                                    downloaded_files.append(abs_path)
+                                    file_details.append(
+                                        FileDetail(
+                                            path=abs_path,
+                                            name=file_path.name,
+                                            size=file_path.stat().st_size,
+                                        )
+                                    )
+
+            await browser_session.kill()
 
             if result.history and len(result.history) > 0:
                 last_result = result.history[-1].result
@@ -128,7 +161,10 @@ class BrowserTool:
             browser_data_dir = temp_dir / "browseruse_agent_data"
             if browser_data_dir.exists():
                 for file_path in browser_data_dir.rglob("*"):
-                    if file_path.is_file():
+                    if (
+                        file_path.is_file()
+                        and str(file_path.absolute()) not in downloaded_files
+                    ):
                         downloaded_files.append(str(file_path.absolute()))
                         file_details.append(
                             FileDetail(
@@ -137,26 +173,6 @@ class BrowserTool:
                                 size=file_path.stat().st_size,
                             )
                         )
-
-            browser_use_download_dirs = glob.glob(
-                str(Path(tempfile.gettempdir()) / "browser-use-downloads-*")
-            )
-            for download_dir in browser_use_download_dirs:
-                download_path = Path(download_dir)
-                if download_path.exists():
-                    for file_path in download_path.rglob("*"):
-                        if (
-                            file_path.is_file()
-                            and str(file_path.absolute()) not in downloaded_files
-                        ):
-                            downloaded_files.append(str(file_path.absolute()))
-                            file_details.append(
-                                FileDetail(
-                                    path=str(file_path.absolute()),
-                                    name=file_path.name,
-                                    size=file_path.stat().st_size,
-                                )
-                            )
 
             error_list = result.errors()
             has_errors = any(e for e in error_list if e)
