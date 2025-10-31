@@ -27,9 +27,19 @@ class EasyOCREngine:
         Initialize EasyOCR reader.
         """
         try:
-            import easyocr
+            import warnings
+            import logging
+            from contextlib import redirect_stdout, redirect_stderr
+            from io import StringIO
 
-            self.reader = easyocr.Reader(["en"], gpu=False)
+            warnings.filterwarnings("ignore")
+            logging.getLogger("easyocr").setLevel(logging.ERROR)
+
+            f = StringIO()
+            with redirect_stdout(f), redirect_stderr(f):
+                import easyocr
+
+                self.reader = easyocr.Reader(["en"], gpu=False, verbose=False)
         except ImportError:
             print("EasyOCR not available. Install with: pip install easyocr")
             self.reader = None

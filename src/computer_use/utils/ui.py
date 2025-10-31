@@ -327,3 +327,57 @@ def print_action_history(history: list):
         )
 
     console.print(table)
+
+
+def print_webhook_status(port: int, status: str = "starting"):
+    """
+    Display webhook server status with styled panel.
+
+    Args:
+        port: Port number the webhook is using
+        status: Status of webhook ('starting', 'ready', 'failed', 'port_changed')
+    """
+    if status == "starting":
+        console.print(
+            f"[cyan]🌐 Twilio webhook server starting on port {port}...[/cyan]"
+        )
+    elif status == "ready":
+        table = Table(
+            title="📞 Twilio Webhook Server", box=box.ROUNDED, show_header=False
+        )
+        table.add_column("Property", style="cyan")
+        table.add_column("Value", style="white")
+
+        table.add_row("Status", "[green]✅ Ready[/green]")
+        table.add_row("Local URL", f"http://localhost:{port}/sms")
+        table.add_row("Health Check", f"http://localhost:{port}/health")
+        table.add_row("Ngrok Command", f"[yellow]ngrok http {port}[/yellow]")
+
+        console.print(table)
+    elif status == "port_changed":
+        console.print(
+            f"[yellow]⚠️  Port {port - 1} in use, trying port {port}...[/yellow]"
+        )
+    elif status == "failed":
+        console.print(f"[red]❌ Could not start webhook server on port {port}[/red]")
+
+
+def print_twilio_config_status(is_configured: bool, phone_number: str = None):
+    """
+    Display Twilio configuration status.
+
+    Args:
+        is_configured: Whether Twilio is configured
+        phone_number: Twilio phone number if configured
+    """
+    if is_configured and phone_number:
+        console.print(
+            f"[green]✅ Twilio configured with number: {phone_number}[/green]"
+        )
+    elif not is_configured:
+        console.print(
+            "[yellow]⚠️  Twilio not configured (phone verification unavailable)[/yellow]"
+        )
+        console.print(
+            "[dim]   Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER in .env[/dim]"
+        )

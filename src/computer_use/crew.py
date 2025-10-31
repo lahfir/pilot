@@ -40,6 +40,7 @@ class ComputerUseCrew:
         vision_llm_client=None,
         browser_llm_client=None,
         confirmation_manager=None,
+        twilio_service=None,
     ):
         """
         Initialize crew with platform-specific tools.
@@ -51,6 +52,7 @@ class ComputerUseCrew:
             vision_llm_client: Optional LLM client for vision tasks
             browser_llm_client: Optional LLM client for browser automation
             confirmation_manager: CommandConfirmation instance for shell command approval
+            twilio_service: Optional TwilioService instance for phone verification
         """
         self.capabilities = capabilities
         self.safety_checker = safety_checker
@@ -70,6 +72,7 @@ class ComputerUseCrew:
             safety_checker=safety_checker,
             coordinate_validator=coordinate_validator,
             llm_client=self.browser_llm,
+            twilio_service=twilio_service,
         )
 
         self.agents_config = self._load_yaml_config("agents.yaml")

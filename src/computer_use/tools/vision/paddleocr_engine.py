@@ -47,12 +47,22 @@ class PaddleOCREngine:
         Initialize PaddleOCR with appropriate settings.
         """
         try:
-            from paddleocr import PaddleOCR
+            import os
+            import warnings
+            from contextlib import redirect_stdout, redirect_stderr
+            from io import StringIO
 
-            self.ocr = PaddleOCR(
-                use_textline_orientation=True,
-                lang="en",
-            )
+            os.environ["PPOCR_SHOW_LOG"] = "False"
+            warnings.filterwarnings("ignore")
+
+            f = StringIO()
+            with redirect_stdout(f), redirect_stderr(f):
+                from paddleocr import PaddleOCR
+
+                self.ocr = PaddleOCR(
+                    use_textline_orientation=True,
+                    lang="en",
+                )
         except ImportError:
             print(
                 "PaddleOCR not available. Install with: pip install paddleocr paddlepaddle"

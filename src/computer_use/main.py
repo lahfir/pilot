@@ -23,6 +23,17 @@ async def main():
     """
     Main execution function.
     """
+    import logging
+    import warnings
+    import os
+
+    warnings.filterwarnings("ignore")
+    os.environ["PPOCR_SHOW_LOG"] = "False"
+
+    for logger_name in ["browser_use", "easyocr", "paddleocr", "werkzeug", "flask"]:
+        logging.getLogger(logger_name).setLevel(logging.CRITICAL)
+        logging.getLogger(logger_name).propagate = False
+
     setup_logging()
 
     print_banner()
@@ -37,20 +48,33 @@ async def main():
 
     print_section_header("Initializing Systems", "🚀")
 
-    console.print("[cyan]• Safety Checker[/cyan]")
-    safety_checker = SafetyChecker()
+    from .services.twilio_service import TwilioService
+    from .services.webhook_server import WebhookServer
+    from .utils.ui import print_twilio_config_status
+    from .config.llm_config import LLMConfig
 
-    console.print("[cyan]• Command Confirmation System[/cyan]")
-    confirmation_manager = CommandConfirmation()
+    twilio_service = TwilioService()
+    twilio_service.set_llm_client(LLMConfig.get_llm())
 
-    console.print("[cyan]• AI Agents & Tool Registry[/cyan]")
+    if twilio_service.is_configured():
+        print_twilio_config_status(True, twilio_service.get_phone_number())
+        webhook_server = WebhookServer(twilio_service)
+        webhook_server.start()
+    else:
+        print_twilio_config_status(False)
+        webhook_server = None
+
     crew = ComputerUseCrew(
-        capabilities, safety_checker, confirmation_manager=confirmation_manager
+        capabilities,
+        SafetyChecker(),
+        confirmation_manager=CommandConfirmation(),
+        twilio_service=twilio_service,
     )
+
     console.print(
         f"[green]✅ Loaded {len(crew.tool_registry.list_available_tools())} tools[/green]"
     )
-    console.print("[green]✅ Crew initialized with Browser-Use integration[/green]")
+    console.print("[green]✅ Crew initialized successfully[/green]")
 
     print_section_header("Ready for Automation", "✨")
 

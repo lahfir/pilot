@@ -5,6 +5,14 @@ description: Documentation and README guidelines
 
 # Documentation Standards
 
+## Documentation File Management
+
+- **NEVER create final documentation files** (_.md, _.mdx, _.rst, _.txt, README.md, etc.)
+- If documentation needs to be added or updated, **always modify existing documentation files**
+- Search for existing documentation files before making any changes
+- Append or update content in existing files rather than creating new ones
+- Only create documentation files if explicitly requested by the user
+
 ## README Files
 
 - Include clear project description and purpose

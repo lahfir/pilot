@@ -9,6 +9,7 @@ import glob
 
 from ..schemas.actions import ActionResult
 from ..schemas.browser_output import BrowserOutput, FileDetail
+from .twilio_controller import create_twilio_tools
 
 if TYPE_CHECKING:
     from browser_use.agent.views import AgentHistoryList  # noqa: F401
@@ -18,18 +19,26 @@ class BrowserTool:
     """
     Browser-Use integration for web automation.
     Browser-Use Agent handles all browser interactions internally.
+    Includes Twilio phone verification support.
     """
 
-    def __init__(self, llm_client=None):
+    def __init__(self, llm_client=None, twilio_service=None):
         """
         Initialize browser tool with Browser-Use.
 
         Args:
-            llm_client: LLM client for browser agent (from LLMConfig)
+            llm_client: LLM client for browser agent (Browser-Use LLM)
+            twilio_service: Optional TwilioService instance (initialized at startup)
         """
         self.browser_session = None
         self.llm_client = llm_client
         self.available = self._initialize_browser()
+
+        self.twilio_service = twilio_service
+        self.twilio_tools = None
+
+        if self.twilio_service and self.twilio_service.is_configured():
+            self.twilio_tools = create_twilio_tools(self.twilio_service)
 
     def _initialize_browser(self) -> bool:
         """
@@ -93,6 +102,7 @@ class BrowserTool:
                 task=full_task,
                 llm=self.llm_client,
                 browser_session=browser_session,
+                tools=self.twilio_tools,
                 max_failures=5,
             )
 
@@ -236,11 +246,17 @@ class BrowserTool:
 
     async def close(self):
         """
-        Close browser instance if needed.
+        Close browser instance and webhook server if needed.
         Browser-Use handles cleanup automatically.
         """
         if self.browser_session:
             try:
                 await self.browser_session.kill()
+            except Exception:
+                pass
+
+        if self.webhook_server:
+            try:
+                self.webhook_server.stop()
             except Exception:
                 pass

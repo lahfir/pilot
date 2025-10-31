@@ -75,6 +75,7 @@ Our multi-tier accuracy system addresses these challenges:
 
 - ✅ Cross-platform support (macOS, Windows, Linux)
 - ✅ Provider-agnostic LLM integration (OpenAI, Anthropic, Google, Ollama)
+- ✅ Automated phone verification (Twilio SMS integration)
 - ✅ Comprehensive safety validation
 - ✅ Structured logging and error handling
 - ✅ Rate limiting and coordinate validation
@@ -94,6 +95,7 @@ Our multi-tier accuracy system addresses these challenges:
 | `read`         | Screen text extraction        | OCR recognition              |
 | `navigate`     | Web page navigation           | Browser-Use automation       |
 | `download`     | File downloads                | Browser-Use automation       |
+| `verify_phone` | SMS verification automation   | Twilio integration           |
 
 ---
 
@@ -130,6 +132,7 @@ uv run python -m computer_use.main
 > Open Calculator and compute 1234 × 5678
 > Create folder named "reports" in Documents
 > Move file from Downloads to Documents folder
+> Sign up on website with phone verification
 ```
 
 ---
@@ -467,6 +470,15 @@ OLLAMA_BASE_URL=http://localhost:11434
 
 # Serper API for web search (Browser-Use)
 SERPER_API_KEY=...
+
+# ==============================================
+# Phone Verification (Optional)
+# ==============================================
+
+# Twilio for SMS verification automation
+TWILIO_ACCOUNT_SID=...
+TWILIO_AUTH_TOKEN=...
+TWILIO_PHONE_NUMBER=+1234567890
 ```
 
 ### Supported LLM Models

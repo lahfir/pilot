@@ -43,9 +43,12 @@ Original Task: "{task}"
 CRITICAL AGENT RESPONSIBILITIES - READ CAREFULLY:
 
 Browser Agent - Web & Internet:
-- Research and gather information from websites
+- Navigate websites, search, research, extract information
 - Download files, extract data, take screenshots
-- STOPS after gathering data - does NOT touch desktop apps
+- Fill web forms, handle signups/logins (including phone verification)
+- Complete ENTIRE web workflows (signup, purchase, form submission)
+- ONLY stops when web task is fully complete
+- Does NOT interact with desktop applications
 
 GUI Agent - Desktop Applications:
 - Open and interact with ANY desktop application
@@ -100,6 +103,13 @@ Does task involve ONLY file operations with no GUI needed?
 
 CRITICAL THINKING PATTERNS:
 
+Pattern: "Signup/Login to website X"
+→ Browser ONLY (navigate, fill form, handle verification, complete signup)
+→ NOT Browser + GUI! Browser handles the entire web workflow!
+
+Pattern: "Download X from web"
+→ Browser ONLY (navigate, find file, download to disk)
+
 Pattern: "Get X from web and put in APP"
 → Browser: Get X → GUI: Open APP and use X
 
@@ -111,7 +121,7 @@ Pattern: "Find file and do something with it"
 → System: Locate file → GUI: Open and interact with file
 
 Pattern: "Research X"
-→ Browser only (gather and return data)
+→ Browser ONLY (gather and return data)
 
 Now analyze this task and provide the breakdown:
 """

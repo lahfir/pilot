@@ -47,6 +47,7 @@ class PlatformToolRegistry:
         safety_checker: Optional[SafetyChecker] = None,
         coordinate_validator: Optional[CoordinateValidator] = None,
         llm_client: Optional[Any] = None,
+        twilio_service: Optional[Any] = None,
     ) -> None:
         """
         Initialize tool registry with platform capabilities.
@@ -56,11 +57,13 @@ class PlatformToolRegistry:
             safety_checker: Optional SafetyChecker instance
             coordinate_validator: Optional CoordinateValidator instance
             llm_client: Optional LLM client for browser agent
+            twilio_service: Optional TwilioService instance for phone verification
         """
         self.capabilities: PlatformCapabilities = capabilities
         self.safety_checker: Optional[SafetyChecker] = safety_checker
         self.coordinate_validator: Optional[CoordinateValidator] = coordinate_validator
         self.llm_client: Optional[Any] = llm_client
+        self.twilio_service: Optional[Any] = twilio_service
         self.tools: Dict[str, ToolType] = self._initialize_tools()
 
     def _initialize_tools(self) -> Dict[str, ToolType]:
@@ -96,7 +99,9 @@ class PlatformToolRegistry:
         tools["input"] = InputTool(validator=self.coordinate_validator)
         tools["process"] = ProcessTool()
         tools["file"] = FileTool(safety_checker=self.safety_checker)
-        tools["browser"] = BrowserTool(llm_client=self.llm_client)
+        tools["browser"] = BrowserTool(
+            llm_client=self.llm_client, twilio_service=self.twilio_service
+        )
 
         return tools
 

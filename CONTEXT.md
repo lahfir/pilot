@@ -46,6 +46,7 @@ A multi-agent autonomous desktop and web automation system that combines:
 - **Type Safety**: Pydantic for schemas and validation
 - **UI**: Rich library for professional terminal interface
 - **LLM Providers**: Google Gemini, Anthropic Claude, OpenAI GPT
+- **Phone Verification**: Twilio for SMS verification automation
 
 ### Platform Support
 
@@ -256,6 +257,7 @@ if result.success:
 - Web navigation and interaction
 - File downloads
 - Form filling and submission
+- Phone verification with SMS codes (via Twilio)
 - Data extraction from websites
 - API calls through browser
 
@@ -638,6 +640,7 @@ src/computer_use/
 │   └── coordinator.py        # Task routing
 ├── tools/
 │   ├── browser_tool.py       # Browser-Use wrapper
+│   ├── twilio_tools.py       # Twilio custom actions
 │   ├── platform_registry.py  # Cross-platform tools
 │   ├── accessibility/
 │   │   ├── macos_accessibility.py
@@ -650,6 +653,9 @@ src/computer_use/
 │   ├── screenshot_tool.py    # Screen capture
 │   ├── process_tool.py       # App launching
 │   └── file_tool.py          # File operations
+├── services/
+│   ├── twilio_service.py     # SMS management
+│   └── webhook_server.py     # SMS webhook receiver
 ├── schemas/
 │   ├── actions.py            # ActionResult
 │   └── browser_output.py     # BrowserOutput, FileDetail
@@ -687,6 +693,11 @@ BROWSER_LLM_MODEL=gemini-2.5-flash
 GOOGLE_API_KEY=your_key
 ANTHROPIC_API_KEY=your_key
 OPENAI_API_KEY=your_key
+
+# Twilio (Optional - for phone verification)
+TWILIO_ACCOUNT_SID=your_sid
+TWILIO_AUTH_TOKEN=your_token
+TWILIO_PHONE_NUMBER=+1234567890
 ```
 
 ### LLM Configuration
