@@ -21,16 +21,39 @@ class CoordinatorAgent:
         """
         self.llm_client = llm_client
 
-    async def analyze_task(self, task: str) -> TaskAnalysis:
+    async def analyze_task(
+        self, task: str, conversation_history: list = None
+    ) -> TaskAnalysis:
         """
         Analyze user task using LLM and break it down into specific sub-tasks.
 
         Args:
             task: User's natural language task description
+            conversation_history: List of previous messages and responses for context
 
         Returns:
             TaskAnalysis with classification and specific sub-tasks for each agent
         """
+        if conversation_history is None:
+            conversation_history = []
+
+        history_context = ""
+        if conversation_history:
+            history_context = "\n\nConversation History (for context):\n"
+            for i, entry in enumerate(conversation_history[-5:], 1):
+                user_msg = entry.get("user", "")
+                result = entry.get("result", {})
+                analysis = result.get("analysis", {})
+                direct_resp = (
+                    analysis.get("direct_response")
+                    if isinstance(analysis, dict)
+                    else None
+                )
+
+                history_context += f"{i}. User: {user_msg}\n"
+                if direct_resp:
+                    history_context += f"   Assistant: {direct_resp}\n"
+
         prompt = f"""
 You are an intelligent task coordinator. Your job is to:
 1. Analyze the overall task
@@ -41,8 +64,9 @@ You are an intelligent task coordinator. Your job is to:
    - Set requires_browser, requires_gui, requires_system all to false
    - Provide a friendly, helpful direct_response to answer the user
    - Be conversational, warm, and helpful in your response
-
-Original Task: "{task}"
+   - Use conversation history to provide contextual responses
+{history_context}
+Current Task: "{task}"
 
 CRITICAL AGENT RESPONSIBILITIES - READ CAREFULLY:
 

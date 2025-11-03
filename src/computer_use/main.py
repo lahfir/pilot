@@ -79,6 +79,8 @@ async def main():
 
     print_section_header("Ready for Automation", "✨")
 
+    conversation_history = []
+
     while True:
         try:
             task = await get_task_input()
@@ -93,7 +95,12 @@ async def main():
             console.print(
                 f"\n[bold yellow]⏳ Processing:[/bold yellow] [white]{task}[/white]"
             )
-            result = await crew.execute_task(task)
+            result = await crew.execute_task(task, conversation_history)
+
+            conversation_history.append({"user": task, "result": result})
+
+            if len(conversation_history) > 10:
+                conversation_history = conversation_history[-10:]
 
             print_task_result(result)
 

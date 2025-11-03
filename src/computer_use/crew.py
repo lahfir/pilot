@@ -182,18 +182,22 @@ class ComputerUseCrew:
             llm=self.llm,
         )
 
-    async def execute_task(self, task: str) -> dict:
+    async def execute_task(self, task: str, conversation_history: list = None) -> dict:
         """
         Execute task with sequential agent coordination and data passing.
         Agents execute in order with context from previous agents.
 
         Args:
             task: Natural language task description
+            conversation_history: List of previous messages and responses
 
         Returns:
             Result dictionary with execution details
         """
-        analysis = await self.coordinator_agent.analyze_task(task)
+        if conversation_history is None:
+            conversation_history = []
+
+        analysis = await self.coordinator_agent.analyze_task(task, conversation_history)
         print_task_analysis(task, analysis)
 
         if analysis.direct_response:
