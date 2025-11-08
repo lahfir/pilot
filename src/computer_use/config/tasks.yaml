@@ -1,60 +1,247 @@
-coordination_task:
-  description: >
-    Analyze the user's request: "{task}"
-
-    Conversation History:
-    {conversation_history}
-
-    Determine:
-    1. Is this a conversational message or an automation task?
-    2. If conversational: Provide a direct, helpful response
-    3. If automation: Which agents are needed (browser, gui, system)?
-    4. Break down into sub-tasks with clear objectives and expected outputs
-
-    Return your analysis as structured data.
-  expected_output: >
-    TaskAnalysis with:
-    - direct_response (if conversational)
-    - requires_browser, requires_gui, requires_system (booleans)
-    - Subtasks with objective and expected_output for each agent
-  agent: coordinator
-
-browser_task:
-  description: >
-    Call web_automation tool with task parameter: "{browser_subtask}"
-    
-    Context: {context}
-  expected_output: >
-    Tool execution results
+# BROWSER TASK - Single Template (Browser-Use is Fully Autonomous)
+browser_autonomous_task:
+  description: "Complete this web automation goal: {goal}. Work fully autonomously using Browser-Use capabilities."
+  expected_output: "Complete results from web automation including extracted data, file paths, URLs, and confirmation of task completion."
   agent: browser_agent
 
-gui_task:
-  description: >
-    Execute this desktop automation task: {gui_subtask}
-
-    Context from previous agents:
-    {context}
-
-    YOU MUST USE YOUR GUI TOOLS - DO NOT provide a text response without using tools!
-
-    Available tools: take_screenshot, click_element, type_text, open_application, read_screen_text, scroll, find_application
-
-    Use these tools to:
-    - Open required applications
-    - Navigate through UI elements
-    - Perform clicks, typing, and other interactions
-    - Use exact file paths from previous agents (don't assume locations)
-
-    Take screenshots, analyze current state, decide next action, repeat until complete.
-  expected_output: >
-    Results from tool execution showing steps taken and final state
+# GUI TASKS - Comprehensive Library for Manager Selection
+gui_launch_application:
+  description: "Launch {app_name} application on this system. Verify successful startup."
+  expected_output: "Confirmation that {app_name} is running and visible on screen."
   agent: gui_agent
 
-system_task:
-  description: >
-    Call execute_shell_command tool to: "{system_subtask}"
-    
-    Context: {context}
-  expected_output: >
-    Tool execution results
+gui_find_app_for_capability:
+  description: "Find best application on this platform for {capability}. Launch it."
+  expected_output: "Application name providing {capability} and confirmation it is running."
+  agent: gui_agent
+
+gui_create_blank_document:
+  description: "In {app_name}, create new blank document ready for content input."
+  expected_output: "New document created and ready in {app_name}."
+  agent: gui_agent
+
+gui_enter_text_content:
+  description: "Type or paste this content into active document: {content}"
+  expected_output: "Confirmation that content has been entered successfully."
+  agent: gui_agent
+
+gui_save_current_document:
+  description: "Save current document as {filename} in {directory}. Create directories if needed."
+  expected_output: "File saved to {directory}/{filename}."
+  agent: gui_agent
+
+gui_complete_file_save_workflow:
+  description: "Complete end-to-end workflow: Find appropriate text editor, open it, create new document, input this content: {content}, save to {filepath}. Work autonomously through all steps using screenshots to verify state."
+  expected_output: "File successfully created at {filepath} with provided content."
+  agent: gui_agent
+
+gui_click_ui_element:
+  description: "In {app_name}, click {target} using accessibility first, OCR fallback. Verify action."
+  expected_output: "{target} clicked, resulting screen state."
+  agent: gui_agent
+
+gui_navigate_to_menu:
+  description: "In {app_name}, navigate to menu: {menu_path}. Click through hierarchy."
+  expected_output: "Menu {menu_path} opened or action executed."
+  agent: gui_agent
+
+gui_read_screen_content:
+  description: "Capture all visible text using OCR. Organize in readable format."
+  expected_output: "All visible screen text, structured and readable."
+  agent: gui_agent
+
+gui_verify_display:
+  description: "Verify screen shows {expected_content}. Screenshot and analyze. Report match or difference."
+  expected_output: "Confirmation if {expected_content} is visible, or description of actual state."
+  agent: gui_agent
+
+gui_quit_application:
+  description: "Close {app_name}. Handle unsaved dialogs per {save_preference}."
+  expected_output: "{app_name} closed successfully."
+  agent: gui_agent
+
+gui_scroll_to_element:
+  description: "Scroll {direction} until {target_element} visible. Stop when found."
+  expected_output: "{target_element} found or not found after scrolling."
+  agent: gui_agent
+
+gui_focus_window:
+  description: "Switch to window titled {window_identifier}. Use platform switcher if needed."
+  expected_output: "Target window now active."
+  agent: gui_agent
+
+gui_capture_screen_state:
+  description: "Screenshot current screen, analyze visible elements, active app, overall state."
+  expected_output: "Description of screen state with key elements."
+  agent: gui_agent
+
+gui_open_existing_file:
+  description: "In {app_name}, open file at {filepath}. Navigate dialog, locate, open."
+  expected_output: "{filepath} now open in {app_name}."
+  agent: gui_agent
+
+gui_select_text_pattern:
+  description: "Select text matching {text_pattern} in document. Use shortcuts or click-drag."
+  expected_output: "Text selected successfully."
+  agent: gui_agent
+
+gui_copy_selection:
+  description: "Copy selected content to clipboard. Verify clipboard has content."
+  expected_output: "Content copied to clipboard."
+  agent: gui_agent
+
+gui_paste_clipboard:
+  description: "Paste clipboard at cursor. Verify appears correctly."
+  expected_output: "Clipboard pasted successfully."
+  agent: gui_agent
+
+gui_type_text_sequence:
+  description: "Type text sequence {text} character by character."
+  expected_output: "Text {text} typed successfully."
+  agent: gui_agent
+
+gui_press_keyboard_shortcut:
+  description: "Press keyboard shortcut {shortcut} in {app_name}."
+  expected_output: "Shortcut {shortcut} executed, resulting action."
+  agent: gui_agent
+
+gui_drag_and_drop:
+  description: "Drag {source_element} and drop on {target_element}."
+  expected_output: "Drag and drop completed successfully."
+  agent: gui_agent
+
+gui_resize_window:
+  description: "Resize {app_name} window to {dimensions}."
+  expected_output: "Window resized to {dimensions}."
+  agent: gui_agent
+
+gui_maximize_window:
+  description: "Maximize {app_name} window to full screen."
+  expected_output: "Window maximized."
+  agent: gui_agent
+
+gui_minimize_window:
+  description: "Minimize {app_name} window."
+  expected_output: "Window minimized."
+  agent: gui_agent
+
+# SYSTEM TASKS - Comprehensive Library for Manager Selection
+system_make_directory:
+  description: "Create directory at {path}. Create parents recursively if needed."
+  expected_output: "Directory exists at {path}, created or already present."
+  agent: system_agent
+
+system_write_to_file:
+  description: "Write content to {filepath}. Create parents if needed. Overwrite if exists. Content: {content}"
+  expected_output: "Content written to {filepath}."
+  agent: system_agent
+
+system_append_file_content:
+  description: "Append content to {filepath}. Create if not exists. Content: {content}"
+  expected_output: "Content appended to {filepath}."
+  agent: system_agent
+
+system_read_file_contents:
+  description: "Read and return contents of {filepath}. Error if not readable."
+  expected_output: "Complete contents of {filepath} or error."
+  agent: system_agent
+
+system_relocate_file:
+  description: "Move {source} to {destination}. Create dest dir if needed."
+  expected_output: "File moved from {source} to {destination}."
+  agent: system_agent
+
+system_duplicate_file:
+  description: "Copy {source} to {destination}. Preserve attributes. Create dest dir if needed."
+  expected_output: "File copied from {source} to {destination}."
+  agent: system_agent
+
+system_remove_file:
+  description: "Delete {filepath}. DESTRUCTIVE - request user confirmation first."
+  expected_output: "{filepath} deleted after user approval."
+  agent: system_agent
+
+system_remove_directory:
+  description: "Delete {path} and contents recursively. DESTRUCTIVE - request confirmation."
+  expected_output: "{path} deleted after user approval."
+  agent: system_agent
+
+system_list_dir_contents:
+  description: "List contents of {path}. Include names, sizes, types, dates."
+  expected_output: "Formatted listing of {path} with details."
+  agent: system_agent
+
+system_find_matching_files:
+  description: "Find files matching {pattern} in {directory} recursively. Return full paths."
+  expected_output: "List of paths matching {pattern} in {directory}."
+  agent: system_agent
+
+system_search_file_contents:
+  description: "Search for {search_term} in files under {directory}. Return paths and line numbers."
+  expected_output: "Files containing {search_term} with line numbers."
+  agent: system_agent
+
+system_check_path:
+  description: "Check if {path} exists. Report type: file, directory, or nonexistent."
+  expected_output: "Path existence and type for {path}."
+  agent: system_agent
+
+system_file_metadata:
+  description: "Get metadata for {filepath}: size, permissions, date, owner."
+  expected_output: "Complete metadata for {filepath}."
+  agent: system_agent
+
+system_modify_permissions:
+  description: "Change {path} permissions to {permissions}. Request confirmation."
+  expected_output: "Permissions changed for {path} after approval."
+  agent: system_agent
+
+system_disk_usage:
+  description: "Get disk usage for {path}. Show total, used, available."
+  expected_output: "Disk statistics for {path}."
+  agent: system_agent
+
+system_compress_archive:
+  description: "Compress {files} into {archive_path}. Use format from extension."
+  expected_output: "Archive created at {archive_path}."
+  agent: system_agent
+
+system_extract_archive:
+  description: "Extract {archive_path} to {destination}. Auto-detect format."
+  expected_output: "Archive extracted to {destination}."
+  agent: system_agent
+
+system_run_shell_command:
+  description: "Execute shell command: {command}. Explanation: {explanation}. Request confirmation for destructive ops."
+  expected_output: "Command output, exit code, errors."
+  agent: system_agent
+
+system_check_process:
+  description: "Check if {process_name} is running. Return PID if found."
+  expected_output: "Process status: running with PID or not running."
+  agent: system_agent
+
+system_get_env_var:
+  description: "Get value of environment variable {var_name}."
+  expected_output: "Value of {var_name} or not set indication."
+  agent: system_agent
+
+system_set_env_var:
+  description: "Set environment variable {var_name} to {value} for session."
+  expected_output: "{var_name} set to {value}."
+  agent: system_agent
+
+system_create_symlink:
+  description: "Create symbolic link from {link_path} to {target_path}."
+  expected_output: "Symlink created from {link_path} to {target_path}."
+  agent: system_agent
+
+system_get_system_info:
+  description: "Get system information: OS, version, architecture, memory."
+  expected_output: "Complete system information."
+  agent: system_agent
+
+system_network_request:
+  description: "Make network request to {url} using {method}. Return response."
+  expected_output: "Response status, headers, body from {url}."
   agent: system_agent

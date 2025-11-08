@@ -96,21 +96,66 @@ class ProcessTool:
             print(f"Failed to launch {app_name}: {e}")
             return False
 
-    def open_application(self, app_name: str) -> Dict[str, any]:
+    def focus_app(self, app_name: str) -> bool:
         """
-        Open an application and return result dict.
+        Focus/activate an application window (bring to front).
+        Works even if app is already running.
 
         Args:
-            app_name: Name of application to open
+            app_name: Name of application to focus
+
+        Returns:
+            True if focus command executed successfully
+        """
+        try:
+            if self.os_type == "darwin":
+                subprocess.run(
+                    ["osascript", "-e", f'tell application "{app_name}" to activate'],
+                    check=True,
+                    timeout=5,
+                )
+            elif self.os_type == "windows":
+                import ctypes
+
+                user32 = ctypes.windll.user32
+                hwnd = user32.FindWindowW(None, app_name)
+                if hwnd:
+                    user32.SetForegroundWindow(hwnd)
+                else:
+                    subprocess.Popen(["start", "", app_name], shell=True)
+            else:  # Linux
+                try:
+                    subprocess.run(["wmctrl", "-a", app_name], check=True, timeout=5)
+                except FileNotFoundError:
+                    subprocess.run(
+                        ["xdotool", "search", "--name", app_name, "windowactivate"],
+                        timeout=5,
+                    )
+
+            return True
+        except Exception as e:
+            print(f"Failed to focus {app_name}: {e}")
+            return False
+
+    def open_application(self, app_name: str) -> Dict[str, any]:
+        """
+        Open/focus an application and bring it to front.
+        Works for both launching new apps and focusing already-running apps.
+
+        Args:
+            app_name: Name of application to open/focus
 
         Returns:
             Dictionary with success status and message
         """
+        # launch_app already includes activate, which brings to front
         success = self.launch_app(app_name)
         return {
             "success": success,
             "message": (
-                f"Opened {app_name}" if success else f"Failed to open {app_name}"
+                f"Opened and focused {app_name}"
+                if success
+                else f"Failed to open {app_name}"
             ),
             "app_name": app_name,
         }

@@ -126,62 +126,6 @@ def print_platform_info(capabilities):
     console.print(tools_table)
 
 
-def print_task_analysis(task: str, analysis):
-    """
-    Display task analysis in panel with sub-task breakdown.
-    """
-    content = f"""
-[bold]Task:[/bold] {task}
-
-[cyan]Classification:[/cyan]
-  • Type: [bold]{analysis.task_type.value.upper()}[/bold]
-  • Browser: {"[green]Yes[/green]" if analysis.requires_browser else "[dim]No[/dim]"}
-  • GUI: {"[green]Yes[/green]" if analysis.requires_gui else "[dim]No[/dim]"}
-  • System: {"[green]Yes[/green]" if analysis.requires_system else "[dim]No[/dim]"}
-
-[yellow]Reasoning:[/yellow] {analysis.reasoning}
-"""
-
-    # Add sub-task breakdown if available
-    if any(
-        [
-            analysis.browser_subtask,
-            analysis.gui_subtask,
-            analysis.system_subtask,
-        ]
-    ):
-        content += "\n[magenta]Task Breakdown:[/magenta]\n"
-
-        if analysis.browser_subtask:
-            content += f"""
-  [bold cyan]🌐 Browser Agent:[/bold cyan]
-    [dim]→[/dim] {analysis.browser_subtask.objective}
-    [dim]📦 Output:[/dim] {analysis.browser_subtask.expected_output}
-"""
-
-        if analysis.gui_subtask:
-            content += f"""
-  [bold green]🖥️  GUI Agent:[/bold green]
-    [dim]→[/dim] {analysis.gui_subtask.objective}
-    [dim]📦 Output:[/dim] {analysis.gui_subtask.expected_output}
-"""
-
-        if analysis.system_subtask:
-            content += f"""
-  [bold yellow]⚙️  System Agent:[/bold yellow]
-    [dim]→[/dim] {analysis.system_subtask.objective}
-    [dim]📦 Output:[/dim] {analysis.system_subtask.expected_output}
-"""
-
-    panel = Panel(
-        content,
-        title="🎯 Task Analysis & Breakdown",
-        border_style="blue",
-        box=box.DOUBLE,
-    )
-    console.print(panel)
-
-
 def print_agent_start(agent_name: str):
     """
     Announce agent execution start.
@@ -276,23 +220,41 @@ def print_handoff(from_agent: str, to_agent: str, reason: str):
     console.print()
 
 
-def print_task_result(result: dict):
+def print_task_result(result):
     """
     Display final task result.
+    Handles both dict and TaskExecutionResult objects.
     """
     console.print()
 
-    success = result.get("overall_success", False)
+    if hasattr(result, "overall_success"):
+        success = result.overall_success
+        task = result.task
+        result_text = result.result
+        error = result.error
+    else:
+        success = result.get("overall_success", False)
+        task = result.get("task", "Unknown")
+        result_text = result.get("result")
+        error = result.get("error")
+
     title = "✅ Task Complete" if success else "❌ Task Failed"
     style = "green" if success else "red"
 
-    content = f"[bold]Task:[/bold] {result.get('task', 'Unknown')}\n\n"
+    content = f"[bold]Task:[/bold] {task}\n\n"
 
     handoffs = []
     outputs = []
-    if result.get("results"):
+
+    results_list = None
+    if hasattr(result, "results"):
+        results_list = result.results
+    elif isinstance(result, dict):
+        results_list = result.get("results")
+
+    if results_list:
         content += "[bold]Execution Steps:[/bold]\n\n"
-        for i, res in enumerate(result["results"], 1):
+        for i, res in enumerate(results_list, 1):
             if not res or not isinstance(res, dict):
                 continue
 

@@ -274,6 +274,69 @@ class MacOSAccessibility:
         else:
             return self.atomacos.NativeUIElement.getFrontmostApp()
 
+    def get_text_from_app(self, app_name: str, role: Optional[str] = None) -> List[str]:
+        """
+        Extract all text values from an application using Accessibility API.
+        Useful for reading Calculator results, text editor content, etc.
+
+        Args:
+            app_name: Application name
+            role: Optional role filter (e.g., "StaticText", "TextField")
+
+        Returns:
+            List of text strings found in the application
+        """
+        if not self.available:
+            return []
+
+        texts = []
+
+        try:
+            app = self._get_app(app_name)
+            windows = self._get_app_windows(app)
+
+            for window in windows:
+                self._collect_text_values(window, texts, role)
+
+        except Exception as e:
+            print_warning(f"Failed to extract text: {e}")
+
+        return texts
+
+    def _collect_text_values(
+        self,
+        container,
+        texts: List[str],
+        role_filter: Optional[str] = None,
+        depth: int = 0,
+    ):
+        """Recursively collect text values from accessibility tree."""
+        if depth > 20:
+            return
+
+        try:
+            elem_role = getattr(container, "AXRole", "")
+
+            if role_filter and str(elem_role) != f"AX{role_filter}":
+                pass
+            else:
+                if hasattr(container, "AXValue") and container.AXValue:
+                    value = str(container.AXValue).strip()
+                    if value and value not in texts:
+                        texts.append(value)
+
+                if hasattr(container, "AXTitle") and container.AXTitle:
+                    title = str(container.AXTitle).strip()
+                    if title and title not in texts:
+                        texts.append(title)
+
+            if hasattr(container, "AXChildren") and container.AXChildren:
+                for child in container.AXChildren:
+                    self._collect_text_values(child, texts, role_filter, depth + 1)
+
+        except Exception:
+            pass
+
     def is_app_running(self, app_name: str) -> bool:
         """
         Check if an application is currently running.

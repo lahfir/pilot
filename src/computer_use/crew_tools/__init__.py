@@ -8,6 +8,10 @@ from .gui_basic_tools import (
     OpenApplicationTool,
     ReadScreenTextTool,
     ScrollTool,
+    GetAppTextTool,
+    ListRunningAppsTool,
+    CheckAppRunningTool,
+    RequestHumanInputTool,
 )
 from .gui_interaction_tools import (
     ClickElementTool,
@@ -24,6 +28,10 @@ __all__ = [
     "OpenApplicationTool",
     "ReadScreenTextTool",
     "ScrollTool",
+    "GetAppTextTool",
+    "ListRunningAppsTool",
+    "CheckAppRunningTool",
+    "RequestHumanInputTool",
     "WebAutomationTool",
     "ExecuteShellCommandTool",
     "FindApplicationTool",
