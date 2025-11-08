@@ -24,12 +24,14 @@ from .crew_tools import (
     WebAutomationTool,
     ExecuteShellCommandTool,
     FindApplicationTool,
+    RequestHumanInputTool,
 )
 from .utils.coordinate_validator import CoordinateValidator
 from .tools.platform_registry import PlatformToolRegistry
 from .utils.ui import print_success, print_failure, print_info
 import yaml
 import asyncio
+import platform
 
 
 class TaskExecutionResult(BaseModel):
@@ -88,6 +90,32 @@ class ComputerUseCrew:
         self.execute_command_tool = self._initialize_system_tool()
 
         self.crew: Optional[Crew] = None
+        self.platform_context = self._get_platform_context()
+
+    def _get_platform_context(self) -> str:
+        """
+        Get platform information for agent context.
+
+        Returns:
+            Formatted platform context string
+        """
+        os_name = platform.system()
+        os_version = platform.release()
+        machine = platform.machine()
+
+        # Map internal OS names to user-friendly names
+        if os_name == "Darwin":
+            platform_name = "macOS"
+        elif os_name == "Windows":
+            platform_name = "Windows"
+        elif os_name == "Linux":
+            platform_name = "Linux"
+        else:
+            platform_name = os_name
+
+        context = f"\n\n🖥️  PLATFORM: {platform_name} {os_version} ({machine})\n"
+
+        return context
 
     def _load_yaml_config(self, filename: str) -> Dict[str, Any]:
         """
@@ -154,6 +182,7 @@ class ComputerUseCrew:
             "list_running_apps": ListRunningAppsTool(),
             "check_app_running": CheckAppRunningTool(),
             "find_application": FindApplicationTool(),
+            "request_human_input": RequestHumanInputTool(),
         }
 
         for tool in tools.values():
@@ -195,10 +224,13 @@ class ComputerUseCrew:
         """
         manager_config = self.agents_config.get("manager", {})
 
+        # Inject platform context into manager backstory
+        backstory = manager_config.get("backstory", "") + self.platform_context
+
         return Agent(
             role=manager_config.get("role", "Task Orchestration Manager"),
             goal=manager_config.get("goal", "Delegate tasks efficiently"),
-            backstory=manager_config.get("backstory", ""),
+            backstory=backstory,
             verbose=manager_config.get("verbose", True),
             allow_delegation=True,
             llm=self.llm,
@@ -239,16 +271,19 @@ class ComputerUseCrew:
         config = self.agents_config[config_key]
         tools = [tool_map[name] for name in tool_names if name in tool_map]
 
+        backstory_with_context = config["backstory"] + self.platform_context
+
         return Agent(
             role=config["role"],
             goal=config["goal"],
-            backstory=config["backstory"],
+            backstory=backstory_with_context,
             verbose=config.get("verbose", True),
             llm=llm,
             tools=tools,
             max_iter=config.get("max_iter", 15),
             allow_delegation=config.get("allow_delegation", False),
             output_pydantic=TaskCompletionOutput,
+            memory=True,  # Enable agent memory for context awareness
         )
 
     def _create_crewai_agents(self) -> Dict[str, Agent]:
