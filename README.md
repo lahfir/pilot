@@ -120,6 +120,7 @@ The system tries Tier 1 first, then falls back automatically. You don't have to 
 ### It's Built for Real Work
 
 - Phone verification? Handles it with Twilio integration
+- Voice input? Talk to it instead of typing (Deepgram integration)
 - File downloads? Tracks them automatically and passes paths to other agents
 - Safety checks? Validates commands before running them
 - Error handling? Actually tells you what went wrong
@@ -257,6 +258,15 @@ TWILIO_PHONE_NUMBER=+1234567890
 
 Only needed if you want automated phone verification for signups. The system works fine without it.
 
+**For voice input** (optional):
+
+```bash
+DEEPGRAM_API_KEY=your_deepgram_key
+VOICE_INPUT_LANGUAGE=multi  # or 'en', 'es', 'fr', etc. 'multi' supports 100+ languages
+```
+
+Want to talk to your computer instead of typing? Get a Deepgram API key (they have a free tier). Set `VOICE_INPUT_LANGUAGE=multi` for automatic language detection, or specify a language like `en` for English. The system will let you toggle between text and voice modes with F5.
+
 ---
 
 ## Usage
@@ -266,9 +276,12 @@ Only needed if you want automated phone verification for signups. The system wor
 ```bash
 # Just run it
 uv run python -m computer_use.main
+
+# Or start with voice input mode enabled
+uv run python -m computer_use.main --voice-input
 ```
 
-Then type what you want:
+Then type what you want (or speak, if you've got voice input set up):
 
 ```
 💬 Enter your task:
@@ -281,6 +294,35 @@ The system figures out:
 - It needs to search for images
 - It needs to download one
 - It handles all the details
+
+### Voice Input
+
+Tired of typing? You can talk to it instead. Here's how:
+
+**Setup**:
+
+1. Get a Deepgram API key from [deepgram.com](https://deepgram.com) (free tier available)
+2. Add `DEEPGRAM_API_KEY=your_key` to your `.env` file
+3. Optionally set `VOICE_INPUT_LANGUAGE=multi` for automatic language detection (supports 100+ languages)
+
+**Using it**:
+
+- Press **F5** to toggle between text and voice modes
+- When in voice mode, speak your task and press Enter when done
+- You'll see real-time transcription as you speak
+- Works in multiple languages automatically (if you set `VOICE_INPUT_LANGUAGE=multi`)
+
+**Example**:
+
+```
+🎤 Listening... (Press Enter to finish, Ctrl+C to cancel)
+Using multilingual mode - supports 100+ languages automatically
+
+➤ Download image of Cristiano Ronaldo
+✅ Transcribed: Download image of Cristiano Ronaldo
+```
+
+Pretty neat, right? No more typing long commands. Just say what you want and it figures it out.
 
 ### Real Examples
 
@@ -386,6 +428,31 @@ Check your `.env` file. Make sure:
 - The key is actually valid (test it in the provider's console)
 - You're using the right environment variable name
 
+### Voice Input Not Working
+
+**"DEEPGRAM_API_KEY not found"**:
+
+- Add `DEEPGRAM_API_KEY=your_key` to your `.env` file
+- Get a key from [deepgram.com](https://deepgram.com) (free tier works great)
+
+**"No microphone detected"**:
+
+- Make sure your microphone is connected and working
+- Check system permissions (macOS might need microphone access)
+- Try a different microphone if you have one
+
+**Voice input dependencies missing**:
+
+```bash
+# Install voice input dependencies
+pip install deepgram-sdk sounddevice
+```
+
+**Language detection not working**:
+
+- Set `VOICE_INPUT_LANGUAGE=multi` in your `.env` for automatic detection
+- Or specify a language: `VOICE_INPUT_LANGUAGE=en` for English, `es` for Spanish, etc.
+
 ### General Debugging
 
 ```bash
@@ -484,6 +551,8 @@ This builds on some amazing open-source projects:
 - **OpenCV** — Computer vision that's been around forever and still works great
 - **PyAutoGUI** — Cross-platform input control
 - **atomacos** (Mac), **pywinauto** (Windows), **pyatspi** (Linux) — Platform accessibility APIs
+- **Deepgram** — Voice-to-text transcription with multilingual support
+- **sounddevice** — Cross-platform audio capture
 
 Without these, this project wouldn't exist. So thanks to everyone who built and maintains them.
 

@@ -495,6 +495,7 @@ class MacOSAccessibility:
             "AXButton",
             "AXCheckBox",
             "AXRadioButton",
+            "AXRadioGroup",
             "AXTextField",
             "AXTextArea",
             "AXComboBox",
@@ -565,9 +566,6 @@ class MacOSAccessibility:
                     or getattr(container, "AXDescription", "")
                 )
 
-            if not identifier and not description:
-                return None
-
             center = None
             bounds = None
             is_valid_for_clicking = True
@@ -598,6 +596,9 @@ class MacOSAccessibility:
                 pass
 
             if not is_valid_for_clicking:
+                return None
+
+            if not identifier and not description and category == "static":
                 return None
 
             return {

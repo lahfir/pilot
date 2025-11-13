@@ -129,6 +129,8 @@ def score_ocr_candidate(
     if relation == "substring":
         if length_delta > 2 or not is_word_boundary_match(text_lower, target_lower):
             return (-999.0, "none")
+        if length_delta > 10:
+            return (-999.0, "none")
 
     # Base scores by relation type
     base_score = {
@@ -141,9 +143,14 @@ def score_ocr_candidate(
 
     score = float(base_score) + float(item.confidence or 0.0) * 100.0
 
-    # Length bonus for exact/word matches
+    # Strong length bonus - prefer shorter, exact matches
+    # "Auto" (4 chars) should beat "Automatically..." (41 chars)
     if relation in {"exact", "word"}:
         score += 500.0 / (len(text_lower) + 1)
+
+    # Additional penalty for matches that are much longer than target
+    if length_delta > 5:
+        score -= length_delta * 20.0
 
     # Spatial penalty
     center_x, center_y = item.center

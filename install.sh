@@ -269,6 +269,15 @@ OPENAI_API_KEY=your-openai-key-here
 
 # Optional: Browser automation settings
 # SERPER_API_KEY=your-serper-key-here
+
+# Optional: Phone verification (Twilio)
+# TWILIO_ACCOUNT_SID=your-twilio-sid-here
+# TWILIO_AUTH_TOKEN=your-twilio-token-here
+# TWILIO_PHONE_NUMBER=+1234567890
+
+# Optional: Voice input (Deepgram)
+# DEEPGRAM_API_KEY=your-deepgram-key-here
+# VOICE_INPUT_LANGUAGE=multi  # 'multi' for automatic language detection (100+ languages), or 'en', 'es', 'fr', etc.
 EOF
     
     print_success ".env file created"
@@ -314,6 +323,25 @@ prompt_api_keys() {
                 sed -i.bak "s/# GOOGLE_API_KEY=.*/GOOGLE_API_KEY=$google_key/" .env
                 rm .env.bak 2>/dev/null || true
                 print_success "Google API key configured"
+            fi
+            
+            echo ""
+            echo -e "${CYAN}Deepgram API key for voice input (press Enter to skip):${NC}"
+            echo -e "${YELLOW}Get a free key at https://deepgram.com${NC}"
+            read -r deepgram_key
+            if [[ ! -z "$deepgram_key" ]]; then
+                sed -i.bak "s/# DEEPGRAM_API_KEY=.*/DEEPGRAM_API_KEY=$deepgram_key/" .env
+                rm .env.bak 2>/dev/null || true
+                print_success "Deepgram API key configured"
+                
+                echo ""
+                echo -e "${CYAN}Voice input language (multi/en/es/fr/etc, default: multi):${NC}"
+                read -r voice_lang
+                if [[ ! -z "$voice_lang" ]]; then
+                    sed -i.bak "s/# VOICE_INPUT_LANGUAGE=.*/VOICE_INPUT_LANGUAGE=$voice_lang/" .env
+                    rm .env.bak 2>/dev/null || true
+                    print_success "Voice input language set to: $voice_lang"
+                fi
             fi
         fi
     else
@@ -371,13 +399,20 @@ print_next_steps() {
     echo "  • Move file from Downloads to Documents folder"
     echo ""
     
+    print_info "Voice Input (Optional):"
+    echo "  • Press F5 to toggle between text and voice modes"
+    echo "  • Requires DEEPGRAM_API_KEY in .env file"
+    echo "  • Get a free key at https://deepgram.com"
+    echo ""
+    
     print_info "Documentation:"
-    echo "  • README.md - Complete enterprise documentation"
+    echo "  • README.md - Complete documentation"
     echo ""
     
     if [[ "$OS" == "macos" ]]; then
-        print_warning "Don't forget to grant Accessibility permissions!"
-        echo "  System Settings → Privacy & Security → Accessibility"
+        print_warning "Don't forget to grant permissions!"
+        echo "  • Accessibility: System Settings → Privacy & Security → Accessibility"
+        echo "  • Microphone (for voice input): System Settings → Privacy & Security → Microphone"
     fi
     
     echo ""

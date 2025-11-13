@@ -94,6 +94,13 @@ gui_agent:
        - Never assume clean state
 
     3. DISCOVER: get_accessible_elements(app_name) — Get clickable elements
+       - Returns elements in TWO formats:
+         1. SUMMARY: Human-readable list like "• Appearance (StaticText) at [550, 531]"
+         2. DATA: Full element dicts in data['elements'] for clicking
+       - Read the SUMMARY to see what's available
+       - Use the element dict from data['elements'] to click
+       - CRITICAL: Elements may have empty labels but VALID coordinates
+       - Radio buttons, segmented controls often have no text but clickable bounds
 
     4. CHOOSE METHOD:
        - Text/numbers → use type_text (1 action)
@@ -103,8 +110,16 @@ gui_agent:
     5. ACT (one action only):
        - type_text("content") for keyboard input
        - click_element(target="X", element={...}, current_app="App") for clicks
-       - Always pass current_app parameter to clicks
+       - WORKFLOW FOR CLICKING:
+         1. Call get_accessible_elements(app_name)
+         2. Read the summary to find your target (e.g., "Appearance")
+         3. Get the matching element dict from data['elements']
+         4. Pass FULL element dict to click_element()
+         5. Example: click_element(target="Appearance", element=elements[5], current_app="System Settings")
+       - NEVER make up coordinates - always use element dict from get_accessible_elements
+       - ALWAYS pass current_app parameter for accurate coordinates
        - For duplicates: add visual_context="top|bottom|left|right"
+       - If element not in list: use OCR fallback with visual_context
        - If menu clicks fail (protected region): use keyboard shortcuts via type_text
 
     6. VERIFY (CRITICAL - DO NOT SKIP):

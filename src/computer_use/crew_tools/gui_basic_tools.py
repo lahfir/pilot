@@ -424,6 +424,9 @@ class GetAppTextTool(BaseTool):
         Returns:
             ActionResult with extracted text
         """
+        if cancelled := check_cancellation():
+            return cancelled
+
         try:
             accessibility_tool = self._tool_registry.get_tool("accessibility")
 
@@ -714,6 +717,10 @@ class GetAccessibleElementsTool(BaseTool):
         Returns:
             ActionResult with categorized list of elements
         """
+        # Check for cancellation
+        if cancelled := check_cancellation():
+            return cancelled
+
         accessibility_tool = self._tool_registry.get_tool("accessibility")
 
         if not accessibility_tool or not accessibility_tool.available:
@@ -781,9 +788,12 @@ class GetAccessibleElementsTool(BaseTool):
                     else:
                         spatial_hint = " [BOTTOM]"
 
+                label = elem.get("label", "") or elem.get("role", "")
+                title = elem.get("title", "") or elem.get("role", "")
+
                 normalized = {
-                    "label": elem.get("label", "") + spatial_hint,
-                    "title": elem.get("title", "") + spatial_hint,
+                    "label": label + spatial_hint,
+                    "title": title + spatial_hint,
                     "role": elem.get("role", ""),
                     "identifier": elem.get("identifier", ""),
                     "bounds": bounds,
@@ -799,14 +809,70 @@ class GetAccessibleElementsTool(BaseTool):
                 )
             )
 
+            # Filter elements: Keep those with meaningful labels
+            # Exclude only generic spatial-only labels (our own annotations)
+            generic_labels = {
+                "Button [TOP]",
+                "Button [MIDDLE]",
+                "Button [BOTTOM]",
+                "Group [TOP]",
+                "Group [MIDDLE]",
+                "Group [BOTTOM]",
+                "Toolbar [TOP]",
+                "Toolbar [MIDDLE]",
+                "Toolbar [BOTTOM]",
+            }
+
+            # Filter elements: Include interactive elements even with empty labels (for theme buttons)
+            # Only exclude generic structural elements
+            meaningful_elements = [
+                e
+                for e in normalized_elements
+                if (
+                    # Include if it has a meaningful label
+                    (e.get("label") and e["label"] not in generic_labels)
+                    # OR if it's interactive with valid bounds (even if label is empty)
+                    or (e.get("category") == "interactive" and e.get("center"))
+                )
+            ]
+
+            result_elements = (
+                meaningful_elements[:50]
+                if meaningful_elements
+                else normalized_elements[:50]
+            )
+
+            # Create concise text summary for LLM (fits in token limit)
+            element_lines = []
+            for e in result_elements:
+                label = e.get("label", "")
+                role = e.get("role", "")
+                center = e.get("center", [])
+
+                # Show role as label if no label (for unlabeled interactive elements like theme buttons)
+                display_label = label if label else f"(unlabeled {role})"
+
+                if center and len(center) == 2:
+                    element_lines.append(f"• {display_label} ({role}) at {center}")
+                else:
+                    element_lines.append(f"• {display_label} ({role})")
+
+            elements_summary = (
+                "\n".join(element_lines) if element_lines else "No elements found"
+            )
+
             return ActionResult(
                 success=True,
-                action_taken=f"Found {len(normalized_elements)} UI elements in {app_name}",
+                action_taken=(
+                    f"Found {len(result_elements)} UI elements in {app_name}:\n\n{elements_summary}\n\n"
+                    f"To click an element, use click_element(target='<label>', element=<element_from_list>, current_app='{app_name}')"
+                ),
                 method_used="accessibility",
                 confidence=1.0,
                 data={
-                    "elements": normalized_elements,
-                    "count": len(normalized_elements),
+                    "elements": result_elements,  # Full dicts for click_element
+                    "summary": elements_summary,  # Concise text for LLM
+                    "count": len(result_elements),
                 },
             )
 

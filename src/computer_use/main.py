@@ -20,9 +20,12 @@ from .utils.ui import (
 from .crew import ComputerUseCrew
 
 
-async def main():
+async def main(voice_input: bool = False):
     """
     Main execution function.
+
+    Args:
+        voice_input: Start with voice input mode enabled
     """
     import logging
     import warnings
@@ -107,7 +110,7 @@ async def main():
     try:
         while True:
             try:
-                task = await get_task_input()
+                task = await get_task_input(start_with_voice=voice_input)
 
                 if not task:
                     continue
@@ -174,10 +177,23 @@ async def main():
 
 def cli():
     """
-    CLI entry point.
+    CLI entry point with argument parsing.
     """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Computer Use Agent - Multi-platform automation"
+    )
+    parser.add_argument(
+        "--voice-input",
+        action="store_true",
+        help="Start with voice input mode enabled (toggle with F5)",
+    )
+
+    args = parser.parse_args()
+
     try:
-        asyncio.run(main())
+        asyncio.run(main(voice_input=args.voice_input))
     except KeyboardInterrupt:
         console.print("\n\n[bold cyan]👋 Goodbye![/bold cyan]")
 

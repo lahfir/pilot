@@ -16,6 +16,24 @@ from ..utils.ocr_targeting import (
 from ..config.timing_config import get_timing_config
 
 
+def check_cancellation() -> Optional[ActionResult]:
+    """
+    Check if task cancellation has been requested.
+    Returns ActionResult with cancellation error if cancelled, None otherwise.
+    """
+    from ..crew import ComputerUseCrew
+
+    if ComputerUseCrew.is_cancelled():
+        return ActionResult(
+            success=False,
+            action_taken="Task cancelled by user",
+            method_used="cancellation",
+            confidence=0.0,
+            error="Task cancelled by user (ESC pressed)",
+        )
+    return None
+
+
 class ClickInput(BaseModel):
     """Input for clicking an element."""
 
@@ -72,6 +90,9 @@ class ClickElementTool(BaseTool):
         Returns:
             ActionResult with click details
         """
+        if cancelled := check_cancellation():
+            return cancelled
+
         input_tool = self._tool_registry.get_tool("input")
 
         if element and "center" in element:

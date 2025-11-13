@@ -2,6 +2,9 @@
 Professional terminal UI using rich and prompt_toolkit.
 """
 
+import asyncio
+import os
+import sys
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -9,10 +12,12 @@ from rich import box
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import KeyBindings
+from typing import Optional
 
 console = Console()
 
 _key_bindings = KeyBindings()
+_voice_mode_enabled = {"value": False}
 
 
 @_key_bindings.add("enter")
@@ -39,6 +44,16 @@ def _(event):
     event.current_buffer.insert_text("\n")
 
 
+@_key_bindings.add("f5")
+def _(event):
+    """
+    Handle F5 - toggle voice input mode.
+    """
+    _voice_mode_enabled["value"] = not _voice_mode_enabled["value"]
+    mode = "🎤 Voice" if _voice_mode_enabled["value"] else "⌨️  Text"
+    console.print(f"\n[cyan]Switched to {mode} input mode (F5)[/cyan]")
+
+
 _prompt_session = PromptSession(
     history=None,
     multiline=True,
@@ -48,7 +63,7 @@ _prompt_session = PromptSession(
 
 def print_banner():
     """
-    Display startup banner.
+    Display startup banner with voice input information.
     """
     banner = """
     ╔═══════════════════════════════════════════════════════════╗
@@ -59,6 +74,19 @@ def print_banner():
     ╚═══════════════════════════════════════════════════════════╝
     """
     console.print(banner, style="bold cyan")
+    console.print()
+    console.print(
+        "[dim]💡 Input modes: Press [cyan]F5[/cyan] to toggle "
+        "between ⌨️  text and 🎤 voice[/dim]"
+    )
+    voice_lang = os.getenv("VOICE_INPUT_LANGUAGE", "multi")
+    if voice_lang == "multi":
+        console.print("[dim]   Voice input: multilingual mode (100+ languages)[/dim]")
+    else:
+        console.print(
+            f"[dim]   Voice input language: {voice_lang.upper()} "
+            f"(set VOICE_INPUT_LANGUAGE=multi for multilingual)[/dim]"
+        )
 
 
 def print_section_header(title: str, icon: str = ""):
@@ -230,13 +258,9 @@ def print_task_result(result):
     if hasattr(result, "overall_success"):
         success = result.overall_success
         task = result.task
-        result_text = result.result
-        error = result.error
     else:
         success = result.get("overall_success", False)
         task = result.get("task", "Unknown")
-        result_text = result.get("result")
-        error = result.get("error")
 
     title = "✅ Task Complete" if success else "❌ Task Failed"
     style = "green" if success else "red"
@@ -381,34 +405,147 @@ def print_twilio_config_status(is_configured: bool, phone_number: str = None):
         )
 
 
-async def get_task_input() -> str:
+async def get_voice_input() -> Optional[str]:
     """
-    Get task input from user with proper terminal editing support.
-    Uses prompt_toolkit for readline-like editing with history.
-    Supports multi-line input via Alt+Enter or Ctrl+J.
+    Capture voice input using Deepgram streaming API.
+    Shows real-time transcription feedback and returns final text.
 
-    Note: Shift+Enter is not reliably distinguishable from Enter in most
-    terminal emulators due to terminal protocol limitations. Alt+Enter
-    (Option+Enter on macOS) provides the same UX and works reliably.
+    Returns:
+        Transcribed text or None if cancelled/error
+    """
+    try:
+        from ..services.voice_input_service import VoiceInputService
+        from ..services.audio_capture import AudioCapture
+
+        if not VoiceInputService.check_api_key_configured():
+            console.print("[red]❌ DEEPGRAM_API_KEY not found in environment[/red]")
+            console.print(
+                "[yellow]Please set DEEPGRAM_API_KEY to use voice input[/yellow]"
+            )
+            return None
+
+        if not AudioCapture.check_microphone_available():
+            console.print("[red]❌ No microphone detected[/red]")
+            return None
+
+        language = os.getenv("VOICE_INPUT_LANGUAGE", "multi")
+
+        console.print()
+        console.print(
+            "[bold green]🎤 Listening...[/bold green] "
+            "[dim](Press Enter to finish, Ctrl+C to cancel)[/dim]"
+        )
+        if language == "multi":
+            console.print(
+                "[dim]Using multilingual mode - supports 100+ languages automatically[/dim]"
+            )
+        else:
+            console.print(f"[dim]Language: {language.upper()}[/dim]")
+        console.print()
+
+        interim_text = {"value": ""}
+        max_width = console.width - 10
+
+        def on_interim(text: str) -> None:
+            """Update interim transcription display on a single line."""
+            interim_text["value"] = text
+            display_text = text[:max_width] if len(text) > max_width else text
+            padding = " " * max(0, max_width - len(display_text))
+            sys.stdout.write(f"\r\033[36m➤ {display_text}\033[0m{padding}")
+            sys.stdout.flush()
+
+        voice_service = VoiceInputService()
+        language = os.getenv("VOICE_INPUT_LANGUAGE", "multi")
+        started = await voice_service.start_transcription(
+            interim_callback=on_interim, language=language
+        )
+
+        if not started:
+            error = voice_service.get_error()
+            console.print(f"\n[red]❌ Failed to start voice input: {error}[/red]")
+            return None
+
+        await asyncio.sleep(0.5)
+
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, input)
+        except (KeyboardInterrupt, EOFError):
+            pass
+
+        result = await voice_service.stop_transcription()
+
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+
+        if result:
+            console.print(f"[green]✅ Transcribed:[/green] {result}")
+            if (
+                voice_service.detected_language
+                and voice_service.detected_language != "multi"
+            ):
+                console.print(
+                    f"[dim]Language mode: {voice_service.detected_language}[/dim]"
+                )
+        else:
+            console.print("[yellow]⚠️  No speech detected[/yellow]")
+
+        return result.strip() if result else None
+
+    except ImportError as e:
+        console.print(f"[red]❌ Voice input dependencies not installed: {e}[/red]")
+        console.print("[yellow]Run: pip install deepgram-sdk sounddevice[/yellow]")
+        return None
+    except Exception as e:
+        console.print(f"[red]❌ Voice input error: {e}[/red]")
+        return None
+
+
+async def get_task_input(start_with_voice: bool = False) -> str:
+    """
+    Get task input from user with support for text and voice modes.
+    Uses prompt_toolkit for text input with readline-like editing.
+    Supports multi-line input via Alt+Enter or Ctrl+J.
+    Toggle voice mode with Ctrl+V or F5.
+
+    Args:
+        start_with_voice: Start in voice mode if True
 
     Returns:
         User's task input (stripped)
     """
+    global _voice_mode_enabled
+    _voice_mode_enabled["value"] = start_with_voice
+
     try:
-        console.print()
-        console.print("[#00d7ff]💬 Enter your task:[/]")
-        console.print(
-            "[dim]   Press [cyan]Alt+Enter[/cyan] for new line, [cyan]Enter[/cyan] to submit[/dim]"
-        )
-        console.print()
+        while True:
+            if _voice_mode_enabled["value"]:
+                result = await get_voice_input()
+                if result:
+                    return result
+                _voice_mode_enabled["value"] = False
+                continue
 
-        prompt_text = FormattedText([("#00d7ff bold", "➤ ")])
+            console.print()
+            mode_indicator = (
+                "⌨️  Text" if not _voice_mode_enabled["value"] else "🎤 Voice"
+            )
+            console.print(
+                f"[#00d7ff]💬 Enter your task ([cyan]{mode_indicator}[/cyan] mode):[/]"
+            )
+            console.print(
+                "[dim]   [cyan]F5[/cyan]: Toggle voice | "
+                "[cyan]Alt+Enter[/cyan]: New line | [cyan]Enter[/cyan]: Submit[/dim]"
+            )
+            console.print()
 
-        task = await _prompt_session.prompt_async(
-            prompt_text,
-            prompt_continuation=FormattedText([("", "  ")]),
-        )
+            prompt_text = FormattedText([("#00d7ff bold", "➤ ")])
 
-        return task.strip()
+            task = await _prompt_session.prompt_async(
+                prompt_text,
+                prompt_continuation=FormattedText([("", "  ")]),
+            )
+
+            return task.strip()
     except (KeyboardInterrupt, EOFError):
         return "quit"
