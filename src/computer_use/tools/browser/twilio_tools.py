@@ -4,10 +4,32 @@ Provides custom actions for handling phone verification flows.
 Also includes human-in-the-loop tools for manual intervention.
 """
 
+from typing import Optional
 from browser_use import Tools, ActionResult
 
 
-def create_twilio_tools(twilio_service) -> Tools:
+def load_twilio_tools() -> Optional[Tools]:
+    """
+    Load Twilio tools if Twilio service is configured.
+
+    Initializes TwilioService internally and creates Browser-Use tools.
+
+    Returns:
+        Tools object with Twilio actions, or None if not configured
+    """
+    from ...services.twilio_service import TwilioService
+
+    # Initialize Twilio service
+    twilio_service = TwilioService()
+
+    # Check if configured
+    if not twilio_service.is_configured():
+        return None
+
+    return _create_twilio_tools(twilio_service)
+
+
+def _create_twilio_tools(twilio_service) -> Tools:
     """
     Create Browser-Use tools for Twilio phone verification.
 

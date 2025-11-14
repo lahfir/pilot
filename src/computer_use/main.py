@@ -78,7 +78,6 @@ async def main(voice_input: bool = False):
         capabilities,
         SafetyChecker(),
         confirmation_manager=CommandConfirmation(),
-        twilio_service=twilio_service,
     )
 
     console.print(

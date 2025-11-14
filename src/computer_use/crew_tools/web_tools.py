@@ -59,7 +59,7 @@ class WebAutomationTool(BaseTool):
     def _run(self, task: str, url: Optional[str] = None) -> str:
         """
         Execute web automation task.
-        Wraps browser_tool.execute_task.
+        Calls browser_agent.execute_task directly.
 
         Event Loop Management:
         - CrewAI calls this synchronously from a thread pool executor
@@ -79,10 +79,10 @@ class WebAutomationTool(BaseTool):
 
         print_info(f"🌐 WebAutomationTool executing: {task}")
 
-        browser_tool = self._tool_registry.get_tool("browser")
+        browser_agent = self._browser_agent
 
-        if not browser_tool:
-            return "ERROR: Browser tool unavailable - browser tool not initialized"
+        if not browser_agent:
+            return "ERROR: Browser agent unavailable - browser agent not initialized"
 
         # Event loop management: handle both async and sync calling contexts
         try:
@@ -96,7 +96,7 @@ class WebAutomationTool(BaseTool):
 
             nest_asyncio.apply()
             result = running_loop.run_until_complete(
-                browser_tool.execute_task(task, url)
+                browser_agent.execute_task(task, url)
             )
         except RuntimeError:
             # No running loop - we need to create one or use an existing loop
@@ -119,7 +119,7 @@ class WebAutomationTool(BaseTool):
                 need_cleanup = True
 
             try:
-                result = loop.run_until_complete(browser_tool.execute_task(task, url))
+                result = loop.run_until_complete(browser_agent.execute_task(task, url))
             finally:
                 # Only clean up if we created a new loop
                 if need_cleanup:
