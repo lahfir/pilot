@@ -159,14 +159,11 @@ class PermissionChecker:
         Returns:
             Permission status
         """
-        try:
-            import comtypes.client
+        import importlib.util
 
+        if importlib.util.find_spec("comtypes") is not None:
             return PermissionStatus.GRANTED
-        except ImportError:
-            return PermissionStatus.DENIED
-        except Exception:
-            return PermissionStatus.UNKNOWN
+        return PermissionStatus.DENIED
 
     def _check_linux_atspi(self) -> str:
         """
@@ -361,7 +358,7 @@ class PermissionChecker:
                 )
                 console.print()
 
-                wait = console.input(
+                console.input(
                     "[bold cyan]Press Enter after granting permissions...[/bold cyan] "
                 )
                 return True

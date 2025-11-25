@@ -87,7 +87,7 @@ class LLMConfig:
                 f"Please set the appropriate environment variable in your .env file."
             )
 
-        return LLM(model=model_name, temperature=0, api_key=api_key)
+        return LLM(model=model_name, api_key=api_key)
 
     @staticmethod
     def get_orchestration_llm(
@@ -120,14 +120,14 @@ class LLMConfig:
                 raise ValueError(
                     "OPENAI_API_KEY not found. Please set it in your .env file."
                 )
-            return ChatOpenAI(model=model_name, temperature=0, api_key=api_key)
+            return ChatOpenAI(model=model_name, api_key=api_key)
         elif provider == "anthropic":
             api_key = os.getenv("ANTHROPIC_API_KEY")
             if not api_key:
                 raise ValueError(
                     "ANTHROPIC_API_KEY not found. Please set it in your .env file."
                 )
-            return ChatAnthropic(model=model_name, temperature=0, api_key=api_key)
+            return ChatAnthropic(model=model_name, api_key=api_key)
         elif provider == "google":
             api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
             if not api_key:
@@ -137,9 +137,7 @@ class LLMConfig:
             # Ensure the key is in the environment for LangChain
             os.environ["GOOGLE_API_KEY"] = api_key
             os.environ["GEMINI_API_KEY"] = api_key
-            return ChatGoogleGenerativeAI(
-                model=model_name, temperature=0, google_api_key=api_key
-            )
+            return ChatGoogleGenerativeAI(model=model_name, google_api_key=api_key)
         else:
             # Fallback to OpenAI
             api_key = os.getenv("OPENAI_API_KEY")
@@ -147,7 +145,7 @@ class LLMConfig:
                 raise ValueError(
                     "OPENAI_API_KEY not found. Please set it in your .env file."
                 )
-            return ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=api_key)
+            return ChatOpenAI(model="gpt-4o-mini", api_key=api_key)
 
     @staticmethod
     def get_vision_llm(provider: Optional[str] = None, model: Optional[str] = None):
@@ -202,25 +200,21 @@ class LLMConfig:
             from browser_use.llm.openai.chat import ChatOpenAI
 
             model_name = model or "gpt-4o-mini"
-            return ChatOpenAI(
-                model=model_name, temperature=0, api_key=os.getenv("OPENAI_API_KEY")
-            )
+            return ChatOpenAI(model=model_name, api_key=os.getenv("OPENAI_API_KEY"))
 
         elif provider == "anthropic":
             from browser_use.llm.anthropic.chat import ChatAnthropic
 
             model_name = model or "claude-3-5-sonnet-20241022"
             return ChatAnthropic(
-                model=model_name, temperature=0, api_key=os.getenv("ANTHROPIC_API_KEY")
+                model=model_name, api_key=os.getenv("ANTHROPIC_API_KEY")
             )
 
         elif provider == "google":
             from browser_use.llm.google.chat import ChatGoogle
 
             model_name = model or "gemini-2.0-flash-exp"
-            return ChatGoogle(
-                model=model_name, temperature=0, api_key=os.getenv("GOOGLE_API_KEY")
-            )
+            return ChatGoogle(model=model_name, api_key=os.getenv("GOOGLE_API_KEY"))
 
         else:
             raise ValueError(f"Unsupported Browser-Use provider: {provider}")

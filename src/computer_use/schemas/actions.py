@@ -72,6 +72,15 @@ class ActionResult(BaseModel):
         description="Context about what was attempted and what needs to be done",
     )
 
+    def __str__(self):
+        if self.success:
+            return f"✅ {self.action_taken}"
+        else:
+            return f"❌ {self.action_taken}: {self.error}"
+
+    def __repr__(self):
+        return self.__str__()
+
 
 class SystemCommand(BaseModel):
     """

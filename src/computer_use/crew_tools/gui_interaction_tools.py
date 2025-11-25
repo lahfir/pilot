@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 
 from ..schemas.actions import ActionResult
-from ..utils.ui import console
+from ..utils.ui import action_spinner, print_action_result
 from ..utils.ocr_targeting import (
     score_ocr_candidate,
     filter_candidates_by_spatial_context,
@@ -38,54 +38,61 @@ class ClickInput(BaseModel):
     """Input for clicking an element."""
 
     target: str = Field(description="Element to click (e.g., 'Light', 'Save button')")
+    element_id: Optional[str] = Field(
+        default=None,
+        description="Unique element ID from get_accessible_elements. BEST method - uses native click.",
+    )
     element: Optional[dict] = Field(
         default=None,
-        description="Element from get_accessible_elements with 'center' [x, y]. Preferred method for accuracy.",
+        description="Element dict with 'center' [x, y]. Use element_id instead when available.",
     )
     visual_context: Optional[str] = Field(
         default=None,
-        description="Spatial context for OCR fallback only. MUST include keywords: 'top', 'bottom', 'left', 'right', 'center'. Examples: 'right side at top', 'left sidebar'.",
+        description="Spatial context for OCR fallback only.",
     )
     click_type: str = Field(
         default="single", description="Click type: single, double, or right"
     )
     current_app: Optional[str] = Field(
-        default=None, description="Current application name (for window cropping)"
+        default=None, description="Current application name"
     )
 
 
 class ClickElementTool(BaseTool):
     """
-    Click element using element coordinates or OCR fallback.
-    Preferred: Use get_accessible_elements first, then pass element dict.
-    Fallback: OCR with visual_context for spatial disambiguation.
-    CRITICAL: Always provide current_app for accurate window-relative coordinates.
+    Click element using native accessibility or OCR fallback.
+
+    BEST: Pass element_id from get_accessible_elements (native click, 100% accurate)
+    FALLBACK: Pass element dict with center coordinates
+    LAST RESORT: OCR with visual_context
     """
 
     name: str = "click_element"
-    description: str = """Click element using coordinates or OCR.
-    PREFERRED: Pass element dict from get_accessible_elements.
-    FALLBACK: OCR with visual_context (spatial keywords required).
-    CRITICAL: Always provide current_app parameter for accurate window-relative clicks."""
+    description: str = """Click element.
+    BEST: element_id='<id>' from get_accessible_elements (native click, no duplicates)
+    FALLBACK: element=<dict with center>
+    LAST: OCR with target and visual_context"""
     args_schema: type[BaseModel] = ClickInput
 
     def _run(
         self,
         target: str,
+        element_id: Optional[str] = None,
         element: Optional[dict] = None,
         visual_context: Optional[str] = None,
         click_type: str = "single",
         current_app: Optional[str] = None,
     ) -> ActionResult:
         """
-        Click element with simplified logic.
+        Click element with priority: element_id > element > OCR.
 
         Args:
-            target: Element identifier (for logging)
-            element: Element dict with 'center' [x, y] (preferred)
+            target: Element label (for logging/fallback)
+            element_id: Unique ID from get_accessible_elements (best method)
+            element: Element dict with 'center' [x, y]
             visual_context: Spatial context for OCR fallback
             click_type: single/double/right
-            current_app: Current app for window cropping
+            current_app: Current app name
 
         Returns:
             ActionResult with click details
@@ -93,29 +100,65 @@ class ClickElementTool(BaseTool):
         if cancelled := check_cancellation():
             return cancelled
 
+        accessibility_tool = self._tool_registry.get_tool("accessibility")
+
+        if not element_id and element and isinstance(element, dict):
+            element_id = element.get("element_id")
+
+        if element_id and accessibility_tool and accessibility_tool.available:
+            if hasattr(accessibility_tool, "click_by_id"):
+                with action_spinner("Clicking", target):
+                    success, message = accessibility_tool.click_by_id(element_id)
+
+                    if click_type == "double":
+                        elem = accessibility_tool.get_element_by_id(element_id)
+                        if elem and elem.get("center"):
+                            x, y = elem["center"]
+                            input_tool = self._tool_registry.get_tool("input")
+                            input_tool.double_click(x, y)
+                    elif click_type == "right":
+                        elem = accessibility_tool.get_element_by_id(element_id)
+                        if elem and elem.get("center"):
+                            x, y = elem["center"]
+                            input_tool = self._tool_registry.get_tool("input")
+                            input_tool.right_click(x, y)
+
+                print_action_result(success, message)
+
+                return ActionResult(
+                    success=success,
+                    action_taken=message,
+                    method_used="accessibility_native",
+                    confidence=1.0 if success else 0.0,
+                )
+
         input_tool = self._tool_registry.get_tool("input")
 
         if element and "center" in element:
-            console.print("    [cyan]TIER 1:[/cyan] Element coordinates")
             center = element["center"]
             if isinstance(center, list) and len(center) == 2:
                 x, y = center
-                console.print(f"    [green]Clicking {target} at ({x}, {y})[/green]")
 
-                if click_type == "double":
-                    success = input_tool.double_click(x, y, validate=True)
-                elif click_type == "right":
-                    success = input_tool.right_click(x, y, validate=True)
-                else:
-                    success = input_tool.click(x, y, validate=True)
+                with action_spinner("Clicking", target):
+                    if click_type == "double":
+                        success = input_tool.double_click(x, y, validate=True)
+                    elif click_type == "right":
+                        success = input_tool.right_click(x, y, validate=True)
+                    else:
+                        success = input_tool.click(x, y, validate=True)
 
-                import time
+                    import time
 
-                timing = get_timing_config()
-                time.sleep(timing.ui_state_change_delay)
-                console.print(
-                    f"    [dim]⏱️  Waited {timing.ui_state_change_delay}s for UI state change[/dim]"
-                )
+                    timing = get_timing_config()
+                    time.sleep(timing.ui_state_change_delay)
+
+                accessibility_tool = self._tool_registry.get_tool("accessibility")
+                if accessibility_tool and hasattr(
+                    accessibility_tool, "invalidate_cache"
+                ):
+                    accessibility_tool.invalidate_cache()
+
+                print_action_result(success, f"Clicked {target}")
 
                 return ActionResult(
                     success=success,
@@ -125,17 +168,9 @@ class ClickElementTool(BaseTool):
                     data={"coordinates": (x, y)},
                 )
 
-        console.print("    [cyan]TIER 2:[/cyan] OCR fallback")
-
         screenshot_tool = self._tool_registry.get_tool("screenshot")
         ocr_tool = self._tool_registry.get_tool("ocr")
         accessibility_tool = self._tool_registry.get_tool("accessibility")
-
-        # CRITICAL: Warn if current_app not provided
-        if not current_app:
-            console.print(
-                "    [yellow]⚠️  WARNING: current_app not provided! Using full screen coordinates. This will likely fail![/yellow]"
-            )
 
         screenshot = screenshot_tool.capture()
         scaling = getattr(screenshot_tool, "scaling_factor", 1.0)
@@ -213,42 +248,35 @@ class ClickElementTool(BaseTool):
                 best_match = item
                 best_score = score
 
-        # Check score threshold
         MIN_VIABLE_SCORE = 500.0
         if not best_match or best_score < MIN_VIABLE_SCORE:
-            console.print(
-                f"    [red]No reliable OCR target for '{target}'. Best score: {best_score:.2f}[/red]"
-            )
+            print_action_result(False, f"No OCR match for '{target}'")
             return ActionResult(
                 success=False,
                 action_taken=f"Failed to click {target}",
                 method_used="ocr",
                 confidence=0.0,
-                error=f"No reliable OCR match for '{target}' (score {best_score:.2f} < {MIN_VIABLE_SCORE}). Suggestion: Use get_window_image for visual analysis or get_accessible_elements for element discovery.",
+                error=f"No reliable OCR match for '{target}'. Use get_window_image or get_accessible_elements.",
             )
 
         x_raw, y_raw = best_match.center
         x_screen = int(x_raw / scaling) + x_offset
         y_screen = int(y_raw / scaling) + y_offset
 
-        console.print(
-            f"    [green]Clicking '{best_match.text}' (score {best_score:.1f}) at ({x_screen}, {y_screen})[/green]"
-        )
+        with action_spinner("Clicking", best_match.text):
+            if click_type == "double":
+                success = input_tool.double_click(x_screen, y_screen, validate=True)
+            elif click_type == "right":
+                success = input_tool.right_click(x_screen, y_screen, validate=True)
+            else:
+                success = input_tool.click(x_screen, y_screen, validate=True)
 
-        if click_type == "double":
-            success = input_tool.double_click(x_screen, y_screen, validate=True)
-        elif click_type == "right":
-            success = input_tool.right_click(x_screen, y_screen, validate=True)
-        else:
-            success = input_tool.click(x_screen, y_screen, validate=True)
+            import time
 
-        import time
+            timing = get_timing_config()
+            time.sleep(timing.ui_state_change_delay)
 
-        timing = get_timing_config()
-        time.sleep(timing.ui_state_change_delay)
-        console.print(
-            f"    [dim]⏱️  Waited {timing.ui_state_change_delay}s for UI state change[/dim]"
-        )
+        print_action_result(success, "Clicked via OCR")
 
         return ActionResult(
             success=success,

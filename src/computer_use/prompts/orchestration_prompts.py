@@ -41,10 +41,11 @@ AGENT CAPABILITIES:
 
 GUI AGENT (use for):
 - Opening and interacting with ANY desktop application
-- System Settings/Preferences changes (theme, display, sound, etc.)
+- System settings changes (theme, display, sound, etc.)
 - Calculator, TextEdit, Notes, Finder, etc.
 - ANY task that requires clicking buttons or navigating UI
 - File creation through GUI apps
+- IMPORTANT: GUI agent will discover the correct app name automatically
 
 SYSTEM AGENT (use for):
 - Pure shell commands (ls, cp, mv, find, grep, etc.)
@@ -60,7 +61,7 @@ BROWSER AGENT (use for):
 CRITICAL ANALYSIS PATTERNS:
 
 "Change system theme/settings/preferences"
-→ ONE subtask: gui (open System Settings, navigate, click options)
+→ ONE subtask: gui (will discover and open the right settings app automatically)
 → NEVER use system agent for OS settings changes
 
 "Research X and create/save file with results"
@@ -69,19 +70,24 @@ CRITICAL ANALYSIS PATTERNS:
 → Data must flow from browser → file creator
 
 "Open app and do something"
-→ ONE subtask: gui (handles entire app workflow)
+→ ONE subtask: gui (will find the right app automatically)
 
 "Calculate/compute something in desktop app"
-→ ONE subtask: gui (opens app, performs calculation, gets result)
+→ ONE subtask: gui (finds calculator app, performs calculation, gets result)
 
 "Download from web"
 → ONE subtask: browser (handles download)
 
 "Create file with specific content"
-→ ONE subtask: gui (use TextEdit/Notes) OR system (use echo/cat commands)
+→ ONE subtask: gui (will find text editor) OR system (use echo/cat commands)
 
 "Find file and do something with it"
 → ONE or TWO: depends if finding requires system search or GUI navigation
+
+🚨 IMPORTANT: Never hardcode app names in task descriptions!
+- BAD: "Open System Preferences and change theme"
+- GOOD: "Open the system settings app and change theme to light mode"
+- The GUI agent will discover the correct app name on its own
 
 ORCHESTRATION RULES:
 1. If task can be completed by ONE agent → use 1 subtask

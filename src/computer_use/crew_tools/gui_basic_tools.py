@@ -11,6 +11,7 @@ from typing import Optional, Set
 
 from ..schemas.actions import ActionResult
 from ..config.timing_config import get_timing_config
+from ..utils.ui import action_spinner, print_action_result
 
 
 def check_cancellation() -> Optional[ActionResult]:
@@ -190,8 +191,11 @@ class OpenApplicationTool(BaseTool):
         accessibility_tool = self._tool_registry.get_tool("accessibility")
 
         try:
-            result = process_tool.open_application(app_name)
+            with action_spinner("Opening", app_name):
+                result = process_tool.open_application(app_name)
+
             if not result.get("success", False):
+                print_action_result(False, f"Failed to launch {app_name}")
                 return ActionResult(
                     success=False,
                     action_taken=f"Failed to launch {app_name}",
@@ -268,13 +272,24 @@ class OpenApplicationTool(BaseTool):
                     except Exception:
                         pass
 
-            # Timeout: app launched but couldn't verify it's accessible
+            running_apps = []
+            try:
+                if process_tool and hasattr(process_tool, "list_running_processes"):
+                    processes = process_tool.list_running_processes()
+                    running_apps = [p["name"] for p in processes[:10]]
+            except Exception:
+                pass
+
+            suggestion = ""
+            if running_apps:
+                suggestion = f" Available apps: {running_apps}. Use find_application() or list_running_apps() to find the correct name."
+
             return ActionResult(
                 success=False,
                 action_taken=f"Launched {app_name} but couldn't verify it's running after 5s",
                 method_used="process",
                 confidence=0.3,
-                error=f"{app_name} launch command executed but app not detected within timeout",
+                error=f"'{app_name}' not detected. TIP: Call find_application('{app_name}') first to get the CORRECT app name.{suggestion}",
             )
 
         except Exception as e:
@@ -420,11 +435,13 @@ class ScrollTool(BaseTool):
         input_tool = self._tool_registry.get_tool("input")
 
         try:
-            if direction == "down":
-                input_tool.scroll(-amount)
-            else:
-                input_tool.scroll(amount)
+            with action_spinner("Scrolling", direction):
+                if direction == "down":
+                    input_tool.scroll(-amount)
+                else:
+                    input_tool.scroll(amount)
 
+            print_action_result(True, f"Scrolled {direction}")
             return ActionResult(
                 success=True,
                 action_taken=f"Scrolled {direction}",
@@ -433,6 +450,7 @@ class ScrollTool(BaseTool):
                 data={"direction": direction},
             )
         except Exception as e:
+            print_action_result(False, f"Scroll failed: {e}")
             return ActionResult(
                 success=False,
                 action_taken="Scroll failed",
@@ -481,12 +499,23 @@ class ListRunningAppsTool(BaseTool):
             running_apps = accessibility_tool.get_running_app_names()
 
             if running_apps:
+                unique_apps = sorted(set(running_apps))
+                visible_apps = [
+                    a
+                    for a in unique_apps
+                    if not any(
+                        x in a.lower()
+                        for x in ["helper", "agent", "service", "extension", "server"]
+                    )
+                ][:25]
+                apps_summary = ", ".join(visible_apps)
+
                 return ActionResult(
                     success=True,
-                    action_taken=f"Found {len(running_apps)} running applications",
+                    action_taken=f"Found {len(unique_apps)} apps. User-facing: {apps_summary}",
                     method_used="accessibility",
                     confidence=1.0,
-                    data={"running_apps": running_apps, "count": len(running_apps)},
+                    data={"running_apps": unique_apps, "count": len(unique_apps)},
                 )
             else:
                 return ActionResult(
@@ -572,6 +601,9 @@ class GetAccessibleElementsInput(BaseModel):
     app_name: str = Field(description="Application name to get elements from")
 
 
+_get_elements_state = {"last_hash": "", "repeat_count": 0}
+
+
 class GetAccessibleElementsTool(BaseTool):
     """
     Get all interactive elements from an application using Accessibility API.
@@ -617,27 +649,35 @@ class GetAccessibleElementsTool(BaseTool):
 
         try:
             elements = []
-            if hasattr(accessibility_tool, "get_all_ui_elements"):
-                categorized = accessibility_tool.get_all_ui_elements(app_name)
-                all_elements = []
-                for category, items in categorized.items():
-                    all_elements.extend(items)
+            with action_spinner("Scanning", f"{app_name} UI"):
+                if hasattr(accessibility_tool, "invalidate_cache"):
+                    accessibility_tool.invalidate_cache()
 
-                if not all_elements:
-                    elements = accessibility_tool.get_all_interactive_elements(app_name)
+                if hasattr(accessibility_tool, "get_all_ui_elements"):
+                    categorized = accessibility_tool.get_all_ui_elements(app_name)
+                    all_elements = []
+                    for category, items in categorized.items():
+                        all_elements.extend(items)
+
+                    if not all_elements:
+                        elements = accessibility_tool.get_all_interactive_elements(
+                            app_name
+                        )
+                    else:
+                        elements = all_elements
                 else:
-                    elements = all_elements
-            else:
-                elements = accessibility_tool.get_all_interactive_elements(app_name)
+                    elements = accessibility_tool.get_all_interactive_elements(app_name)
 
             if not elements:
                 return ActionResult(
                     success=True,
-                    action_taken=f"No interactive elements found in {app_name} after retries",
+                    action_taken=f"No interactive elements found in {app_name}",
                     method_used="accessibility",
                     confidence=1.0,
                     data={"elements": [], "count": 0},
                 )
+
+            print_action_result(True, f"Found {len(elements)} elements")
 
             window_bounds = None
             if hasattr(accessibility_tool, "get_app_window_bounds"):
@@ -671,6 +711,7 @@ class GetAccessibleElementsTool(BaseTool):
                 title = elem.get("title", "") or elem.get("role", "")
 
                 normalized = {
+                    "element_id": elem.get("element_id", ""),
                     "label": label + spatial_hint,
                     "title": title + spatial_hint,
                     "role": elem.get("role", ""),
@@ -716,42 +757,57 @@ class GetAccessibleElementsTool(BaseTool):
             ]
 
             result_elements = (
-                meaningful_elements[:50]
+                meaningful_elements[:75]
                 if meaningful_elements
-                else normalized_elements[:50]
+                else normalized_elements[:75]
             )
 
-            # Create concise text summary for LLM (fits in token limit)
             element_lines = []
             for e in result_elements:
+                elem_id = e.get("element_id", "")
                 label = e.get("label", "")
                 role = e.get("role", "")
-                center = e.get("center", [])
 
-                # Show role as label if no label (for unlabeled interactive elements like theme buttons)
                 display_label = label if label else f"(unlabeled {role})"
-
-                if center and len(center) == 2:
-                    element_lines.append(f"• {display_label} ({role}) at {center}")
-                else:
-                    element_lines.append(f"• {display_label} ({role})")
+                element_lines.append(f"• [{elem_id}] {display_label} ({role})")
 
             elements_summary = (
                 "\n".join(element_lines) if element_lines else "No elements found"
             )
 
+            import hashlib
+
+            current_hash = hashlib.md5(elements_summary.encode()).hexdigest()[:8]
+            ui_changed_msg = ""
+
+            if current_hash == _get_elements_state["last_hash"]:
+                _get_elements_state["repeat_count"] += 1
+                if _get_elements_state["repeat_count"] >= 2:
+                    ui_changed_msg = (
+                        "\n\n⚠️ WARNING: UI unchanged! Elements are the same as before. "
+                        "Your previous action likely FAILED. Try: scroll first, click a different element, "
+                        "or use take_screenshot to see the actual state."
+                    )
+            else:
+                _get_elements_state["repeat_count"] = 0
+                ui_changed_msg = "\n\n✅ UI changed - new elements detected."
+
+            _get_elements_state["last_hash"] = current_hash
+
             return ActionResult(
                 success=True,
                 action_taken=(
-                    f"Found {len(result_elements)} UI elements in {app_name}:\n\n{elements_summary}\n\n"
-                    f"To click an element, use click_element(target='<label>', element=<element_from_list>, current_app='{app_name}')"
+                    f"Found {len(result_elements)} UI elements in {app_name}:\n\n{elements_summary}"
+                    f"{ui_changed_msg}\n\n"
+                    f"To click: use click_element(element_id='<id>', current_app='{app_name}')"
                 ),
                 method_used="accessibility",
                 confidence=1.0,
                 data={
-                    "elements": result_elements,  # Full dicts for click_element
-                    "summary": elements_summary,  # Concise text for LLM
+                    "elements": result_elements,
+                    "summary": elements_summary,
                     "count": len(result_elements),
+                    "repeat_count": _get_elements_state["repeat_count"],
                 },
             )
 

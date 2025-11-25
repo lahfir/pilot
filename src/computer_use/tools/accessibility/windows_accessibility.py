@@ -1,300 +1,610 @@
 """
-Windows UI Automation API using pywinauto for 100% accurate element interaction.
+Windows UI Automation API using pywinauto for fast, accurate element interaction.
+
+Design principles:
+- Let the API tell us what's interactive (is_enabled, control_type), don't guess by role
+- Element registry for direct native clicks by ID (no label search)
+- Cache invalidation after interactions
+- Fast clicking without OCR fallback
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 import platform
+import time
+import uuid
 
-from ...utils.ui import print_success, print_warning, print_info, console
-from ...config.timing_config import get_timing_config
+from ...utils.ui import print_success, print_warning, print_info
 
 
 class WindowsAccessibility:
     """
     Windows UI Automation using pywinauto library.
-    Provides 100% accurate element coordinates and direct interaction via UIA APIs.
+    Provides 100% accurate element coordinates via UIA APIs.
+
+    Element Registry Pattern:
+    - Each discovered element gets a unique ID
+    - Elements are stored in registry with native node reference
+    - click_by_id() uses registry for direct native clicks
     """
 
     def __init__(self, screen_width: int = 1920, screen_height: int = 1080):
-        """Initialize Windows UI Automation with pywinauto."""
-        self.available = self._check_availability()
-        self.current_app_name = None
-        self.current_app_ref = None
-        self.screen_width = screen_width
-        self.screen_height = screen_height
-        if self.available:
-            self._initialize_api()
-
-    def set_active_app(self, app_name: str):
         """
-        Set the active app that's currently in focus.
-
-        This should be called by open_application after successfully focusing the app.
-        The cached reference will be used for all subsequent operations until a different app is opened.
+        Initialize Windows UI Automation with pywinauto.
 
         Args:
-            app_name: The application name that was just opened/focused
+            screen_width: Screen width for bounds validation
+            screen_height: Screen height for bounds validation
         """
-        print(f"        [set_active_app] Setting active app to '{app_name}'")
+        self.screen_width = screen_width
+        self.screen_height = screen_height
+        self.available = self._check_availability()
+        self.pywinauto = None
+        self.Desktop = None
+        self._app_cache: Dict[str, Any] = {}
+        self._element_cache: Dict[str, List[Dict[str, Any]]] = {}
+        self._element_registry: Dict[str, Dict[str, Any]] = {}
+        self._last_interaction_time: float = 0
 
-        if self.current_app_name and self.current_app_name.lower() != app_name.lower():
-            print(
-                f"        [set_active_app] Switching from '{self.current_app_name}' to '{app_name}'"
-            )
-            self.current_app_name = None
-            self.current_app_ref = None
-
-        try:
-            desktop = self.Desktop(backend="uia")
-            windows = [
-                w
-                for w in desktop.windows()
-                if app_name.lower() in w.window_text().lower()
-            ]
-            if windows:
-                app_title = windows[0].window_text()
-                if app_title and (
-                    app_name.lower() in app_title.lower()
-                    or app_title.lower() in app_name.lower()
-                ):
-                    print(
-                        f"        [set_active_app] ✅ Cached '{app_title}' as active app"
-                    )
-                    self.current_app_name = app_name
-                    self.current_app_ref = windows[0]
-                else:
-                    print(
-                        f"        [set_active_app] ❌ App name mismatch: requested '{app_name}', got '{app_title}'"
-                    )
-        except Exception as e:
-            print(f"        [set_active_app] ⚠️  Failed to cache app: {e}")
-
-    def clear_app_cache(self):
-        """
-        Clear the cached app reference.
-
-        Use this only when you need to force a fresh lookup (e.g., on retries).
-        """
-        print("        [clear_app_cache] Clearing cached app reference")
-        self.current_app_name = None
-        self.current_app_ref = None
+        if self.available:
+            self._initialize_api()
 
     def _check_availability(self) -> bool:
         """Check if pywinauto is available and platform is Windows."""
         if platform.system().lower() != "windows":
             return False
+        import importlib.util
 
-        try:
-            import pywinauto  # noqa: F401
-
-            return True
-        except ImportError:
-            return False
+        return importlib.util.find_spec("pywinauto") is not None
 
     def _initialize_api(self):
-        """Initialize pywinauto and check UI Automation permissions."""
+        """Initialize pywinauto and verify UI Automation permissions."""
         try:
             import pywinauto
             from pywinauto import Desktop
 
             self.pywinauto = pywinauto
             self.Desktop = Desktop
-
-            try:
-                desktop = Desktop(backend="uia")
-                desktop.windows()
-                print_success("Accessibility API ready with 100% accurate coordinates")
-            except Exception:
-                print_warning("UI Automation permissions issue")
-                print_info("May need to run with administrator privileges")
-                self.available = False
-
+            Desktop(backend="uia").windows()
+            print_success("Accessibility API ready")
         except Exception as e:
-            print_warning(f"Failed to initialize UI Automation: {e}")
+            print_warning(f"UI Automation not available: {e}")
+            print_info("May need to run with administrator privileges")
             self.available = False
 
-    def click_element(self, label: str, app_name: Optional[str] = None) -> tuple:
+    def set_active_app(self, app_name: str):
         """
-        Find and click element directly using UI Automation API.
+        Set and cache the active application.
 
         Args:
-            label: Text to search for in element
-            app_name: Application name to search in
+            app_name: Application name to set as active
+        """
+        self._element_cache.clear()
+        app = self.get_app(app_name)
+        if app:
+            self._app_cache[app_name.lower()] = app
+
+    def clear_cache(self):
+        """Clear all caches to force fresh lookups."""
+        self._app_cache.clear()
+        self._element_cache.clear()
+
+    def invalidate_cache(self):
+        """
+        Invalidate element cache and registry after interactions.
+        Should be called after clicks, focus changes, etc.
+        """
+        self._element_cache.clear()
+        self._element_registry.clear()
+        self._last_interaction_time = time.time()
+
+    def get_app(self, app_name: str) -> Optional[Any]:
+        """
+        Get application window reference, using cache when available.
+
+        Args:
+            app_name: Application name
 
         Returns:
-            Tuple of (success: bool, element: Optional[element])
+            Window reference or None
         """
-        if not self.available:
-            return (False, None)
+        if not self.available or not app_name:
+            return None
+
+        cache_key = app_name.lower()
+        if cache_key in self._app_cache:
+            return self._app_cache[cache_key]
 
         try:
             desktop = self.Desktop(backend="uia")
+            for w in desktop.windows():
+                title = w.window_text()
+                if self._matches_name(title, app_name):
+                    self._app_cache[cache_key] = w
+                    return w
+        except Exception:
+            pass
 
-            if app_name:
-                windows = [
-                    w
-                    for w in desktop.windows()
-                    if app_name.lower() in w.window_text().lower()
-                ]
-            else:
-                windows = [desktop.windows()[0]] if desktop.windows() else []
+        return None
 
-            if not windows:
-                return (False, None)
-
-            window = windows[0]
-            element = self._find_element(window, label.lower())
-
-            if element:
-                from ...utils.ui import console, print_success, print_warning
-
-                elem_text = element.window_text()
-                console.print(f"    [dim]Found: {elem_text}[/dim]")
-
-                try:
-                    element.click_input()
-                    print_success(f"Clicked '{elem_text}' via UI Automation")
-                    return (True, element)
-                except Exception as e:
-                    print_warning(f"Native click failed: {e}")
-                    return (False, element)
-
-            return (False, None)
-
-        except Exception as e:
-            from ...utils.ui import print_warning
-
-            print_warning(f"UI Automation search failed: {e}")
-            return (False, None)
-
-    def try_click_element_or_parent(
-        self, element_dict: Dict[str, Any], max_depth: int = 5
-    ) -> tuple:
+    def get_windows(self, app: Any) -> List[Any]:
         """
-        Try to click element using native accessibility, traversing up to parent if needed.
+        Get windows for an application (on Windows, app IS the window).
 
         Args:
-            element_dict: Element dictionary with bounds, title, etc.
-            max_depth: Maximum parent traversal depth
+            app: Application/window reference
 
         Returns:
-            Tuple of (success: bool, method: str)
-            method can be: "element", "parent_N", or "failed"
+            List containing the window
         """
-        if not self.available:
-            return (False, "unavailable")
+        return [app] if app else []
 
-        try:
-            element = element_dict.get("_element")
-            if not element:
-                return (False, "no_element_reference")
-
-            console.print("    [dim]Trying native click on element...[/dim]")
-            try:
-                self._perform_click(element)
-                console.print("    [green]✅ Clicked element directly![/green]")
-                return (True, "element")
-            except Exception as e:
-                console.print(f"    [dim]Element click failed: {e}[/dim]")
-
-            current = element
-            for depth in range(1, max_depth + 1):
-                try:
-                    parent = current.parent()
-                    if parent:
-                        parent_type = (
-                            parent.element_info.control_type
-                            if hasattr(parent, "element_info")
-                            else "Unknown"
-                        )
-                        console.print(
-                            f"    [dim]Trying parent {depth} ({parent_type})...[/dim]"
-                        )
-
-                        try:
-                            self._perform_click(parent)
-                            console.print(
-                                f"    [green]✅ Clicked parent {depth}![/green]"
-                            )
-                            return (True, f"parent_{depth}")
-                        except Exception as e:
-                            console.print(
-                                f"    [dim]Parent {depth} click failed: {e}[/dim]"
-                            )
-                            current = parent
-                    else:
-                        break
-                except Exception:
-                    break
-
-            return (False, "not_clickable")
-
-        except Exception as e:
-            console.print(f"    [yellow]Native click error: {e}[/yellow]")
-            return (False, "error")
-
-    def get_all_interactive_elements(
-        self, app_name: Optional[str] = None
+    def get_elements(
+        self, app_name: str, interactive_only: bool = True, use_cache: bool = True
     ) -> List[Dict[str, Any]]:
         """
-        Get all interactive elements with their identifiers.
+        Get all UI elements from an application.
+
+        The API itself tells us what's interactive by checking:
+        - Is enabled (is_enabled)
+        - Control type (Button, Edit, etc. are inherently interactive)
+        - Has valid bounds for clicking
 
         Args:
-            app_name: Application name to search in
+            app_name: Application name
+            interactive_only: Only return elements that can be interacted with
+            use_cache: Use cached elements if available
 
         Returns:
-            List of elements with identifier, role, and description
+            List of element dictionaries with coordinates and metadata
         """
         if not self.available:
             return []
 
+        cache_key = f"{app_name.lower()}:{interactive_only}"
+        if use_cache and cache_key in self._element_cache:
+            return self._element_cache[cache_key]
+
+        app = self.get_app(app_name)
+        if not app:
+            return []
+
         elements = []
+        self._traverse(app, elements, interactive_only)
+
+        self._element_cache[cache_key] = elements
+        return elements
+
+    def _traverse(
+        self,
+        node: Any,
+        elements: List[Dict[str, Any]],
+        interactive_only: bool,
+        depth: int = 0,
+    ):
+        """
+        Single unified traversal - the API tells us what's interactive.
+
+        Args:
+            node: Current UI element
+            elements: List to collect elements into
+            interactive_only: Only collect interactive elements
+            depth: Current recursion depth (max 25)
+        """
+        if depth > 25:
+            return
 
         try:
-            desktop = self.Desktop(backend="uia")
+            is_enabled = False
+            try:
+                is_enabled = node.is_enabled()
+            except Exception:
+                pass
 
-            if app_name:
-                windows = [
-                    w
-                    for w in desktop.windows()
-                    if app_name.lower() in w.window_text().lower()
-                ]
-            else:
-                windows = [desktop.windows()[0]] if desktop.windows() else []
+            ctrl_type = ""
+            try:
+                ctrl_type = node.element_info.control_type
+            except Exception:
+                pass
 
-            if not windows:
-                return []
+            is_interactive = is_enabled and ctrl_type in (
+                "Button",
+                "Edit",
+                "ComboBox",
+                "ListItem",
+                "CheckBox",
+                "RadioButton",
+                "TabItem",
+                "Hyperlink",
+                "Slider",
+                "Spinner",
+                "MenuItem",
+            )
 
-            window = windows[0]
-            self._collect_interactive_elements(window, elements)
+            if not interactive_only or is_interactive:
+                element_info = self._extract_info(node, ctrl_type, is_enabled)
+                if element_info:
+                    elements.append(element_info)
+
+            try:
+                for child in node.children():
+                    self._traverse(child, elements, interactive_only, depth + 1)
+            except Exception:
+                pass
 
         except Exception:
             pass
 
-        return elements
+    def _extract_info(
+        self, node: Any, ctrl_type: str, is_enabled: bool
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Extract element info and register it with unique ID.
+
+        Args:
+            node: UI element
+            ctrl_type: Control type string
+            is_enabled: Whether element is enabled
+
+        Returns:
+            Element dict with element_id, or None if invalid
+        """
+        try:
+            rect = node.rectangle()
+            x, y = rect.left, rect.top
+            w, h = rect.width(), rect.height()
+
+            if w <= 0 or h <= 0:
+                return None
+            if x < 0 or y < 0 or x > self.screen_width or y > self.screen_height:
+                return None
+
+            window_text = node.window_text() or ""
+            name = getattr(node.element_info, "name", "") or ""
+            label = name or window_text
+
+            if not label and not window_text:
+                return None
+
+            element_id = str(uuid.uuid4())[:8]
+
+            element_info = {
+                "element_id": element_id,
+                "identifier": window_text,
+                "role": ctrl_type,
+                "label": label,
+                "title": label,
+                "description": name,
+                "center": [int(x + w / 2), int(y + h / 2)],
+                "bounds": [int(x), int(y), int(w), int(h)],
+                "has_actions": True,
+                "enabled": is_enabled,
+                "_element": node,
+            }
+
+            self._element_registry[element_id] = element_info
+
+            return element_info
+        except Exception:
+            return None
+
+    def get_element_by_id(self, element_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get element from registry by its unique ID.
+
+        Args:
+            element_id: Unique element ID from get_elements()
+
+        Returns:
+            Element dict with _element reference, or None
+        """
+        return self._element_registry.get(element_id)
+
+    def click_by_id(self, element_id: str) -> Tuple[bool, str]:
+        """
+        Click element directly using its unique ID.
+        Falls back to coordinate click if native action unavailable.
+
+        Args:
+            element_id: Unique element ID from get_elements()
+
+        Returns:
+            Tuple of (success, message)
+        """
+        if not self.available:
+            return (False, "Accessibility not available")
+
+        element = self._element_registry.get(element_id)
+        if not element:
+            return (False, f"Element ID '{element_id}' not found in registry")
+
+        node = element.get("_element")
+        label = element.get("label", element_id)
+
+        if node:
+            try:
+                self._perform_click(node)
+                self.invalidate_cache()
+                return (True, f"Clicked '{label}'")
+            except Exception:
+                pass
+
+        center = element.get("center")
+        if center and len(center) == 2:
+            try:
+                import pyautogui
+
+                x, y = center
+                pyautogui.click(x, y)
+                self.invalidate_cache()
+                return (True, f"Clicked '{label}' at ({x}, {y})")
+            except Exception as e:
+                return (False, f"Coordinate click failed: {e}")
+
+        return (False, f"No click method available for '{label}'")
+
+    def find_element(
+        self, app_name: str, label: str, exact_match: bool = False
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Find first element matching label.
+
+        Args:
+            app_name: Application name
+            label: Text to search for
+            exact_match: Require exact match vs contains
+
+        Returns:
+            Element dict or None
+        """
+        elements = self.get_elements(app_name, interactive_only=True)
+        label_lower = label.lower()
+
+        for elem in elements:
+            elem_label = (elem.get("label") or "").lower()
+            elem_id = (elem.get("identifier") or "").lower()
+
+            if exact_match:
+                if elem_label == label_lower or elem_id == label_lower:
+                    return elem
+            else:
+                if label_lower in elem_label or label_lower in elem_id:
+                    return elem
+
+        return None
+
+    def click_element(self, label: str, app_name: str) -> tuple:
+        """
+        Find and click element by label.
+
+        Args:
+            label: Element label to find
+            app_name: Application name
+
+        Returns:
+            Tuple of (success, element)
+        """
+        if not self.available:
+            return (False, None)
+
+        element = self.find_element(app_name, label)
+        if not element:
+            return (False, None)
+
+        node = element.get("_element")
+        if not node:
+            return (False, element)
+
+        try:
+            self._perform_click(node)
+            self.invalidate_cache()
+            return (True, element)
+        except Exception:
+            return (False, element)
+
+    def click_element_or_parent(
+        self, element_dict: Dict[str, Any], max_depth: int = 5
+    ) -> tuple:
+        """
+        Try clicking element, fall back to parents if needed.
+
+        Args:
+            element_dict: Element dictionary with _element reference
+            max_depth: How many parents to try
+
+        Returns:
+            Tuple of (success, method)
+        """
+        if not self.available:
+            return (False, "unavailable")
+
+        node = element_dict.get("_element")
+        if not node:
+            return (False, "no_reference")
+
+        try:
+            self._perform_click(node)
+            self.invalidate_cache()
+            return (True, "element")
+        except Exception:
+            pass
+
+        current = node
+        for depth in range(1, max_depth + 1):
+            try:
+                parent = current.parent()
+                if parent:
+                    try:
+                        self._perform_click(parent)
+                        self.invalidate_cache()
+                        return (True, f"parent_{depth}")
+                    except Exception:
+                        current = parent
+                else:
+                    break
+            except Exception:
+                break
+
+        return (False, "not_clickable")
+
+    def _perform_click(self, node: Any):
+        """
+        Perform click on a UI element.
+
+        Args:
+            node: Element to click
+
+        Raises:
+            Exception: If click fails
+        """
+        node.click_input()
+
+    def get_text(self, app_name: str) -> List[str]:
+        """
+        Extract all text values from an application.
+
+        Args:
+            app_name: Application name
+
+        Returns:
+            List of text strings
+        """
+        if not self.available:
+            return []
+
+        texts = []
+        seen = set()
+
+        for elem in self.get_elements(
+            app_name, interactive_only=False, use_cache=False
+        ):
+            for key in ("label", "title", "description", "identifier"):
+                val = elem.get(key, "")
+                if val and val not in seen:
+                    texts.append(val)
+                    seen.add(val)
+
+        return texts
+
+    def get_window_bounds(self, app_name: str) -> Optional[tuple]:
+        """
+        Get the bounds of the app's main window.
+
+        Args:
+            app_name: Application name
+
+        Returns:
+            (x, y, width, height) or None
+        """
+        if not self.available:
+            return None
+
+        app = self.get_app(app_name)
+        if not app:
+            return None
+
+        try:
+            rect = app.rectangle()
+            return (rect.left, rect.top, rect.width(), rect.height())
+        except Exception:
+            return None
+
+    def is_app_running(self, app_name: str) -> bool:
+        """
+        Check if an application is running.
+
+        Args:
+            app_name: Application name
+
+        Returns:
+            True if running
+        """
+        return self.get_app(app_name) is not None
+
+    def get_running_apps(self) -> List[str]:
+        """
+        Get names of all running applications.
+
+        Returns:
+            List of app names
+        """
+        if not self.available:
+            return []
+
+        apps = []
+        seen = set()
+        try:
+            desktop = self.Desktop(backend="uia")
+            for w in desktop.windows():
+                name = w.window_text()
+                if name and name not in seen:
+                    apps.append(name)
+                    seen.add(name)
+        except Exception:
+            pass
+        return apps
+
+    def get_frontmost_app(self) -> Optional[str]:
+        """
+        Get the name of the frontmost (focused) window.
+
+        Returns:
+            App name or None
+        """
+        if not self.available:
+            return None
+
+        try:
+            desktop = self.Desktop(backend="uia")
+            for w in desktop.windows():
+                if w.has_focus():
+                    return w.window_text()
+        except Exception:
+            pass
+        return None
+
+    def is_app_frontmost(self, app_name: str) -> bool:
+        """
+        Check if an application window has focus.
+
+        Args:
+            app_name: Application name
+
+        Returns:
+            True if frontmost
+        """
+        frontmost = self.get_frontmost_app()
+        return frontmost is not None and self._matches_name(frontmost, app_name)
+
+    def _matches_name(self, name1: str, name2: str) -> bool:
+        """
+        Check if two names match (case-insensitive, partial).
+
+        Args:
+            name1: First name
+            name2: Second name
+
+        Returns:
+            True if names match
+        """
+        if not name1 or not name2:
+            return False
+        n1, n2 = name1.lower(), name2.lower()
+        return n1 in n2 or n2 in n1
 
     def get_all_ui_elements(
         self, app_name: Optional[str] = None, include_menu_bar: bool = True
     ) -> Dict[str, List[Dict[str, Any]]]:
         """
-        Get ALL UI elements from an application with categorization.
-        Includes interactive elements, menu items, toolbars, and more.
+        Get all UI elements categorized by type (backward compatible).
 
         Args:
-            app_name: Application name to search in
-            include_menu_bar: Whether to include menu bar items
+            app_name: Application name
+            include_menu_bar: Include menu bar elements
 
         Returns:
-            Dictionary with categorized elements:
-            {
-                "interactive": [...],  # Buttons, text fields, etc.
-                "menu_bar": [...],     # Menu bar items
-                "menu_items": [...],   # Menu items (File, Edit, etc.)
-                "static": [...],       # Labels, static text
-                "structural": [...]    # Groups, toolbars, containers
-            }
+            Dict with categorized elements
         """
-        if not self.available:
+        if not self.available or not app_name:
             return {
                 "interactive": [],
                 "menu_bar": [],
@@ -302,6 +612,10 @@ class WindowsAccessibility:
                 "static": [],
                 "structural": [],
             }
+
+        all_elements = self.get_elements(
+            app_name, interactive_only=False, use_cache=False
+        )
 
         categorized = {
             "interactive": [],
@@ -311,544 +625,29 @@ class WindowsAccessibility:
             "structural": [],
         }
 
-        try:
-            app = None
-            windows = []
+        for elem in all_elements:
+            role = (elem.get("role") or "").lower()
 
-            print(f"🔍 Retry loop START for '{app_name}'")
-
-            timing = get_timing_config()
-            desktop = self.Desktop(backend="uia")
-
-            for attempt in range(timing.accessibility_retry_count):
-                print(
-                    f"    🔄 Attempt {attempt + 1}/{timing.accessibility_retry_count}: Getting fresh app reference..."
-                )
-
-                if attempt > 0:
-                    print("        [RETRY] Clearing app cache to force fresh lookup...")
-                    self.current_app_name = None
-                    self.current_app_ref = None
-
-                if app_name:
-                    windows = [
-                        w
-                        for w in desktop.windows()
-                        if app_name.lower() in w.window_text().lower()
-                    ]
-                else:
-                    windows = [desktop.windows()[0]] if desktop.windows() else []
-
-                if windows:
-                    app = windows[0]
-                    app_title = app.window_text()
-                    print(f"    ✓ Got app reference: {app_title}")
-                    print(f"    📊 Found {len(windows)} window(s)")
-
-                    if windows:
-                        print(
-                            f"    ✅ SUCCESS on attempt {attempt + 1}: {len(windows)} window(s)"
-                        )
-                        break
-                else:
-                    print(f"    ⚠️  Attempt {attempt + 1}/3: 0 windows!")
-
-            if not windows:
-                print("    ❌ FAILED: No windows found after 3 retries!")
-
-            print(
-                f"    Searching {len(windows)} window(s) for all UI elements (categorized)"
-            )
-
-            for window in windows:
-                self._collect_all_elements(
-                    window, categorized, depth=0, context="window"
-                )
-
-            if all(len(v) == 0 for v in categorized.values()) and len(windows) > 0:
-                frontmost = self.get_frontmost_app_name()
-                if frontmost and frontmost.lower() != (app_name or "").lower():
-                    print(f"    ⚠️  Frontmost app is '{frontmost}', trying that instead")
-                    frontmost_windows = [
-                        w
-                        for w in desktop.windows()
-                        if frontmost.lower() in w.window_text().lower()
-                    ]
-                    for window in frontmost_windows:
-                        self._collect_all_elements(
-                            window, categorized, depth=0, context="window"
-                        )
-
-        except Exception as e:
-            print(f"    ⚠️  Accessibility search error: {e}")
-
-        total = sum(len(v) for v in categorized.values())
-        print(f"    📊 Found {total} total elements:")
-        for category, items in categorized.items():
-            if items:
-                print(f"       • {category}: {len(items)}")
+            if "menubar" in role:
+                categorized["menu_bar"].append(elem)
+            elif "menu" in role:
+                categorized["menu_items"].append(elem)
+            elif elem.get("enabled"):
+                categorized["interactive"].append(elem)
+            elif role in ("text", "image", "statusbar"):
+                categorized["static"].append(elem)
+            else:
+                categorized["structural"].append(elem)
 
         return categorized
 
-    def is_app_running(self, app_name: str) -> bool:
-        """
-        Check if an application is currently running.
-
-        Args:
-            app_name: Application name to check
-
-        Returns:
-            True if app is running, False otherwise
-        """
-        if not self.available:
-            return False
-
-        try:
-            desktop = self.Desktop(backend="uia")
-            windows = [
-                w
-                for w in desktop.windows()
-                if app_name.lower() in w.window_text().lower()
-            ]
-            return len(windows) > 0
-        except Exception:
-            return False
-
-    def get_running_app_names(self) -> List[str]:
-        """
-        Get names of all currently running applications.
-
-        Returns:
-            List of running application names
-        """
-        if not self.available:
-            return []
-
-        try:
-            desktop = self.Desktop(backend="uia")
-            windows = desktop.windows()
-            app_names = []
-            seen = set()
-            for window in windows:
-                name = window.window_text()
-                if name and name not in seen:
-                    app_names.append(name)
-                    seen.add(name)
-            return app_names
-        except Exception:
-            return []
-
-    def get_frontmost_app_name(self) -> Optional[str]:
-        """
-        Get the name of the frontmost (active) application window.
-
-        Returns:
-            Name of frontmost app, or None if unavailable
-        """
-        if not self.available:
-            return None
-
-        try:
-            desktop = self.Desktop(backend="uia")
-            windows = desktop.windows()
-            for window in windows:
-                if window.has_focus():
-                    return window.window_text()
-            return None
-        except Exception:
-            return None
-
-    def is_app_frontmost(self, app_name: str) -> bool:
-        """
-        Check if an application window is currently the foreground (active) window.
-
-        Args:
-            app_name: Application name to check
-
-        Returns:
-            True if app is in foreground, False otherwise
-        """
-        if not self.available:
-            return False
-
-        frontmost_name = self.get_frontmost_app_name()
-        if not frontmost_name:
-            return False
-
-        app_lower = app_name.lower().strip()
-        front_lower = frontmost_name.lower().strip()
-
-        if app_lower in front_lower or front_lower in app_lower:
-            return True
-        return False
-
-    def get_text_from_app(self, app_name: str, role: Optional[str] = None) -> List[str]:
-        """
-        Extract all text values from an application using UI Automation API.
-        Useful for reading Calculator results, text editor content, etc.
-
-        Args:
-            app_name: Application name
-            role: Optional role filter (e.g., "Text", "Edit")
-
-        Returns:
-            List of text strings found in the application
-        """
-        if not self.available:
-            return []
-
-        texts = []
-
-        try:
-            desktop = self.Desktop(backend="uia")
-            windows = [
-                w
-                for w in desktop.windows()
-                if app_name.lower() in w.window_text().lower()
-            ]
-
-            for window in windows:
-                self._collect_text_values(window, texts, role)
-
-        except Exception as e:
-            print_warning(f"Failed to extract text: {e}")
-
-        return texts
-
-    def _collect_text_values(
-        self,
-        container,
-        texts: List[str],
-        role_filter: Optional[str] = None,
-        depth: int = 0,
-    ):
-        """Recursively collect text values from accessibility tree."""
-        if depth > 20:
-            return
-
-        try:
-            ctrl_type = container.element_info.control_type
-
-            if role_filter and ctrl_type.lower() != role_filter.lower():
-                pass
-            else:
-                window_text = container.window_text()
-                if window_text and window_text.strip() and window_text not in texts:
-                    texts.append(window_text.strip())
-
-                elem_name = getattr(container.element_info, "name", "")
-                if elem_name and elem_name.strip() and elem_name not in texts:
-                    texts.append(elem_name.strip())
-
-            for child in container.children():
-                self._collect_text_values(child, texts, role_filter, depth + 1)
-
-        except:
-            pass
-
-    def _perform_click(self, element):
-        """Perform click action on element using UI Automation."""
-        try:
-            element.click_input()
-            return True
-        except Exception as e:
-            raise Exception(f"Click action failed: {str(e)}")
-
-    def _get_app(self, app_name: Optional[str] = None):
-        """
-        Get application reference by name.
-        Uses cached reference when available.
-
-        IMPORTANT: This should ONLY be called after open_application has set the active app.
-        No frontmost app fallbacks - if the app isn't cached or found, we fail.
-        """
-        print(f"        [_get_app] Looking for app: '{app_name}'")
-
+    def get_all_interactive_elements(
+        self, app_name: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Get all interactive elements (backward compatible)."""
         if not app_name:
-            raise ValueError("app_name is required - no frontmost app fallback")
-
-        if self.current_app_name and self.current_app_ref:
-            if app_name.lower() == self.current_app_name.lower():
-                print(f"        [_get_app] 🚀 Using CACHED reference for '{app_name}'")
-                return self.current_app_ref
-
-        try:
-            desktop = self.Desktop(backend="uia")
-            windows = [
-                w
-                for w in desktop.windows()
-                if app_name.lower() in w.window_text().lower()
-            ]
-
-            if windows:
-                app_title = windows[0].window_text()
-                print(f"        [_get_app] getAppRef returned: {app_title}")
-
-                if app_title and (
-                    app_name.lower() in app_title.lower()
-                    or app_title.lower() in app_name.lower()
-                ):
-                    print(
-                        f"        [_get_app] ✅ App name matches, returning {app_title}"
-                    )
-                    return windows[0]
-                else:
-                    print(
-                        f"        [_get_app] ❌ WRONG APP! Requested '{app_name}' but got '{app_title}'"
-                    )
-                    raise ValueError(
-                        f"App name mismatch: requested '{app_name}', got '{app_title}'"
-                    )
-
-            raise Exception(
-                f"App '{app_name}' not found. Make sure it's opened with open_application first."
-            )
-        except Exception as e:
-            print(f"        [_get_app] ❌ Failed to get app: {e}")
-            raise
-
-    def get_app_window_bounds(self, app_name: Optional[str] = None) -> Optional[tuple]:
-        """
-        Get the bounds of the app's main window for OCR cropping.
-
-        Returns:
-            (x, y, width, height) or None
-        """
-        if not self.available:
-            return None
-
-        try:
-            desktop = self.Desktop(backend="uia")
-
-            if app_name:
-                windows = [
-                    w
-                    for w in desktop.windows()
-                    if app_name.lower() in w.window_text().lower()
-                ]
-            else:
-                windows = [desktop.windows()[0]] if desktop.windows() else []
-
-            if windows:
-                window = windows[0]
-                rect = window.rectangle()
-                return (rect.left, rect.top, rect.width(), rect.height())
-        except Exception:
-            pass
-
-        return None
-
-    def _collect_all_elements(
-        self,
-        container,
-        categorized: Dict[str, List[Dict[str, Any]]],
-        depth: int = 0,
-        context: str = "window",
-    ):
-        """
-        Recursively collect ALL UI elements with categorization.
-
-        Args:
-            container: UI Automation element to traverse
-            categorized: Dictionary to store categorized elements
-            depth: Current recursion depth
-            context: Context hint (menu_bar, window, etc.)
-        """
-        if depth > 25:
-            return
-
-        try:
-            ctrl_type = container.element_info.control_type
-
-            category = self._categorize_element(ctrl_type, context)
-            element_info = self._extract_element_info(container, ctrl_type, category)
-
-            if element_info:
-                categorized[category].append(element_info)
-
-            new_context = context
-            if ctrl_type in ["MenuBar"]:
-                new_context = "menu_bar"
-            elif ctrl_type in ["Menu", "MenuItem"]:
-                new_context = "menu_items"
-
-            for child in container.children():
-                self._collect_all_elements(child, categorized, depth + 1, new_context)
-
-        except:
-            pass
-
-    def _categorize_element(self, ctrl_type: str, context: str) -> str:
-        """
-        Categorize an element based on its control type and context.
-
-        Returns:
-            Category name: interactive, menu_bar, menu_items, static, or structural
-        """
-        if context == "menu_bar" or ctrl_type in ["MenuBar"]:
-            return "menu_bar"
-
-        if context == "menu_items" or ctrl_type in ["Menu", "MenuItem"]:
-            return "menu_items"
-
-        interactive_types = [
-            "Button",
-            "Edit",
-            "ComboBox",
-            "ListItem",
-            "CheckBox",
-            "RadioButton",
-            "TabItem",
-            "Hyperlink",
-            "Slider",
-            "Spinner",
-        ]
-        if ctrl_type in interactive_types:
-            return "interactive"
-
-        static_types = [
-            "Text",
-            "Image",
-            "StatusBar",
-        ]
-        if ctrl_type in static_types:
-            return "static"
-
-        structural_types = [
-            "Pane",
-            "Group",
-            "ToolBar",
-            "List",
-            "Table",
-            "Tree",
-            "TabControl",
-            "ScrollBar",
-            "SplitButton",
-        ]
-        if ctrl_type in structural_types:
-            return "structural"
-
-        return "structural"
-
-    def _extract_element_info(
-        self, container, ctrl_type: str, category: str
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Extract relevant information from a UI Automation element.
-
-        Returns:
-            Dictionary with element info or None if element should be skipped
-        """
-        try:
-            identifier = container.window_text()
-            description = getattr(container.element_info, "name", "")
-
-            if not identifier and not description:
-                return None
-
-            center = None
-            bounds = None
-            is_valid_for_clicking = True
-            try:
-                rect = container.rectangle()
-                x, y = rect.left, rect.top
-                w, h = rect.width(), rect.height()
-
-                if w <= 0 or h <= 0:
-                    is_valid_for_clicking = False
-                elif x < 0 or y < 0 or x > self.screen_width or y > self.screen_height:
-                    is_valid_for_clicking = False
-
-                if is_valid_for_clicking:
-                    center = [int(x + w / 2), int(y + h / 2)]
-                    bounds = [int(x), int(y), int(w), int(h)]
-
-                    if y < 40 and category == "menu_bar":
-                        is_valid_for_clicking = False
-            except:
-                pass
-
-            if not is_valid_for_clicking:
-                return None
-
-            enabled = False
-            try:
-                enabled = container.is_enabled()
-            except:
-                pass
-
-            return {
-                "identifier": identifier,
-                "role": ctrl_type,
-                "description": description,
-                "label": description or identifier,
-                "title": description or identifier,
-                "category": category,
-                "center": center,
-                "bounds": bounds,
-                "has_actions": True,
-                "enabled": enabled,
-                "_element": container,
-            }
-
-        except:
-            return None
-
-    def _collect_interactive_elements(
-        self, container, elements: List[Dict[str, Any]], depth=0
-    ):
-        """Recursively collect interactive elements for LLM context."""
-        if depth > 20:
-            return
-
-        try:
-            is_interactive = False
-
-            ctrl_type = container.element_info.control_type
-            is_enabled = container.is_enabled()
-
-            if is_enabled and ctrl_type in [
-                "Button",
-                "Edit",
-                "ComboBox",
-                "ListItem",
-                "MenuItem",
-                "CheckBox",
-                "RadioButton",
-                "TabItem",
-            ]:
-                is_interactive = True
-
-            if is_interactive:
-                identifier = container.window_text()
-                description = getattr(container.element_info, "name", "")
-
-                if identifier or description:
-                    try:
-                        rect = container.rectangle()
-                        x, y = rect.left, rect.top
-                        w, h = rect.width(), rect.height()
-
-                        elements.append(
-                            {
-                                "identifier": identifier,
-                                "role": ctrl_type,
-                                "description": description,
-                                "label": description or identifier,
-                                "title": description or identifier,
-                                "center": [int(x + w / 2), int(y + h / 2)],
-                                "bounds": [int(x), int(y), int(w), int(h)],
-                            }
-                        )
-                    except Exception:
-                        # If we can't get coordinates, skip this element
-                        pass
-
-            for child in container.children():
-                self._collect_interactive_elements(child, elements, depth + 1)
-
-        except:
-            pass
+            return []
+        return self.get_elements(app_name, interactive_only=True)
 
     def find_elements(
         self,
@@ -856,151 +655,52 @@ class WindowsAccessibility:
         role: Optional[str] = None,
         app_name: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """
-        Find UI elements and return their coordinates.
-
-        Args:
-            label: Element label or text to find
-            role: UI Automation control type
-            app_name: Application name
-
-        Returns:
-            List of elements with coordinates and metadata
-        """
-        if not self.available:
+        """Find elements by label and/or role (backward compatible)."""
+        if not app_name:
             return []
 
-        elements = []
+        elements = self.get_elements(app_name, interactive_only=True)
 
-        try:
-            from ...utils.ui import console
+        if not label and not role:
+            return elements
 
-            desktop = self.Desktop(backend="uia")
-
-            if app_name:
-                windows = [
-                    w
-                    for w in desktop.windows()
-                    if app_name.lower() in w.window_text().lower()
-                ]
-            else:
-                windows = [desktop.windows()[0]] if desktop.windows() else []
-
-            console.print(
-                f"    [dim]Searching {len(windows)} window(s) for '{label}'[/dim]"
-            )
-
-            for window in windows:
-                self._traverse_and_collect(window, label, role, elements)
-
-            console.print(f"  [green]Found {len(elements)} elements[/green]")
-
-        except Exception:
-            pass
-
-        return elements
-
-    def _get_app_windows(self, app):
-        """
-        Get all windows for an application.
-        Simple and fast - retries are handled at the app reference level.
-        """
-        if not app:
-            print("      [_get_app_windows] app is None, returning []")
-            return []
-
-        app_title = app.window_text() if hasattr(app, "window_text") else "Unknown"
-        print(f"      [_get_app_windows] Checking '{app_title}'...")
-
-        try:
-            windows = [app] if app else []
-            print(f"      [_get_app_windows] ✅ Returning {len(windows)} windows")
-            return windows
-        except:
-            print("      [_get_app_windows] ❌ Returning [] - no windows found")
-            return []
-
-    def _find_element(self, container, target_text, depth=0):
-        """Recursively find element by text."""
-        if depth > 20:
-            return None
-
-        try:
-            if self._element_matches_text(container, target_text):
-                return container
-
-            for child in container.children():
-                result = self._find_element(child, target_text, depth + 1)
-                if result:
-                    return result
-
-        except:
-            pass
-
-        return None
-
-    def _element_matches_text(self, element, target_text):
-        """Check if element's text attributes match the target text. EXACT MATCH ONLY."""
-        try:
-            window_text = element.window_text().lower()
-            if window_text == target_text:
-                return True
-
-            elem_name = getattr(element.element_info, "name", "").lower()
-            if elem_name == target_text:
-                return True
-
-        except:
-            pass
-
-        return False
-
-    def _traverse_and_collect(self, container, label, role, elements, depth=0):
-        """Traverse UI tree and collect matching elements with coordinates."""
-        if depth > 20:
-            return
-
-        try:
-            matches = False
-            matched_text = None
-
+        results = []
+        for elem in elements:
             if label:
-                window_text = container.window_text()
-                if label.lower() in window_text.lower():
-                    matches = True
-                    matched_text = window_text
+                elem_label = (elem.get("label") or "").lower()
+                elem_id = (elem.get("identifier") or "").lower()
+                if label.lower() not in elem_label and label.lower() not in elem_id:
+                    continue
+            if role and role.lower() not in (elem.get("role") or "").lower():
+                continue
+            results.append(elem)
 
-            if matches and role:
-                ctrl_type = container.element_info.control_type
-                if role.lower() not in ctrl_type.lower():
-                    matches = False
+        return results
 
-            if matches:
-                try:
-                    rect = container.rectangle()
-                    center_x = (rect.left + rect.right) // 2
-                    center_y = (rect.top + rect.bottom) // 2
+    def try_click_element_or_parent(
+        self, element_dict: Dict[str, Any], max_depth: int = 5
+    ) -> tuple:
+        """Backward compatible alias."""
+        return self.click_element_or_parent(element_dict, max_depth)
 
-                    elements.append(
-                        {
-                            "center": (center_x, center_y),
-                            "bounds": (
-                                rect.left,
-                                rect.top,
-                                rect.width(),
-                                rect.height(),
-                            ),
-                            "role": container.element_info.control_type,
-                            "title": matched_text,
-                            "detection_method": "windows_uia",
-                            "confidence": 1.0,
-                        }
-                    )
-                except:
-                    pass
+    def get_text_from_app(self, app_name: str, role: Optional[str] = None) -> List[str]:
+        """Backward compatible alias."""
+        return self.get_text(app_name)
 
-            for child in container.children():
-                self._traverse_and_collect(child, label, role, elements, depth + 1)
+    def get_app_window_bounds(self, app_name: Optional[str] = None) -> Optional[tuple]:
+        """Backward compatible alias."""
+        if not app_name:
+            return None
+        return self.get_window_bounds(app_name)
 
-        except:
-            pass
+    def get_running_app_names(self) -> List[str]:
+        """Backward compatible alias."""
+        return self.get_running_apps()
+
+    def get_frontmost_app_name(self) -> Optional[str]:
+        """Backward compatible alias."""
+        return self.get_frontmost_app()
+
+    def clear_app_cache(self):
+        """Backward compatible alias."""
+        self.clear_cache()

@@ -70,10 +70,16 @@ class FindApplicationTool(BaseTool):
                 error="FindApplicationTool requires LLM",
             )
 
-        # Get all running processes
+        accessibility_tool = self._tool_registry.get_tool("accessibility")
+
         try:
-            all_processes = process_tool.list_running_processes()
-            app_names = [p["name"] for p in all_processes]
+            if accessibility_tool and accessibility_tool.available:
+                app_names = accessibility_tool.get_running_app_names()
+            else:
+                all_processes = process_tool.list_running_processes()
+                app_names = [p["name"] for p in all_processes]
+
+            app_names = sorted(set(app_names))
         except Exception as e:
             return ActionResult(
                 success=False,
@@ -90,21 +96,19 @@ class FindApplicationTool(BaseTool):
 Capability needed: {capability}
 
 Available applications:
-{chr(10).join(f"- {app}" for app in sorted(set(app_names)))}
+{chr(10).join(f"- {app}" for app in app_names)}
 
-Select the BEST application for this capability.
-If no suitable app exists, select "NONE".
+Select the BEST USER-FACING application for "{capability}".
 
-Examples:
-- capability="spreadsheet" → Microsoft Excel, Numbers, LibreOffice Calc
-- capability="text_editor" → TextEdit, Notepad, gedit, vim, VS Code
-- capability="pdf_viewer" → Preview, Adobe Acrobat, evince
-- capability="browser" → Safari, Chrome, Firefox, Edge
-- capability="image_editor" → Preview, Paint, GIMP, Photoshop
-- capability="calculator" → Calculator, Spotlight
+IMPORTANT RULES:
+1. Select apps that have VISIBLE WINDOWS users can interact with
+2. AVOID background services, daemons, or system processes (they don't have UI)
+3. Look for the most obvious/common app name for the capability
+4. If capability mentions "settings" or "preferences", look for Settings/Preferences apps
 
-Select exact app name from the list above.
-"""
+If no suitable USER-FACING app exists in the list, select "NONE".
+
+Select the EXACT app name from the list above."""
 
         try:
             # Run LLM selection
@@ -171,4 +175,3 @@ Select exact app name from the list above.
                 confidence=0.0,
                 error=str(e),
             )
-

@@ -104,37 +104,30 @@ def _test_macos_accessibility() -> bool:
     """
     Test if macOS accessibility APIs are available.
     """
-    try:
-        import AppKit
-        import Quartz
+    import importlib.util
 
-        return True
-    except ImportError:
-        return False
+    return (
+        importlib.util.find_spec("AppKit") is not None
+        and importlib.util.find_spec("Quartz") is not None
+    )
 
 
 def _test_windows_accessibility() -> bool:
     """
     Test if Windows UI Automation is available.
     """
-    try:
-        import pywinauto
+    import importlib.util
 
-        return True
-    except ImportError:
-        return False
+    return importlib.util.find_spec("pywinauto") is not None
 
 
 def _test_linux_accessibility() -> bool:
     """
     Test if Linux AT-SPI is available.
     """
-    try:
-        import pyatspi
+    import importlib.util
 
-        return True
-    except ImportError:
-        return False
+    return importlib.util.find_spec("pyatspi") is not None
 
 
 def _get_screen_resolution() -> Tuple[int, int]:

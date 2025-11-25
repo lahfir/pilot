@@ -1,281 +1,635 @@
 """
-Linux AT-SPI accessibility API using pyatspi for 100% accurate element interaction.
+Linux AT-SPI accessibility API using pyatspi for fast, accurate element interaction.
+
+Design principles:
+- Let the API tell us what's interactive (has actions/is enabled), don't guess by role
+- Element registry for direct native clicks by ID (no label search)
+- Cache invalidation after interactions
+- Fast clicking without OCR fallback
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 import platform
+import time
+import uuid
 
-from ...utils.ui import print_success, print_warning, print_info, console
-from ...config.timing_config import get_timing_config
+from ...utils.ui import print_success, print_warning, print_info
 
 
 class LinuxAccessibility:
     """
     Linux AT-SPI using pyatspi library.
-    Provides 100% accurate element coordinates and direct interaction via AT-SPI APIs.
+    Provides 100% accurate element coordinates via AT-SPI APIs.
+
+    Element Registry Pattern:
+    - Each discovered element gets a unique ID
+    - Elements are stored in registry with native node reference
+    - click_by_id() uses registry for direct native clicks
     """
 
     def __init__(self, screen_width: int = 1920, screen_height: int = 1080):
-        """Initialize Linux AT-SPI with pyatspi."""
-        self.available = self._check_availability()
-        self.current_app_name = None
-        self.current_app_ref = None
-        self.screen_width = screen_width
-        self.screen_height = screen_height
-        if self.available:
-            self._initialize_api()
-
-    def set_active_app(self, app_name: str):
         """
-        Set the active app that's currently in focus.
-
-        This should be called by open_application after successfully focusing the app.
-        The cached reference will be used for all subsequent operations until a different app is opened.
+        Initialize Linux AT-SPI with pyatspi.
 
         Args:
-            app_name: The application name that was just opened/focused
+            screen_width: Screen width for bounds validation
+            screen_height: Screen height for bounds validation
         """
-        print(f"        [set_active_app] Setting active app to '{app_name}'")
+        self.screen_width = screen_width
+        self.screen_height = screen_height
+        self.available = self._check_availability()
+        self.pyatspi = None
+        self.desktop = None
+        self._app_cache: Dict[str, Any] = {}
+        self._element_cache: Dict[str, List[Dict[str, Any]]] = {}
+        self._element_registry: Dict[str, Dict[str, Any]] = {}
+        self._last_interaction_time: float = 0
 
-        if self.current_app_name and self.current_app_name.lower() != app_name.lower():
-            print(
-                f"        [set_active_app] Switching from '{self.current_app_name}' to '{app_name}'"
-            )
-            self.current_app_name = None
-            self.current_app_ref = None
-
-        try:
-            app = self._get_app(app_name)
-            if app and hasattr(app, "name"):
-                app_title = app.name
-                if app_title and (
-                    app_name.lower() in app_title.lower()
-                    or app_title.lower() in app_name.lower()
-                ):
-                    print(
-                        f"        [set_active_app] ✅ Cached '{app_title}' as active app"
-                    )
-                    self.current_app_name = app_name
-                    self.current_app_ref = app
-                else:
-                    print(
-                        f"        [set_active_app] ❌ App name mismatch: requested '{app_name}', got '{app_title}'"
-                    )
-        except Exception as e:
-            print(f"        [set_active_app] ⚠️  Failed to cache app: {e}")
-
-    def clear_app_cache(self):
-        """
-        Clear the cached app reference.
-
-        Use this only when you need to force a fresh lookup (e.g., on retries).
-        """
-        print("        [clear_app_cache] Clearing cached app reference")
-        self.current_app_name = None
-        self.current_app_ref = None
+        if self.available:
+            self._initialize_api()
 
     def _check_availability(self) -> bool:
         """Check if pyatspi is available and platform is Linux."""
         if platform.system().lower() != "linux":
             return False
+        import importlib.util
 
-        try:
-            import pyatspi  # noqa: F401
-
-            return True
-        except ImportError:
-            return False
+        return importlib.util.find_spec("pyatspi") is not None
 
     def _initialize_api(self):
-        """Initialize pyatspi and check AT-SPI permissions."""
+        """Initialize pyatspi and verify AT-SPI permissions."""
         try:
             import pyatspi
 
             self.pyatspi = pyatspi
             self.desktop = pyatspi.Registry.getDesktop(0)
-
-            try:
-                list(self.desktop)
-                print_success("Accessibility API ready with 100% accurate coordinates")
-            except Exception:
-                print_warning("AT-SPI permissions issue")
-                print_info("Ensure accessibility is enabled in system settings")
-                self.available = False
-
+            list(self.desktop)
+            print_success("Accessibility API ready")
         except Exception as e:
-            print_warning(f"Failed to initialize AT-SPI: {e}")
+            print_warning(f"AT-SPI not available: {e}")
+            print_info("Ensure accessibility is enabled in system settings")
             self.available = False
 
-    def click_element(self, label: str, app_name: Optional[str] = None) -> tuple:
+    def set_active_app(self, app_name: str):
         """
-        Find and click element directly using AT-SPI API.
+        Set and cache the active application.
 
         Args:
-            label: Text to search for in element
-            app_name: Application name to search in
-
-        Returns:
-            Tuple of (success: bool, element: Optional[element])
+            app_name: Application name to set as active
         """
-        if not self.available:
-            return (False, None)
+        self._element_cache.clear()
+        app = self.get_app(app_name)
+        if app:
+            self._app_cache[app_name.lower()] = app
 
-        try:
-            app = self._get_app(app_name)
-            if not app:
-                return (False, None)
+    def clear_cache(self):
+        """Clear all caches to force fresh lookups."""
+        self._app_cache.clear()
+        self._element_cache.clear()
 
-            element = self._find_element(app, label.lower())
-
-            if element:
-                from ...utils.ui import console, print_success, print_warning
-
-                elem_name = getattr(element, "name", "N/A")
-                console.print(f"    [dim]Found: {elem_name}[/dim]")
-
-                try:
-                    action_iface = element.queryAction()
-                    for i in range(action_iface.nActions):
-                        action_name = action_iface.getName(i)
-                        if (
-                            "click" in action_name.lower()
-                            or "press" in action_name.lower()
-                        ):
-                            action_iface.doAction(i)
-                            print_success(f"Clicked '{elem_name}' via AT-SPI")
-                            return (True, element)
-
-                    print_warning("No click action available")
-                    return (False, element)
-                except Exception as e:
-                    print_warning(f"Native click failed: {e}")
-                    return (False, element)
-
-            return (False, None)
-
-        except Exception as e:
-            from ...utils.ui import print_warning
-
-            print_warning(f"AT-SPI search failed: {e}")
-            return (False, None)
-
-    def try_click_element_or_parent(
-        self, element_dict: Dict[str, Any], max_depth: int = 5
-    ) -> tuple:
+    def invalidate_cache(self):
         """
-        Try to click element using native accessibility, traversing up to parent if needed.
+        Invalidate element cache and registry after interactions.
+        Should be called after clicks, focus changes, etc.
+        """
+        self._element_cache.clear()
+        self._element_registry.clear()
+        self._last_interaction_time = time.time()
+
+    def get_app(self, app_name: str) -> Optional[Any]:
+        """
+        Get application reference, using cache when available.
 
         Args:
-            element_dict: Element dictionary with bounds, title, etc.
-            max_depth: Maximum parent traversal depth
+            app_name: Application name
 
         Returns:
-            Tuple of (success: bool, method: str)
-            method can be: "element", "parent_N", or "failed"
+            App reference or None
         """
-        if not self.available:
-            return (False, "unavailable")
+        if not self.available or not app_name:
+            return None
+
+        cache_key = app_name.lower()
+        if cache_key in self._app_cache:
+            return self._app_cache[cache_key]
 
         try:
-            element = element_dict.get("_element")
-            if not element:
-                return (False, "no_element_reference")
+            for app in self.desktop:
+                name = getattr(app, "name", "")
+                if name and self._matches_name(name, app_name):
+                    self._app_cache[cache_key] = app
+                    return app
+        except Exception:
+            pass
 
-            console.print("    [dim]Trying native click on element...[/dim]")
-            try:
-                self._perform_click(element)
-                console.print("    [green]✅ Clicked element directly![/green]")
-                return (True, "element")
-            except Exception as e:
-                console.print(f"    [dim]Element click failed: {e}[/dim]")
+        return None
 
-            current = element
-            for depth in range(1, max_depth + 1):
+    def get_windows(self, app: Any) -> List[Any]:
+        """
+        Get all windows for an application.
+
+        Args:
+            app: Application reference
+
+        Returns:
+            List of window references
+        """
+        if not app:
+            return []
+
+        windows = []
+        try:
+            for i in range(app.childCount):
                 try:
-                    if hasattr(current, "getParent") and current.getParent():
-                        parent = current.getParent()
-                        parent_role = (
-                            parent.getRoleName()
-                            if hasattr(parent, "getRoleName")
-                            else "Unknown"
-                        )
-                        console.print(
-                            f"    [dim]Trying parent {depth} ({parent_role})...[/dim]"
-                        )
-
-                        try:
-                            self._perform_click(parent)
-                            console.print(
-                                f"    [green]✅ Clicked parent {depth}![/green]"
-                            )
-                            return (True, f"parent_{depth}")
-                        except Exception as e:
-                            console.print(
-                                f"    [dim]Parent {depth} click failed: {e}[/dim]"
-                            )
-                            current = parent
-                    else:
-                        break
+                    child = app.getChildAtIndex(i)
+                    role = child.getRoleName().lower()
+                    if role in ("frame", "window", "dialog"):
+                        windows.append(child)
                 except Exception:
-                    break
+                    continue
+        except Exception:
+            pass
 
-            return (False, "not_clickable")
+        return windows
 
-        except Exception as e:
-            console.print(f"    [yellow]Native click error: {e}[/yellow]")
-            return (False, "error")
-
-    def get_all_interactive_elements(
-        self, app_name: Optional[str] = None
+    def get_elements(
+        self, app_name: str, interactive_only: bool = True, use_cache: bool = True
     ) -> List[Dict[str, Any]]:
         """
-        Get all interactive elements with their identifiers.
+        Get all UI elements from an application.
+
+        The API itself tells us what's interactive by checking:
+        - Has actions (queryAction)
+        - Is enabled (STATE_ENABLED)
+        - Has valid bounds for clicking
 
         Args:
-            app_name: Application name to search in
+            app_name: Application name
+            interactive_only: Only return elements that can be interacted with
+            use_cache: Use cached elements if available
 
         Returns:
-            List of elements with identifier, role, and description
+            List of element dictionaries with coordinates and metadata
         """
         if not self.available:
             return []
 
+        cache_key = f"{app_name.lower()}:{interactive_only}"
+        if use_cache and cache_key in self._element_cache:
+            return self._element_cache[cache_key]
+
+        app = self.get_app(app_name)
+        if not app:
+            return []
+
         elements = []
+        for window in self.get_windows(app):
+            self._traverse(window, elements, interactive_only)
+
+        self._element_cache[cache_key] = elements
+        return elements
+
+    def _traverse(
+        self,
+        node: Any,
+        elements: List[Dict[str, Any]],
+        interactive_only: bool,
+        depth: int = 0,
+    ):
+        """
+        Single unified traversal - the API tells us what's interactive.
+
+        Args:
+            node: Current AT-SPI node
+            elements: List to collect elements into
+            interactive_only: Only collect interactive elements
+            depth: Current recursion depth (max 25)
+        """
+        if depth > 25:
+            return
 
         try:
-            app = self._get_app(app_name)
-            if not app:
-                return []
+            has_actions = False
+            try:
+                action_iface = node.queryAction()
+                has_actions = action_iface.nActions > 0
+            except Exception:
+                pass
 
-            self._collect_interactive_elements(app, elements)
+            is_enabled = False
+            try:
+                state_set = node.getState()
+                is_enabled = state_set.contains(self.pyatspi.STATE_ENABLED)
+            except Exception:
+                pass
+
+            is_interactive = has_actions or is_enabled
+
+            if not interactive_only or is_interactive:
+                element_info = self._extract_info(node, has_actions, is_enabled)
+                if element_info:
+                    elements.append(element_info)
+
+            for i in range(node.childCount):
+                try:
+                    child = node.getChildAtIndex(i)
+                    self._traverse(child, elements, interactive_only, depth + 1)
+                except Exception:
+                    continue
 
         except Exception:
             pass
 
-        return elements
+    def _extract_info(
+        self, node: Any, has_actions: bool, is_enabled: bool
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Extract element info and register it with unique ID.
+
+        Args:
+            node: AT-SPI node
+            has_actions: Whether element has actions
+            is_enabled: Whether element is enabled
+
+        Returns:
+            Element dict with element_id, or None if invalid
+        """
+        try:
+            component = node.queryComponent()
+            extents = component.getExtents(self.pyatspi.DESKTOP_COORDS)
+            x, y, w, h = extents
+
+            if w <= 0 or h <= 0:
+                return None
+            if x < 0 or y < 0 or x > self.screen_width or y > self.screen_height:
+                return None
+
+            name = getattr(node, "name", "") or ""
+            description = getattr(node, "description", "") or ""
+            label = description or name
+
+            if not label and not name:
+                return None
+
+            role = node.getRoleName() if hasattr(node, "getRoleName") else ""
+
+            element_id = str(uuid.uuid4())[:8]
+
+            element_info = {
+                "element_id": element_id,
+                "identifier": name,
+                "role": role,
+                "label": label,
+                "title": label,
+                "description": description,
+                "center": [int(x + w / 2), int(y + h / 2)],
+                "bounds": [int(x), int(y), int(w), int(h)],
+                "has_actions": has_actions,
+                "enabled": is_enabled,
+                "_element": node,
+            }
+
+            self._element_registry[element_id] = element_info
+
+            return element_info
+        except Exception:
+            return None
+
+    def get_element_by_id(self, element_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get element from registry by its unique ID.
+
+        Args:
+            element_id: Unique element ID from get_elements()
+
+        Returns:
+            Element dict with _element reference, or None
+        """
+        return self._element_registry.get(element_id)
+
+    def click_by_id(self, element_id: str) -> Tuple[bool, str]:
+        """
+        Click element directly using its unique ID.
+        Falls back to coordinate click if native action unavailable.
+
+        Args:
+            element_id: Unique element ID from get_elements()
+
+        Returns:
+            Tuple of (success, message)
+        """
+        if not self.available:
+            return (False, "Accessibility not available")
+
+        element = self._element_registry.get(element_id)
+        if not element:
+            return (False, f"Element ID '{element_id}' not found in registry")
+
+        node = element.get("_element")
+        label = element.get("label", element_id)
+
+        if node:
+            try:
+                self._perform_click(node)
+                self.invalidate_cache()
+                return (True, f"Clicked '{label}'")
+            except Exception:
+                pass
+
+        center = element.get("center")
+        if center and len(center) == 2:
+            try:
+                import pyautogui
+
+                x, y = center
+                pyautogui.click(x, y)
+                self.invalidate_cache()
+                return (True, f"Clicked '{label}' at ({x}, {y})")
+            except Exception as e:
+                return (False, f"Coordinate click failed: {e}")
+
+        return (False, f"No click method available for '{label}'")
+
+    def find_element(
+        self, app_name: str, label: str, exact_match: bool = False
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Find first element matching label.
+
+        Args:
+            app_name: Application name
+            label: Text to search for
+            exact_match: Require exact match vs contains
+
+        Returns:
+            Element dict or None
+        """
+        elements = self.get_elements(app_name, interactive_only=True)
+        label_lower = label.lower()
+
+        for elem in elements:
+            elem_label = (elem.get("label") or "").lower()
+            elem_id = (elem.get("identifier") or "").lower()
+
+            if exact_match:
+                if elem_label == label_lower or elem_id == label_lower:
+                    return elem
+            else:
+                if label_lower in elem_label or label_lower in elem_id:
+                    return elem
+
+        return None
+
+    def click_element(self, label: str, app_name: str) -> tuple:
+        """
+        Find and click element by label.
+
+        Args:
+            label: Element label to find
+            app_name: Application name
+
+        Returns:
+            Tuple of (success, element)
+        """
+        if not self.available:
+            return (False, None)
+
+        element = self.find_element(app_name, label)
+        if not element:
+            return (False, None)
+
+        node = element.get("_element")
+        if not node:
+            return (False, element)
+
+        try:
+            self._perform_click(node)
+            self.invalidate_cache()
+            return (True, element)
+        except Exception:
+            return (False, element)
+
+    def click_element_or_parent(
+        self, element_dict: Dict[str, Any], max_depth: int = 5
+    ) -> tuple:
+        """
+        Try clicking element, fall back to parents if needed.
+
+        Args:
+            element_dict: Element dictionary with _element reference
+            max_depth: How many parents to try
+
+        Returns:
+            Tuple of (success, method)
+        """
+        if not self.available:
+            return (False, "unavailable")
+
+        node = element_dict.get("_element")
+        if not node:
+            return (False, "no_reference")
+
+        try:
+            self._perform_click(node)
+            self.invalidate_cache()
+            return (True, "element")
+        except Exception:
+            pass
+
+        current = node
+        for depth in range(1, max_depth + 1):
+            try:
+                if hasattr(current, "getParent"):
+                    parent = current.getParent()
+                    if parent:
+                        try:
+                            self._perform_click(parent)
+                            self.invalidate_cache()
+                            return (True, f"parent_{depth}")
+                        except Exception:
+                            current = parent
+                    else:
+                        break
+                else:
+                    break
+            except Exception:
+                break
+
+        return (False, "not_clickable")
+
+    def _perform_click(self, node: Any):
+        """
+        Perform click on an AT-SPI node.
+
+        Args:
+            node: Element to click
+
+        Raises:
+            Exception: If click fails
+        """
+        action_iface = node.queryAction()
+        for i in range(action_iface.nActions):
+            action_name = action_iface.getName(i).lower()
+            if "click" in action_name or "press" in action_name:
+                action_iface.doAction(i)
+                return
+        raise Exception("No click/press action available")
+
+    def get_text(self, app_name: str) -> List[str]:
+        """
+        Extract all text values from an application.
+
+        Args:
+            app_name: Application name
+
+        Returns:
+            List of text strings
+        """
+        if not self.available:
+            return []
+
+        texts = []
+        seen = set()
+
+        for elem in self.get_elements(
+            app_name, interactive_only=False, use_cache=False
+        ):
+            for key in ("label", "title", "description", "identifier"):
+                val = elem.get(key, "")
+                if val and val not in seen:
+                    texts.append(val)
+                    seen.add(val)
+
+        return texts
+
+    def get_window_bounds(self, app_name: str) -> Optional[tuple]:
+        """
+        Get the bounds of the app's main window.
+
+        Args:
+            app_name: Application name
+
+        Returns:
+            (x, y, width, height) or None
+        """
+        if not self.available:
+            return None
+
+        app = self.get_app(app_name)
+        if not app:
+            return None
+
+        windows = self.get_windows(app)
+        if not windows:
+            return None
+
+        try:
+            component = windows[0].queryComponent()
+            extents = component.getExtents(self.pyatspi.DESKTOP_COORDS)
+            x, y, w, h = extents
+            return (int(x), int(y), int(w), int(h))
+        except Exception:
+            return None
+
+    def is_app_running(self, app_name: str) -> bool:
+        """
+        Check if an application is running.
+
+        Args:
+            app_name: Application name
+
+        Returns:
+            True if running
+        """
+        return self.get_app(app_name) is not None
+
+    def get_running_apps(self) -> List[str]:
+        """
+        Get names of all running applications.
+
+        Returns:
+            List of app names
+        """
+        if not self.available:
+            return []
+
+        apps = []
+        try:
+            for app in self.desktop:
+                name = getattr(app, "name", "")
+                if name:
+                    apps.append(name)
+        except Exception:
+            pass
+        return apps
+
+    def get_frontmost_app(self) -> Optional[str]:
+        """
+        Get the name of the application with an active window.
+
+        Returns:
+            App name or None
+        """
+        if not self.available:
+            return None
+
+        try:
+            for app in self.desktop:
+                for i in range(app.childCount):
+                    try:
+                        window = app.getChildAtIndex(i)
+                        state_set = window.getState()
+                        if state_set.contains(self.pyatspi.STATE_ACTIVE):
+                            return app.name
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+        return None
+
+    def is_app_frontmost(self, app_name: str) -> bool:
+        """
+        Check if an application has an active window.
+
+        Args:
+            app_name: Application name
+
+        Returns:
+            True if frontmost
+        """
+        frontmost = self.get_frontmost_app()
+        return frontmost is not None and self._matches_name(frontmost, app_name)
+
+    def _matches_name(self, name1: str, name2: str) -> bool:
+        """
+        Check if two names match (case-insensitive, partial).
+
+        Args:
+            name1: First name
+            name2: Second name
+
+        Returns:
+            True if names match
+        """
+        if not name1 or not name2:
+            return False
+        n1, n2 = name1.lower(), name2.lower()
+        return n1 in n2 or n2 in n1
 
     def get_all_ui_elements(
         self, app_name: Optional[str] = None, include_menu_bar: bool = True
     ) -> Dict[str, List[Dict[str, Any]]]:
         """
-        Get ALL UI elements from an application with categorization.
-        Includes interactive elements, menu items, toolbars, and more.
+        Get all UI elements categorized by type (backward compatible).
 
         Args:
-            app_name: Application name to search in
-            include_menu_bar: Whether to include menu bar items
+            app_name: Application name
+            include_menu_bar: Include menu bar elements
 
         Returns:
-            Dictionary with categorized elements:
-            {
-                "interactive": [...],  # Buttons, text fields, etc.
-                "menu_bar": [...],     # Menu bar items
-                "menu_items": [...],   # Menu items (File, Edit, etc.)
-                "static": [...],       # Labels, static text
-                "structural": [...]    # Groups, toolbars, containers
-            }
+            Dict with categorized elements
         """
-        if not self.available:
+        if not self.available or not app_name:
             return {
                 "interactive": [],
                 "menu_bar": [],
@@ -283,6 +637,10 @@ class LinuxAccessibility:
                 "static": [],
                 "structural": [],
             }
+
+        all_elements = self.get_elements(
+            app_name, interactive_only=False, use_cache=False
+        )
 
         categorized = {
             "interactive": [],
@@ -292,350 +650,29 @@ class LinuxAccessibility:
             "structural": [],
         }
 
-        try:
-            app = None
-            windows = []
+        for elem in all_elements:
+            role = (elem.get("role") or "").lower()
 
-            print(f"🔍 Retry loop START for '{app_name}'")
-
-            timing = get_timing_config()
-            for attempt in range(timing.accessibility_retry_count):
-                print(
-                    f"    🔄 Attempt {attempt + 1}/{timing.accessibility_retry_count}: Getting fresh app reference..."
-                )
-
-                if attempt > 0:
-                    print("        [RETRY] Clearing app cache to force fresh lookup...")
-                    self.current_app_name = None
-                    self.current_app_ref = None
-
-                app = self._get_app(app_name)
-
-                if app is None:
-                    print(
-                        f"    ❌ Attempt {attempt + 1}/{timing.accessibility_retry_count}: App reference is None!"
-                    )
-                    continue
-
-                app_name_attr = getattr(app, "name", "Unknown")
-                print(f"    ✓ Got app reference: {app_name_attr}")
-
-                windows = self._get_app_windows(app)
-
-                print(f"    📊 _get_app_windows returned {len(windows)} window(s)")
-
-                if windows:
-                    print(
-                        f"    ✅ SUCCESS on attempt {attempt + 1}: {len(windows)} window(s)"
-                    )
-                    break
-                else:
-                    print(f"    ⚠️  Attempt {attempt + 1}/3: 0 windows!")
-
-            if not app:
-                print("    ❌ FAILED: No app reference after 3 attempts")
-                return categorized
-
-            if not windows:
-                app_name_attr = getattr(app, "name", "Unknown")
-                print(
-                    f"    ❌ FAILED: App '{app_name_attr}' has 0 windows after 3 retries!"
-                )
-
-            print(
-                f"    Searching {len(windows)} window(s) for all UI elements (categorized)"
-            )
-
-            for window in windows:
-                self._collect_all_elements(
-                    window, categorized, depth=0, context="window"
-                )
-
-            if all(len(v) == 0 for v in categorized.values()) and len(windows) > 0:
-                frontmost = self.get_frontmost_app_name()
-                if frontmost and frontmost.lower() != (app_name or "").lower():
-                    print(f"    ⚠️  Frontmost app is '{frontmost}', trying that instead")
-                    frontmost_app = self._get_app(frontmost)
-                    if frontmost_app:
-                        frontmost_windows = self._get_app_windows(frontmost_app)
-                        for window in frontmost_windows:
-                            self._collect_all_elements(
-                                window, categorized, depth=0, context="window"
-                            )
-
-        except Exception as e:
-            print(f"    ⚠️  Accessibility search error: {e}")
-
-        total = sum(len(v) for v in categorized.values())
-        print(f"    📊 Found {total} total elements:")
-        for category, items in categorized.items():
-            if items:
-                print(f"       • {category}: {len(items)}")
+            if "menu" in role and "bar" in role:
+                categorized["menu_bar"].append(elem)
+            elif "menu" in role:
+                categorized["menu_items"].append(elem)
+            elif elem.get("has_actions") or elem.get("enabled"):
+                categorized["interactive"].append(elem)
+            elif role in ("label", "static", "heading", "paragraph", "image", "icon"):
+                categorized["static"].append(elem)
+            else:
+                categorized["structural"].append(elem)
 
         return categorized
 
-    def get_app_window_bounds(self, app_name: Optional[str] = None) -> Optional[tuple]:
-        """
-        Get the bounds of the app's main window for OCR cropping.
-
-        Returns:
-            (x, y, width, height) or None
-        """
-        if not self.available:
-            return None
-
-        try:
-            app = self._get_app(app_name)
-            if not app:
-                return None
-
-            for i in range(app.childCount):
-                try:
-                    window = app.getChildAtIndex(i)
-                    if window.getRoleName() in ["frame", "window", "dialog"]:
-                        state_set = window.getState()
-                        if state_set.contains(
-                            self.pyatspi.STATE_ACTIVE
-                        ) or state_set.contains(self.pyatspi.STATE_SHOWING):
-                            component = window.queryComponent()
-                            extents = component.getExtents(self.pyatspi.DESKTOP_COORDS)
-                            x, y, w, h = extents
-                            return (int(x), int(y), int(w), int(h))
-                except:
-                    continue
-        except Exception:
-            pass
-
-        return None
-
-    def _collect_all_elements(
-        self,
-        container,
-        categorized: Dict[str, List[Dict[str, Any]]],
-        depth: int = 0,
-        context: str = "window",
-    ):
-        """
-        Recursively collect ALL UI elements with categorization.
-
-        Args:
-            container: AT-SPI element to traverse
-            categorized: Dictionary to store categorized elements
-            depth: Current recursion depth
-            context: Context hint (menu_bar, window, etc.)
-        """
-        if depth > 25:
-            return
-
-        try:
-            role_name = container.getRoleName().lower()
-
-            category = self._categorize_element(role_name, context)
-            element_info = self._extract_element_info(container, role_name, category)
-
-            if element_info:
-                categorized[category].append(element_info)
-
-            new_context = context
-            if role_name in ["menu bar"]:
-                new_context = "menu_bar"
-            elif role_name in ["menu", "menu item"]:
-                new_context = "menu_items"
-
-            for i in range(container.childCount):
-                try:
-                    child = container.getChildAtIndex(i)
-                    self._collect_all_elements(
-                        child, categorized, depth + 1, new_context
-                    )
-                except:
-                    continue
-
-        except:
-            pass
-
-    def _categorize_element(self, role_name: str, context: str) -> str:
-        """
-        Categorize an element based on its role and context.
-
-        Returns:
-            Category name: interactive, menu_bar, menu_items, static, or structural
-        """
-        if context == "menu_bar" or role_name in ["menu bar"]:
-            return "menu_bar"
-
-        if context == "menu_items" or role_name in ["menu", "menu item"]:
-            return "menu_items"
-
-        interactive_roles = [
-            "push button",
-            "button",
-            "check box",
-            "radio button",
-            "text",
-            "entry",
-            "combo box",
-            "slider",
-            "spin button",
-            "link",
-            "tab",
-            "toggle button",
-            "password text",
-        ]
-        if role_name in interactive_roles:
-            return "interactive"
-
-        static_roles = [
-            "label",
-            "static",
-            "heading",
-            "paragraph",
-            "image",
-            "icon",
-        ]
-        if role_name in static_roles:
-            return "static"
-
-        structural_roles = [
-            "panel",
-            "filler",
-            "scroll pane",
-            "split pane",
-            "tool bar",
-            "list",
-            "table",
-            "tree",
-            "tree table",
-            "page tab list",
-        ]
-        if role_name in structural_roles:
-            return "structural"
-
-        return "structural"
-
-    def _extract_element_info(
-        self, container, role_name: str, category: str
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Extract relevant information from an AT-SPI element.
-
-        Returns:
-            Dictionary with element info or None if element should be skipped
-        """
-        try:
-            identifier = getattr(container, "name", "")
-            description = getattr(container, "description", "")
-
-            if not identifier and not description:
-                return None
-
-            center = None
-            bounds = None
-            is_valid_for_clicking = True
-            try:
-                component = container.queryComponent()
-                extents = component.getExtents(self.pyatspi.DESKTOP_COORDS)
-                x, y, w, h = extents
-
-                if w <= 0 or h <= 0:
-                    is_valid_for_clicking = False
-                elif x < 0 or y < 0 or x > self.screen_width or y > self.screen_height:
-                    is_valid_for_clicking = False
-
-                if is_valid_for_clicking:
-                    center = [int(x + w / 2), int(y + h / 2)]
-                    bounds = [int(x), int(y), int(w), int(h)]
-
-                    if y < 40 and category == "menu_bar":
-                        is_valid_for_clicking = False
-            except:
-                pass
-
-            if not is_valid_for_clicking:
-                return None
-
-            has_actions = False
-            try:
-                action_iface = container.queryAction()
-                has_actions = action_iface.nActions > 0
-            except:
-                pass
-
-            state_set = container.getState()
-            enabled = state_set.contains(self.pyatspi.STATE_ENABLED)
-
-            return {
-                "identifier": identifier,
-                "role": role_name,
-                "description": description,
-                "label": description or identifier,
-                "title": description or identifier,
-                "category": category,
-                "center": center,
-                "bounds": bounds,
-                "has_actions": has_actions,
-                "enabled": enabled,
-                "_element": container,
-            }
-
-        except:
-            return None
-
-    def _collect_interactive_elements(
-        self, container, elements: List[Dict[str, Any]], depth=0
-    ):
-        """Recursively collect interactive elements for LLM context."""
-        if depth > 20:
-            return
-
-        try:
-            is_interactive = False
-
-            role_name = container.getRoleName().lower()
-            state_set = container.getState()
-
-            if state_set.contains(self.pyatspi.STATE_ENABLED):
-                try:
-                    action_iface = container.queryAction()
-                    if action_iface.nActions > 0:
-                        is_interactive = True
-                except:
-                    pass
-
-            if is_interactive:
-                identifier = getattr(container, "name", "")
-                description = getattr(container, "description", "")
-
-                if identifier or description:
-                    try:
-                        component = container.queryComponent()
-                        extents = component.getExtents(self.pyatspi.DESKTOP_COORDS)
-                        x, y, w, h = extents
-
-                        elements.append(
-                            {
-                                "identifier": identifier,
-                                "role": role_name,
-                                "description": description,
-                                "label": description or identifier,
-                                "title": description or identifier,
-                                "center": [int(x + w / 2), int(y + h / 2)],
-                                "bounds": [int(x), int(y), int(w), int(h)],
-                            }
-                        )
-                    except Exception:
-                        # If we can't get coordinates, skip this element
-                        pass
-
-            for i in range(container.childCount):
-                try:
-                    child = container.getChildAtIndex(i)
-                    self._collect_interactive_elements(child, elements, depth + 1)
-                except:
-                    continue
-
-        except:
-            pass
+    def get_all_interactive_elements(
+        self, app_name: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Get all interactive elements (backward compatible)."""
+        if not app_name:
+            return []
+        return self.get_elements(app_name, interactive_only=True)
 
     def find_elements(
         self,
@@ -643,408 +680,52 @@ class LinuxAccessibility:
         role: Optional[str] = None,
         app_name: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """
-        Find UI elements and return their coordinates.
-
-        Args:
-            label: Element label or text to find
-            role: AT-SPI role
-            app_name: Application name
-
-        Returns:
-            List of elements with coordinates and metadata
-        """
-        if not self.available:
+        """Find elements by label and/or role (backward compatible)."""
+        if not app_name:
             return []
 
-        elements = []
+        elements = self.get_elements(app_name, interactive_only=True)
 
-        try:
-            from ...utils.ui import console
+        if not label and not role:
+            return elements
 
-            app = self._get_app(app_name)
-            if not app:
-                return []
-
-            windows = self._get_app_windows(app)
-            console.print(
-                f"    [dim]Searching {len(windows)} window(s) for '{label}'[/dim]"
-            )
-
-            for window in windows:
-                self._traverse_and_collect(window, label, role, elements)
-
-            console.print(f"  [green]Found {len(elements)} elements[/green]")
-
-        except Exception:
-            pass
-
-        return elements
-
-    def is_app_running(self, app_name: str) -> bool:
-        """
-        Check if an application is currently running.
-
-        Args:
-            app_name: Application name to check
-
-        Returns:
-            True if app is running, False otherwise
-        """
-        if not self.available:
-            return False
-
-        try:
-            app = self._get_app(app_name)
-            return app is not None
-        except Exception:
-            return False
-
-    def get_running_app_names(self) -> List[str]:
-        """
-        Get names of all currently running applications.
-
-        Returns:
-            List of running application names
-        """
-        if not self.available:
-            return []
-
-        try:
-            app_names = []
-            for app in self.desktop:
-                try:
-                    if hasattr(app, "name") and app.name:
-                        app_names.append(app.name)
-                except:
+        results = []
+        for elem in elements:
+            if label:
+                elem_label = (elem.get("label") or "").lower()
+                elem_id = (elem.get("identifier") or "").lower()
+                if label.lower() not in elem_label and label.lower() not in elem_id:
                     continue
-            return app_names
-        except Exception:
-            return []
+            if role and role.lower() not in (elem.get("role") or "").lower():
+                continue
+            results.append(elem)
 
-    def get_frontmost_app_name(self) -> Optional[str]:
-        """
-        Get the name of the application with an active window.
+        return results
 
-        Returns:
-            Name of app with active window, or None if unavailable
-        """
-        if not self.available:
-            return None
-
-        try:
-            for app in self.desktop:
-                try:
-                    for i in range(app.childCount):
-                        try:
-                            window = app.getChildAtIndex(i)
-                            state_set = window.getState()
-                            if state_set.contains(self.pyatspi.STATE_ACTIVE):
-                                return app.name
-                        except:
-                            continue
-                except:
-                    continue
-            return None
-        except Exception:
-            return None
-
-    def is_app_frontmost(self, app_name: str) -> bool:
-        """
-        Check if an application has an active window.
-
-        Args:
-            app_name: Application name to check
-
-        Returns:
-            True if app has active window, False otherwise
-        """
-        if not self.available:
-            return False
-
-        frontmost_name = self.get_frontmost_app_name()
-        if not frontmost_name:
-            return False
-
-        app_lower = app_name.lower().strip()
-        front_lower = frontmost_name.lower().strip()
-
-        if app_lower in front_lower or front_lower in app_lower:
-            return True
-        return False
+    def try_click_element_or_parent(
+        self, element_dict: Dict[str, Any], max_depth: int = 5
+    ) -> tuple:
+        """Backward compatible alias."""
+        return self.click_element_or_parent(element_dict, max_depth)
 
     def get_text_from_app(self, app_name: str, role: Optional[str] = None) -> List[str]:
-        """
-        Extract all text values from an application using AT-SPI API.
-        Useful for reading Calculator results, text editor content, etc.
+        """Backward compatible alias."""
+        return self.get_text(app_name)
 
-        Args:
-            app_name: Application name
-            role: Optional role filter (e.g., "StaticText", "TextField")
-
-        Returns:
-            List of text strings found in the application
-        """
-        if not self.available:
-            return []
-
-        texts = []
-
-        try:
-            app = self._get_app(app_name)
-            if not app:
-                return []
-
-            windows = self._get_app_windows(app)
-            for window in windows:
-                self._collect_text_values(window, texts, role)
-
-        except Exception as e:
-            print_warning(f"Failed to extract text: {e}")
-
-        return texts
-
-    def _collect_text_values(
-        self,
-        container,
-        texts: List[str],
-        role_filter: Optional[str] = None,
-        depth: int = 0,
-    ):
-        """Recursively collect text values from accessibility tree."""
-        if depth > 20:
-            return
-
-        try:
-            role_name = container.getRoleName().lower()
-
-            if role_filter and role_name != role_filter.lower():
-                pass
-            else:
-                if hasattr(container, "name") and container.name:
-                    value = str(container.name).strip()
-                    if value and value not in texts:
-                        texts.append(value)
-
-                if hasattr(container, "description") and container.description:
-                    desc = str(container.description).strip()
-                    if desc and desc not in texts:
-                        texts.append(desc)
-
-            for i in range(container.childCount):
-                try:
-                    child = container.getChildAtIndex(i)
-                    self._collect_text_values(child, texts, role_filter, depth + 1)
-                except:
-                    continue
-
-        except:
-            pass
-
-    def _perform_click(self, element):
-        """Perform click action on element using AT-SPI."""
-        try:
-            action_iface = element.queryAction()
-            for i in range(action_iface.nActions):
-                action_name = action_iface.getName(i)
-                if "click" in action_name.lower() or "press" in action_name.lower():
-                    action_iface.doAction(i)
-                    return True
-            raise Exception("Element does not support click/press action")
-        except Exception as e:
-            raise Exception(f"Click action failed: {str(e)}")
-
-    def _get_app(self, app_name: Optional[str] = None):
-        """
-        Get application reference by name.
-        Uses cached reference when available.
-
-        IMPORTANT: This should ONLY be called after open_application has set the active app.
-        No frontmost app fallbacks - if the app isn't cached or found, we fail.
-        """
-        print(f"        [_get_app] Looking for app: '{app_name}'")
-
+    def get_app_window_bounds(self, app_name: Optional[str] = None) -> Optional[tuple]:
+        """Backward compatible alias."""
         if not app_name:
-            raise ValueError("app_name is required - no frontmost app fallback")
-
-        if self.current_app_name and self.current_app_ref:
-            if app_name.lower() == self.current_app_name.lower():
-                print(f"        [_get_app] 🚀 Using CACHED reference for '{app_name}'")
-                return self.current_app_ref
-
-        try:
-            for app in self.desktop:
-                try:
-                    if hasattr(app, "name") and app.name:
-                        if (
-                            app_name.lower() in app.name.lower()
-                            or app.name.lower() in app_name.lower()
-                        ):
-                            app_title = app.name
-                            print(f"        [_get_app] getAppRef returned: {app_title}")
-
-                            if app_title and (
-                                app_name.lower() in app_title.lower()
-                                or app_title.lower() in app_name.lower()
-                            ):
-                                print(
-                                    f"        [_get_app] ✅ App name matches, returning {app_title}"
-                                )
-                                return app
-                            else:
-                                print(
-                                    f"        [_get_app] ❌ WRONG APP! Requested '{app_name}' but got '{app_title}'"
-                                )
-                                raise ValueError(
-                                    f"App name mismatch: requested '{app_name}', got '{app_title}'"
-                                )
-                except Exception:
-                    continue
-
-            raise Exception(
-                f"App '{app_name}' not found. Make sure it's opened with open_application first."
-            )
-        except Exception as e:
-            print(f"        [_get_app] ❌ Failed to get app: {e}")
-            raise
-
-    def _get_app_windows(self, app):
-        """
-        Get all windows for an application.
-        Simple and fast - retries are handled at the app reference level.
-        """
-        if not app:
-            print("      [_get_app_windows] app is None, returning []")
-            return []
-
-        app_name_attr = getattr(app, "name", "Unknown")
-        print(f"      [_get_app_windows] Checking '{app_name_attr}'...")
-
-        windows = []
-        try:
-            for i in range(app.childCount):
-                try:
-                    child = app.getChildAtIndex(i)
-                    role_name = child.getRoleName().lower()
-                    if role_name in ["frame", "window", "dialog"]:
-                        windows.append(child)
-                except:
-                    continue
-        except:
-            pass
-
-        print(f"      [_get_app_windows] ✅ Returning {len(windows)} windows")
-        return windows
-
-    def _find_element(self, app, target_text, depth=0):
-        """Recursively find element by text."""
-        if depth > 20:
             return None
+        return self.get_window_bounds(app_name)
 
-        try:
-            windows = self._get_app_windows(app)
+    def get_running_app_names(self) -> List[str]:
+        """Backward compatible alias."""
+        return self.get_running_apps()
 
-            for window in windows:
-                result = self._search_tree_for_element(window, target_text, depth)
-                if result:
-                    return result
+    def get_frontmost_app_name(self) -> Optional[str]:
+        """Backward compatible alias."""
+        return self.get_frontmost_app()
 
-        except:
-            pass
-
-        return None
-
-    def _search_tree_for_element(self, container, target_text, depth=0):
-        """Recursively search accessibility tree for element with target text."""
-        if depth > 20:
-            return None
-
-        try:
-            if self._element_matches_text(container, target_text):
-                return container
-
-            for i in range(container.childCount):
-                try:
-                    child = container.getChildAtIndex(i)
-                    result = self._search_tree_for_element(
-                        child, target_text, depth + 1
-                    )
-                    if result:
-                        return result
-                except:
-                    continue
-
-        except:
-            pass
-
-        return None
-
-    def _element_matches_text(self, element, target_text):
-        """Check if element's text attributes match the target text. EXACT MATCH ONLY."""
-        try:
-            elem_name = getattr(element, "name", "").lower()
-            if elem_name == target_text:
-                return True
-
-            elem_desc = getattr(element, "description", "").lower()
-            if elem_desc == target_text:
-                return True
-
-        except:
-            pass
-
-        return False
-
-    def _traverse_and_collect(self, container, label, role, elements, depth=0):
-        """Traverse AT-SPI tree and collect matching elements with coordinates."""
-        if depth > 20:
-            return
-
-        try:
-            matches = False
-            matched_text = None
-
-            if label:
-                elem_name = getattr(container, "name", "")
-                elem_desc = getattr(container, "description", "")
-
-                if label.lower() in elem_name.lower():
-                    matches = True
-                    matched_text = elem_name
-                elif label.lower() in elem_desc.lower():
-                    matches = True
-                    matched_text = elem_desc
-
-            if matches and role:
-                elem_role = container.getRoleName().lower()
-                if role.lower() not in elem_role:
-                    matches = False
-
-            if matches:
-                try:
-                    component = container.queryComponent()
-                    extents = component.getExtents(self.pyatspi.DESKTOP_COORDS)
-                    x, y, w, h = extents
-
-                    elements.append(
-                        {
-                            "center": (int(x + w / 2), int(y + h / 2)),
-                            "bounds": (int(x), int(y), int(w), int(h)),
-                            "role": container.getRoleName(),
-                            "title": matched_text,
-                            "detection_method": "atspi",
-                            "confidence": 1.0,
-                        }
-                    )
-                except:
-                    pass
-
-            for i in range(container.childCount):
-                try:
-                    child = container.getChildAtIndex(i)
-                    self._traverse_and_collect(child, label, role, elements, depth + 1)
-                except:
-                    continue
-
-        except:
-            pass
+    def clear_app_cache(self):
+        """Backward compatible alias."""
+        self.clear_cache()

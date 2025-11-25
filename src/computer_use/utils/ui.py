@@ -1,5 +1,6 @@
 """
-Professional terminal UI using rich and prompt_toolkit.
+Premium terminal UI - Claude-code style experience.
+Beautiful, responsive, and informative.
 """
 
 import asyncio
@@ -8,13 +9,30 @@ import sys
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
+from rich.live import Live
+from rich.spinner import Spinner
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 from rich import box
+from rich.rule import Rule
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import KeyBindings
 from typing import Optional
+from contextlib import contextmanager
 
 console = Console()
+
+THEME = {
+    "primary": "#00d7ff",
+    "secondary": "#ff79c6",
+    "success": "#50fa7b",
+    "warning": "#ffb86c",
+    "error": "#ff5555",
+    "info": "#8be9fd",
+    "muted": "#6272a4",
+    "accent": "#bd93f9",
+}
 
 _key_bindings = KeyBindings()
 _voice_mode_enabled = {"value": False}
@@ -22,36 +40,28 @@ _voice_mode_enabled = {"value": False}
 
 @_key_bindings.add("enter")
 def _(event):
-    """
-    Handle Enter key - submit the input.
-    """
+    """Handle Enter key - submit the input."""
     event.current_buffer.validate_and_handle()
 
 
 @_key_bindings.add("c-j")
 def _(event):
-    """
-    Handle Ctrl+J - insert newline (alternative for Shift+Enter).
-    """
+    """Handle Ctrl+J - insert newline."""
     event.current_buffer.insert_text("\n")
 
 
 @_key_bindings.add("escape", "enter")
 def _(event):
-    """
-    Handle Alt/Option+Enter - insert newline.
-    """
+    """Handle Alt/Option+Enter - insert newline."""
     event.current_buffer.insert_text("\n")
 
 
 @_key_bindings.add("f5")
 def _(event):
-    """
-    Handle F5 - toggle voice input mode.
-    """
+    """Handle F5 - toggle voice input mode."""
     _voice_mode_enabled["value"] = not _voice_mode_enabled["value"]
     mode = "🎤 Voice" if _voice_mode_enabled["value"] else "⌨️  Text"
-    console.print(f"\n[cyan]Switched to {mode} input mode (F5)[/cyan]")
+    console.print(f"\n[{THEME['info']}]Switched to {mode} mode[/]")
 
 
 _prompt_session = PromptSession(
@@ -62,396 +72,401 @@ _prompt_session = PromptSession(
 
 
 def print_banner():
-    """
-    Display startup banner with voice input information.
-    """
-    banner = """
-    ╔═══════════════════════════════════════════════════════════╗
-    ║                                                           ║
-    ║        🤖 Computer Use Agent - Multi-Platform             ║
-    ║        Autonomous Desktop & Web Automation                ║
-    ║                                                           ║
-    ╚═══════════════════════════════════════════════════════════╝
-    """
-    console.print(banner, style="bold cyan")
+    """Display minimal, elegant startup banner."""
     console.print()
-    console.print(
-        "[dim]💡 Input modes: Press [cyan]F5[/cyan] to toggle "
-        "between ⌨️  text and 🎤 voice[/dim]"
-    )
-    voice_lang = os.getenv("VOICE_INPUT_LANGUAGE", "multi")
-    if voice_lang == "multi":
-        console.print("[dim]   Voice input: multilingual mode (100+ languages)[/dim]")
-    else:
-        console.print(
-            f"[dim]   Voice input language: {voice_lang.upper()} "
-            f"(set VOICE_INPUT_LANGUAGE=multi for multilingual)[/dim]"
-        )
+
+    title = Text()
+    title.append("◆ ", style=f"bold {THEME['accent']}")
+    title.append("Computer Use Agent", style=f"bold {THEME['primary']}")
+
+    subtitle = Text()
+    subtitle.append("  Autonomous Desktop & Web Automation", style=THEME["muted"])
+
+    console.print(title)
+    console.print(subtitle)
+    console.print()
+
+    hints = Text()
+    hints.append("  ", style="")
+    hints.append("F5", style=f"bold {THEME['info']}")
+    hints.append(" voice  ", style=THEME["muted"])
+    hints.append("Alt+↵", style=f"bold {THEME['info']}")
+    hints.append(" newline  ", style=THEME["muted"])
+    hints.append("Ctrl+C", style=f"bold {THEME['info']}")
+    hints.append(" cancel", style=THEME["muted"])
+    console.print(hints)
+    console.print()
 
 
 def print_section_header(title: str, icon: str = ""):
-    """
-    Print styled section header.
-    """
+    """Print styled section header."""
     console.print()
-    console.rule(f"{icon} {title}", style="bold blue")
-    console.print()
+    text = Text()
+    if icon:
+        text.append(f"{icon} ", style=THEME["accent"])
+    text.append(title, style=f"bold {THEME['primary']}")
+    console.print(text)
+    console.print(Rule(style=THEME["muted"]))
 
 
 def print_platform_info(capabilities):
-    """
-    Display platform capabilities in styled table.
-    """
-    table = Table(title="Platform Information", box=box.ROUNDED, show_header=False)
-    table.add_column("Property", style="cyan")
-    table.add_column("Value", style="white")
+    """Display platform capabilities in compact format."""
+    console.print()
 
-    table.add_row("OS", f"{capabilities.os_type} {capabilities.os_version}")
-    table.add_row(
-        "Screen",
-        f"{capabilities.screen_resolution[0]}x{capabilities.screen_resolution[1]}",
+    main_table = Table(
+        box=box.SIMPLE,
+        show_header=False,
+        padding=(0, 2),
+        collapse_padding=True,
     )
-    table.add_row("Scaling", f"{capabilities.scaling_factor}x")
+    main_table.add_column("", style=THEME["muted"])
+    main_table.add_column("", style="white")
+
+    main_table.add_row(
+        "Platform", f"{capabilities.os_type.title()} {capabilities.os_version}"
+    )
+    main_table.add_row(
+        "Display",
+        f"{capabilities.screen_resolution[0]}×{capabilities.screen_resolution[1]} @ {capabilities.scaling_factor}x",
+    )
 
     if capabilities.gpu_available:
-        gpu_info = (
-            f"{capabilities.gpu_type} ({capabilities.gpu_device_count} device(s))"
-        )
-        table.add_row("GPU", f"✅ {gpu_info}")
+        gpu_text = f"✓ {capabilities.gpu_type}"
+        main_table.add_row("GPU", f"[{THEME['success']}]{gpu_text}[/]")
     else:
-        table.add_row("GPU", "⚠️  Not available (CPU only)")
-
-    console.print(table)
-    console.print()
-
-    caps_table = Table(
-        title="Automation Capabilities", box=box.ROUNDED, show_header=False
-    )
-    caps_table.add_column("Tier", style="cyan")
-    caps_table.add_column("Status", style="white")
+        main_table.add_row("GPU", f"[{THEME['warning']}]CPU mode[/]")
 
     if capabilities.accessibility_api_available:
-        caps_table.add_row(
-            "Tier 1",
-            f"✅ {capabilities.accessibility_api_type} (100% accuracy)",
-        )
+        acc_text = f"✓ {capabilities.accessibility_api_type}"
+        main_table.add_row("Accessibility", f"[{THEME['success']}]{acc_text}[/]")
     else:
-        caps_table.add_row("Tier 1", "⚠️  Accessibility API not available")
+        main_table.add_row("Accessibility", f"[{THEME['warning']}]Not available[/]")
 
-    caps_table.add_row("Tier 2", "✅ Computer Vision + OCR (95-99% accuracy)")
-    caps_table.add_row("Tier 3", "✅ Vision Model Fallback (85-95% accuracy)")
-
-    console.print(caps_table)
+    console.print(main_table)
     console.print()
-
-    tools_list = " • ".join(capabilities.supported_tools)
-    tools_table = Table(
-        title="Available Tools", box=box.ROUNDED, show_header=False, width=80
-    )
-    tools_table.add_column("Tools", style="cyan", no_wrap=False)
-    tools_table.add_row(tools_list)
-
-    console.print(tools_table)
 
 
 def print_agent_start(agent_name: str):
-    """
-    Announce agent execution start.
-    """
+    """Announce agent execution with minimal style."""
+    text = Text()
+    text.append("▶ ", style=f"bold {THEME['accent']}")
+    text.append(agent_name, style=f"bold {THEME['primary']}")
+    text.append(" agent", style=THEME["muted"])
     console.print()
-    console.print(
-        Panel(
-            f"[bold cyan]{agent_name} Agent Executing[/bold cyan]",
-            border_style="cyan",
-            box=box.HEAVY,
-        )
-    )
-    console.print()
+    console.print(text)
 
 
 def print_step(step: int, action: str, target: str, reasoning: str):
-    """
-    Display agent step with styling.
-    """
-    console.print(
-        f"[bold blue]Step {step}:[/bold blue] [cyan]{action}[/cyan] → [white]{target}[/white]"
-    )
-    console.print(f"  [dim]{reasoning}[/dim]")
+    """Display agent step with clean formatting."""
+    text = Text()
+    text.append(f"  {step}. ", style=THEME["muted"])
+    text.append(action, style=f"bold {THEME['info']}")
+    text.append(" → ", style=THEME["muted"])
+    text.append(target, style="white")
+    console.print(text)
+
+    if reasoning:
+        console.print(f"     [{THEME['muted']}]{reasoning}[/]")
 
 
 def print_success(message: str):
-    """
-    Print success message.
-    """
-    console.print(f"  [green]✅ {message}[/green]")
+    """Print success message."""
+    text = Text()
+    text.append("  ✓ ", style=f"bold {THEME['success']}")
+    text.append(message, style=THEME["success"])
+    console.print(text)
 
 
 def print_failure(message: str):
-    """
-    Print failure message.
-    """
-    console.print(f"  [red]❌ {message}[/red]")
+    """Print failure message."""
+    text = Text()
+    text.append("  ✗ ", style=f"bold {THEME['error']}")
+    text.append(message, style=THEME["error"])
+    console.print(text)
 
 
 def print_info(message: str):
-    """
-    Print info message.
-    """
-    console.print(f"  [cyan]ℹ️  {message}[/cyan]")
+    """Print info message."""
+    text = Text()
+    text.append("  ℹ ", style=f"bold {THEME['info']}")
+    text.append(message, style=THEME["info"])
+    console.print(text)
 
 
 def print_warning(message: str):
+    """Print warning message."""
+    text = Text()
+    text.append("  ⚠ ", style=f"bold {THEME['warning']}")
+    text.append(message, style=THEME["warning"])
+    console.print(text)
+
+
+@contextmanager
+def action_spinner(action: str, target: str):
     """
-    Print warning message.
+    Context manager that shows a spinner during an action.
+    The spinner disappears when the action completes.
+
+    Args:
+        action: Action being performed (e.g., "Clicking", "Typing")
+        target: Target of the action
+
+    Example:
+        with action_spinner("Clicking", "Submit button"):
+            perform_click()
+        # Spinner automatically disappears
     """
-    console.print(f"  [yellow]⚠️  {message}[/yellow]")
+    status_text = Text()
+    status_text.append(f"  ● {action} ", style=f"bold {THEME['info']}")
+    status_text.append(f"'{target}'", style=THEME["warning"])
+
+    spinner = Spinner("dots", text=status_text)
+
+    try:
+        with Live(spinner, console=console, refresh_per_second=12, transient=True):
+            yield
+    except Exception:
+        raise
+
+
+@contextmanager
+def task_progress(title: str, total: int = 0):
+    """
+    Context manager for multi-step task progress.
+
+    Args:
+        title: Progress title
+        total: Total steps (0 for indeterminate)
+    """
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn(f"[{THEME['info']}]{title}[/]"),
+        BarColumn(complete_style=THEME["success"], finished_style=THEME["success"]),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        console=console,
+        transient=True,
+    )
+
+    with progress:
+        task_id = progress.add_task(title, total=total or 100)
+
+        class ProgressUpdater:
+            def advance(self, amount: int = 1):
+                progress.advance(task_id, amount)
+
+            def complete(self):
+                progress.update(task_id, completed=total or 100)
+
+        yield ProgressUpdater()
+
+
+def print_action(action: str, target: str, detail: Optional[str] = None):
+    """
+    Print action being taken (non-blocking, instant display).
+
+    Args:
+        action: Action verb (Clicking, Typing, etc.)
+        target: Target element
+        detail: Optional detail
+    """
+    text = Text()
+    text.append("  → ", style=f"bold {THEME['accent']}")
+    text.append(f"{action} ", style=f"bold {THEME['info']}")
+    text.append(f"'{target}'", style=THEME["warning"])
+    if detail:
+        text.append(f" ({detail})", style=THEME["muted"])
+    console.print(text)
+
+
+def print_action_result(success: bool, message: str):
+    """
+    Print action result on same line concept.
+
+    Args:
+        success: Whether action succeeded
+        message: Result message
+    """
+    if success:
+        text = Text()
+        text.append("    ✓ ", style=f"bold {THEME['success']}")
+        text.append(message, style=THEME["muted"])
+        console.print(text)
+    else:
+        text = Text()
+        text.append("    ✗ ", style=f"bold {THEME['error']}")
+        text.append(message, style=THEME["muted"])
+        console.print(text)
 
 
 def print_command_approval(command: str) -> str:
-    """
-    Display command approval request.
-
-    Returns:
-        User's choice ('1', '2', or '3')
-    """
+    """Display command approval request with clean design."""
     console.print()
+
+    panel_content = Text()
+    panel_content.append("Command: ", style=f"bold {THEME['warning']}")
+    panel_content.append(command, style="white")
+    panel_content.append("\n\n")
+    panel_content.append("1", style=f"bold {THEME['success']}")
+    panel_content.append(" Allow once  ", style="white")
+    panel_content.append("2", style=f"bold {THEME['info']}")
+    panel_content.append(" Allow session  ", style="white")
+    panel_content.append("3", style=f"bold {THEME['error']}")
+    panel_content.append(" Deny", style="white")
+
     panel = Panel(
-        f"[bold yellow]💻 Command:[/bold yellow] [cyan]{command}[/cyan]\n\n"
-        "[bold]Options:[/bold]\n"
-        "  [green][1][/green] Allow once\n"
-        "  [blue][2][/blue] Allow for session\n"
-        "  [red][3][/red] Deny (stop agent)",
-        title="🔐 Command Approval Required",
-        border_style="yellow",
-        box=box.DOUBLE,
+        panel_content,
+        title=f"[{THEME['warning']}]🔐 Approval Required[/]",
+        border_style=THEME["warning"],
+        box=box.ROUNDED,
+        padding=(1, 2),
     )
     console.print(panel)
 
-    choice = console.input("[bold]Your choice (1/2/3):[/bold] ").strip()
+    choice = console.input("[bold]Choice (1/2/3):[/] ").strip()
     return choice
 
 
 def print_handoff(from_agent: str, to_agent: str, reason: str):
-    """
-    Display agent handoff.
-    """
+    """Display agent handoff with minimal style."""
     console.print()
-    console.print(
-        Panel(
-            f"[bold]{from_agent}[/bold] → [bold]{to_agent}[/bold]\n\n"
-            f"[dim]Reason: {reason}[/dim]",
-            title="🤝 Agent Handoff",
-            border_style="magenta",
-            box=box.HEAVY,
-        )
-    )
-    console.print()
+    text = Text()
+    text.append("  ↪ ", style=f"bold {THEME['accent']}")
+    text.append(from_agent, style=THEME["info"])
+    text.append(" → ", style=THEME["muted"])
+    text.append(to_agent, style=THEME["info"])
+    if reason:
+        text.append(f" ({reason})", style=THEME["muted"])
+    console.print(text)
 
 
 def print_task_result(result):
-    """
-    Display final task result.
-    Handles both dict and TaskExecutionResult objects.
-    """
+    """Display final task result with clean formatting."""
     console.print()
 
     if hasattr(result, "overall_success"):
         success = result.overall_success
-        task = result.task
+        result_text = getattr(result, "result", None)
+        error = getattr(result, "error", None)
     else:
         success = result.get("overall_success", False)
-        task = result.get("task", "Unknown")
+        result_text = result.get("result")
+        error = result.get("error")
 
-    title = "✅ Task Complete" if success else "❌ Task Failed"
-    style = "green" if success else "red"
+    if success:
+        header = Text()
+        header.append("✓ ", style=f"bold {THEME['success']}")
+        header.append("Complete", style=f"bold {THEME['success']}")
+        console.print(header)
+    else:
+        header = Text()
+        header.append("✗ ", style=f"bold {THEME['error']}")
+        header.append("Failed", style=f"bold {THEME['error']}")
+        console.print(header)
+        if error:
+            console.print(f"  [{THEME['error']}]{error}[/]")
 
-    content = f"[bold]Task:[/bold] {task}\n\n"
+    if result_text and isinstance(result_text, str):
+        console.print()
+        shortened = result_text[:500] + "..." if len(result_text) > 500 else result_text
+        console.print(f"  [{THEME['muted']}]{shortened}[/]")
 
-    handoffs = []
-    outputs = []
-
-    results_list = None
-    if hasattr(result, "results"):
-        results_list = result.results
-    elif isinstance(result, dict):
-        results_list = result.get("results")
-
-    if results_list:
-        content += "[bold]Execution Steps:[/bold]\n\n"
-        for i, res in enumerate(results_list, 1):
-            if not res or not isinstance(res, dict):
-                continue
-
-            status = "✅" if res.get("success") else "❌"
-            method = res.get("method_used", "unknown")
-            action = res.get("action_taken", "")
-
-            content += f"  {status} [cyan]Step {i}:[/cyan] [{method}] {action}\n"
-
-            if res.get("error"):
-                content += f"     [red]Error: {res['error']}[/red]\n"
-
-            data = res.get("data")
-            if data and isinstance(data, dict) and data.get("output"):
-                outputs.append({"step": i, "method": method, "output": data["output"]})
-
-            if res.get("handoff_requested"):
-                handoffs.append(
-                    {
-                        "from": "GUI" if "gui" in method.lower() else "SYSTEM",
-                        "to": res.get("suggested_agent", "unknown").upper(),
-                        "reason": res.get("handoff_reason", ""),
-                    }
-                )
-
-    if handoffs:
-        content += "\n[bold magenta]Agent Handoffs:[/bold magenta]\n\n"
-        for handoff in handoffs:
-            content += f"  🤝 [cyan]{handoff['from']}[/cyan] → [yellow]{handoff['to']}[/yellow]\n"
-            if handoff["reason"]:
-                content += f"     [dim]Reason: {handoff['reason']}[/dim]\n"
-
-    if outputs:
-        content += "\n[bold green]📄 Results:[/bold green]\n\n"
-        for output in outputs:
-            content += f"[cyan]{output['method'].upper()}:[/cyan]\n"
-            content += f"{output['output']}\n\n"
-
-    panel = Panel(
-        content,
-        title=title,
-        border_style=style,
-        box=box.DOUBLE,
-    )
-    console.print(panel)
+    console.print()
 
 
 def print_action_history(history: list):
-    """
-    Display action history table.
-    """
+    """Display action history in compact format."""
     if not history:
         return
 
-    table = Table(title="📋 Action History", box=box.ROUNDED)
-    table.add_column("#", style="cyan", width=4)
-    table.add_column("Action", style="white")
-    table.add_column("Target", style="yellow")
-    table.add_column("Result", style="green")
+    console.print()
+    console.print(f"  [{THEME['muted']}]Recent actions:[/]")
 
-    for i, action in enumerate(history[-5:], 1):  # Show last 5
-        status = "✅" if action.get("success") else "❌"
-        table.add_row(
-            str(i),
-            action.get("action", ""),
-            action.get("target", "")[:30],
-            status,
+    for action in history[-5:]:
+        status = "✓" if action.get("success") else "✗"
+        style = THEME["success"] if action.get("success") else THEME["error"]
+        console.print(
+            f"    [{style}]{status}[/] {action.get('action', '')} → {action.get('target', '')[:30]}"
         )
-
-    console.print(table)
 
 
 def print_webhook_status(port: int, status: str = "starting"):
-    """
-    Display webhook server status with styled panel.
-
-    Args:
-        port: Port number the webhook is using
-        status: Status of webhook ('starting', 'ready', 'failed', 'port_changed')
-    """
+    """Display webhook server status."""
     if status == "starting":
-        console.print(
-            f"[cyan]🌐 Twilio webhook server starting on port {port}...[/cyan]"
-        )
+        console.print(f"  [{THEME['info']}]Starting webhook on port {port}...[/]")
     elif status == "ready":
-        table = Table(
-            title="📞 Twilio Webhook Server", box=box.ROUNDED, show_header=False
-        )
-        table.add_column("Property", style="cyan")
-        table.add_column("Value", style="white")
-
-        table.add_row("Status", "[green]✅ Ready[/green]")
-        table.add_row("Local URL", f"http://localhost:{port}/sms")
-        table.add_row("Health Check", f"http://localhost:{port}/health")
-        table.add_row("Ngrok Command", f"[yellow]ngrok http {port}[/yellow]")
-
-        console.print(table)
+        console.print(f"  [{THEME['success']}]✓ Webhook ready on port {port}[/]")
     elif status == "port_changed":
-        console.print(
-            f"[yellow]⚠️  Port {port - 1} in use, trying port {port}...[/yellow]"
-        )
+        console.print(f"  [{THEME['warning']}]Port {port - 1} in use, trying {port}[/]")
     elif status == "failed":
-        console.print(f"[red]❌ Could not start webhook server on port {port}[/red]")
+        console.print(
+            f"  [{THEME['error']}]✗ Could not start webhook on port {port}[/]"
+        )
 
 
 def print_twilio_config_status(is_configured: bool, phone_number: str = None):
+    """Display Twilio configuration status."""
+    if is_configured and phone_number:
+        console.print(f"  [{THEME['success']}]✓ Twilio: {phone_number}[/]")
+    else:
+        console.print(f"  [{THEME['warning']}]Twilio not configured[/]")
+
+
+def print_element_found(element_type: str, label: str, coords: Optional[tuple] = None):
     """
-    Display Twilio configuration status.
+    Print element found notification.
 
     Args:
-        is_configured: Whether Twilio is configured
-        phone_number: Twilio phone number if configured
+        element_type: Type of element
+        label: Element label
+        coords: Optional (x, y) coordinates
     """
-    if is_configured and phone_number:
-        console.print(
-            f"[green]✅ Twilio configured with number: {phone_number}[/green]"
-        )
-    elif not is_configured:
-        console.print(
-            "[yellow]⚠️  Twilio not configured (phone verification unavailable)[/yellow]"
-        )
-        console.print(
-            "[dim]   Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER in .env[/dim]"
-        )
+    text = Text()
+    text.append("    ◎ ", style=THEME["accent"])
+    text.append(f"Found {element_type} ", style=THEME["muted"])
+    text.append(f"'{label}'", style="white")
+    if coords:
+        text.append(f" at ({coords[0]}, {coords[1]})", style=THEME["muted"])
+    console.print(text)
+
+
+def print_thinking(message: str = "Analyzing..."):
+    """
+    Print thinking/analyzing indicator.
+
+    Args:
+        message: Thinking message
+    """
+    text = Text()
+    text.append("  ◌ ", style=f"bold {THEME['accent']}")
+    text.append(message, style=THEME["muted"])
+    console.print(text)
 
 
 async def get_voice_input() -> Optional[str]:
-    """
-    Capture voice input using Deepgram streaming API.
-    Shows real-time transcription feedback and returns final text.
-
-    Returns:
-        Transcribed text or None if cancelled/error
-    """
+    """Capture voice input using Deepgram streaming API."""
     try:
         from ..services.voice_input_service import VoiceInputService
         from ..services.audio_capture import AudioCapture
 
         if not VoiceInputService.check_api_key_configured():
-            console.print("[red]❌ DEEPGRAM_API_KEY not found in environment[/red]")
-            console.print(
-                "[yellow]Please set DEEPGRAM_API_KEY to use voice input[/yellow]"
-            )
+            print_failure("DEEPGRAM_API_KEY not found")
             return None
 
         if not AudioCapture.check_microphone_available():
-            console.print("[red]❌ No microphone detected[/red]")
+            print_failure("No microphone detected")
             return None
-
-        language = os.getenv("VOICE_INPUT_LANGUAGE", "multi")
 
         console.print()
         console.print(
-            "[bold green]🎤 Listening...[/bold green] "
-            "[dim](Press Enter to finish, Ctrl+C to cancel)[/dim]"
+            f"  [{THEME['success']}]🎤 Listening...[/] [{THEME['muted']}](Enter to finish)[/]"
         )
-        if language == "multi":
-            console.print(
-                "[dim]Using multilingual mode - supports 100+ languages automatically[/dim]"
-            )
-        else:
-            console.print(f"[dim]Language: {language.upper()}[/dim]")
-        console.print()
 
-        interim_text = {"value": ""}
         max_width = console.width - 10
 
         def on_interim(text: str) -> None:
-            """Update interim transcription display on a single line."""
-            interim_text["value"] = text
             display_text = text[:max_width] if len(text) > max_width else text
             padding = " " * max(0, max_width - len(display_text))
-            sys.stdout.write(f"\r\033[36m➤ {display_text}\033[0m{padding}")
+            sys.stdout.write(f"\r  [{THEME['info']}]▸ {display_text}[/]{padding}")
             sys.stdout.flush()
 
         voice_service = VoiceInputService()
@@ -461,8 +476,7 @@ async def get_voice_input() -> Optional[str]:
         )
 
         if not started:
-            error = voice_service.get_error()
-            console.print(f"\n[red]❌ Failed to start voice input: {error}[/red]")
+            print_failure(f"Voice input failed: {voice_service.get_error()}")
             return None
 
         await asyncio.sleep(0.5)
@@ -474,45 +488,33 @@ async def get_voice_input() -> Optional[str]:
             pass
 
         result = await voice_service.stop_transcription()
-
         sys.stdout.write("\n")
         sys.stdout.flush()
 
         if result:
-            console.print(f"[green]✅ Transcribed:[/green] {result}")
-            if (
-                voice_service.detected_language
-                and voice_service.detected_language != "multi"
-            ):
-                console.print(
-                    f"[dim]Language mode: {voice_service.detected_language}[/dim]"
-                )
+            print_success(f"Transcribed: {result}")
         else:
-            console.print("[yellow]⚠️  No speech detected[/yellow]")
+            print_warning("No speech detected")
 
         return result.strip() if result else None
 
     except ImportError as e:
-        console.print(f"[red]❌ Voice input dependencies not installed: {e}[/red]")
-        console.print("[yellow]Run: pip install deepgram-sdk sounddevice[/yellow]")
+        print_failure(f"Voice dependencies missing: {e}")
         return None
     except Exception as e:
-        console.print(f"[red]❌ Voice input error: {e}[/red]")
+        print_failure(f"Voice input error: {e}")
         return None
 
 
 async def get_task_input(start_with_voice: bool = False) -> str:
     """
-    Get task input from user with support for text and voice modes.
-    Uses prompt_toolkit for text input with readline-like editing.
-    Supports multi-line input via Alt+Enter or Ctrl+J.
-    Toggle voice mode with Ctrl+V or F5.
+    Get task input with support for text and voice modes.
 
     Args:
-        start_with_voice: Start in voice mode if True
+        start_with_voice: Start in voice mode
 
     Returns:
-        User's task input (stripped)
+        User's task input
     """
     global _voice_mode_enabled
     _voice_mode_enabled["value"] = start_with_voice
@@ -527,19 +529,12 @@ async def get_task_input(start_with_voice: bool = False) -> str:
                 continue
 
             console.print()
-            mode_indicator = (
-                "⌨️  Text" if not _voice_mode_enabled["value"] else "🎤 Voice"
-            )
+            mode = "voice" if _voice_mode_enabled["value"] else "text"
             console.print(
-                f"[#00d7ff]💬 Enter your task ([cyan]{mode_indicator}[/cyan] mode):[/]"
+                f"[{THEME['primary']}]What would you like me to do?[/] [{THEME['muted']}]({mode} mode)[/]"
             )
-            console.print(
-                "[dim]   [cyan]F5[/cyan]: Toggle voice | "
-                "[cyan]Alt+Enter[/cyan]: New line | [cyan]Enter[/cyan]: Submit[/dim]"
-            )
-            console.print()
 
-            prompt_text = FormattedText([("#00d7ff bold", "➤ ")])
+            prompt_text = FormattedText([(THEME["primary"], "❯ ")])
 
             task = await _prompt_session.prompt_async(
                 prompt_text,

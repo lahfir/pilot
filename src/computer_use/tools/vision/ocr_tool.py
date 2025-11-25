@@ -145,12 +145,7 @@ class OCRTool:
         if not self.fallback_engines:
             return []
 
-        # Try each engine in priority order until we get results
-        for idx, engine in enumerate(self.fallback_engines):
-            engine_name = engine.__class__.__name__.replace("Engine", "").replace(
-                "OCR", ""
-            )
-
+        for engine in self.fallback_engines:
             try:
                 results = engine.recognize_text(screenshot, region=None)
 

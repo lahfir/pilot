@@ -11,7 +11,7 @@ def pytest_configure(config):
     # Add src to path
     src_path = Path(__file__).parent.parent / "src"
     sys.path.insert(0, str(src_path))
-    
+
     print("\n" + "=" * 80)
     print("🧪 PYTEST CONFIGURATION")
     print("=" * 80)
@@ -35,4 +35,3 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker("screenshot")
         if "integration" in item.nodeid.lower():
             item.add_marker("integration")
-
