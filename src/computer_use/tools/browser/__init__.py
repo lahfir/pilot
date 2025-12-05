@@ -3,10 +3,10 @@ Browser-Use tools loader.
 Loads and initializes all browser tools automatically.
 """
 
-from typing import Optional
+from typing import Optional, Tuple
 
 
-def load_browser_tools() -> Optional[object]:
+def load_browser_tools() -> Tuple[Optional[object], bool, bool]:
     """
     Load all Browser-Use tools dynamically.
 
@@ -14,24 +14,27 @@ def load_browser_tools() -> Optional[object]:
     Services are accessed/initialized internally - no parameters needed.
 
     Returns:
-        Single Browser-Use Tools object with all tools registered, or None
+        Tuple of (Tools object, has_twilio, has_image_gen)
     """
     from .twilio_tools import load_twilio_tools
+    from .image_tools import load_image_tools
 
-    # Load Twilio tools (handles its own service initialization)
     twilio_tools = load_twilio_tools()
+    image_tools = load_image_tools()
+
+    has_twilio = twilio_tools is not None
+    has_image_gen = image_tools is not None
+
+    if twilio_tools and image_tools:
+        twilio_tools.registry.registry.actions.update(
+            image_tools.registry.registry.actions
+        )
+        return twilio_tools, has_twilio, has_image_gen
 
     if twilio_tools:
-        return twilio_tools
+        return twilio_tools, has_twilio, has_image_gen
 
-    # Future: Merge multiple tool registries
-    # Example:
-    # twilio_tools = load_twilio_tools()
-    # other_tools = load_other_tools()
-    # if twilio_tools and other_tools:
-    #     merged = Tools()
-    #     merged.registry.extend(twilio_tools.registry)
-    #     merged.registry.extend(other_tools.registry)
-    #     return merged
+    if image_tools:
+        return image_tools, has_twilio, has_image_gen
 
-    return None
+    return None, False, False

@@ -130,6 +130,51 @@ when task does NOT provide a phone number.
 """
 
 
+def get_image_tools_docs() -> str:
+    """
+    Get AI image generation tools documentation.
+
+    Returns:
+        Documentation for image generation tools
+    """
+    return """🎨 IMAGE GENERATION TOOLS:
+
+• generate_image(prompt, filename) - Generate an image using AI
+  Parameters:
+    - prompt: Detailed description of the image to generate
+    - filename: Output filename (default: "generated_image.png")
+  Returns: File path to the generated image
+  
+  USE FOR:
+    - Google Ads: Product images, banner images, display ads
+    - Facebook/Instagram Ads: Visual content, promotional images
+    - Marketing campaigns: Themed images, campaign visuals
+    - Form uploads: When a website requires uploading an image
+    - Content creation: Blog images, social media posts
+  
+  WORKFLOW:
+  1. When you encounter an image upload field in Google Ads, Facebook Ads, etc.
+  2. Call generate_image(prompt="descriptive prompt for the image")
+  3. Use the returned file path to upload the image
+  
+  Example usage:
+    # For a Google Ad about coffee
+    generate_image(
+        prompt="Professional product photo of a steaming cup of premium coffee with coffee beans scattered around, warm lighting, advertising style",
+        filename="coffee_ad.png"
+    )
+    # Then use the returned path to upload in the ad form
+
+• check_image_generation_status() - Check if image generation is available
+  Returns: Configuration status
+  Use when: Before attempting to generate images
+
+IMPORTANT: Generate images ONLY when needed for ads, forms, or content that requires images.
+Create prompts that are specific, professional, and appropriate for advertising.
+
+"""
+
+
 def get_human_help_docs() -> str:
     """
     Get human assistance tool documentation.
@@ -219,12 +264,13 @@ FAILURE CRITERIA:
 """
 
 
-def build_full_context(has_twilio: bool = False) -> str:
+def build_full_context(has_twilio: bool = False, has_image_gen: bool = False) -> str:
     """
     Build complete Browser-Use Agent context with all guidance.
 
     Args:
         has_twilio: Whether Twilio tools are available
+        has_image_gen: Whether image generation tools are available
 
     Returns:
         Complete context string for Browser-Use Agent
@@ -234,6 +280,9 @@ def build_full_context(has_twilio: bool = False) -> str:
 
     if has_twilio:
         context += get_twilio_tools_docs()
+
+    if has_image_gen:
+        context += get_image_tools_docs()
 
     context += get_human_help_docs()
     context += get_execution_rules()

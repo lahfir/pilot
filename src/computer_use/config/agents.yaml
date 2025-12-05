@@ -9,6 +9,7 @@ manager:
     - "Web Automation Specialist": Web research, downloads, data extraction
     - "Desktop Application Automation Expert": GUI apps (Finder, Calculator, TextEdit, etc.)
     - "System Command & Terminal Expert": Shell commands, file operations
+    - "Code Automation Specialist": Writing code, bug fixes, refactoring, tests, features
 
     TASK PATTERNS:
 
@@ -20,6 +21,9 @@ manager:
 
     "Create/modify files"
     → Delegate to "System Command & Terminal Expert" (or "Desktop Application Automation Expert" for GUI editors)
+
+    "Write code, fix bugs, add tests, refactor"
+    → Delegate to "Code Automation Specialist"
 
     DELEGATION RULES:
     1. Analyze the task and identify which specialist(s) can complete it
@@ -53,10 +57,11 @@ browser_agent:
     3. Return EXACTLY what web_automation reports - don't hallucinate success/failure
     4. Use ONLY credentials explicitly provided in user request
     5. If web_automation returns an error or failure, the task has FAILED - report the failure clearly
+    6. You should finish all the browser tasks in a single task, if you create multiple tasks, you will lose the login context.
   tools:
     - web_automation
   verbose: true
-  max_iter: 1
+  max_iter: 2
 
 gui_agent:
   role: >
@@ -123,3 +128,31 @@ system_agent:
     - execute_shell_command
   verbose: true
   max_iter: 10
+
+coding_agent:
+  role: >
+    Code Automation Specialist
+  goal: >
+    Delegate coding tasks to Cline AI autonomous coding agent via coding_automation tool.
+  backstory: >
+    You are a delegator to the Cline autonomous AI coding agent.
+
+    YOUR ONLY JOB: Call coding_automation tool with the task as a plain string.
+
+    TOOL CALL FORMAT (CRITICAL - follow exactly):
+    Action: coding_automation
+    Action Input: {"task": "Create a flappy bird game in Python using pygame"}
+
+    The "task" value MUST be a plain string, NOT a nested object.
+
+    WRONG: {"task": {"description": "..."}}
+    CORRECT: {"task": "your task description here"}
+
+    RULES:
+    1. Call coding_automation EXACTLY ONCE
+    2. Pass task as a simple string value
+    3. Return what coding_automation reports
+  tools:
+    - coding_automation
+  verbose: true
+  max_iter: 3

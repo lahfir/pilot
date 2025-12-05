@@ -238,6 +238,37 @@ install_platform_deps() {
     esac
 }
 
+# Install Cline CLI for coding automation
+install_cline_cli() {
+    print_step "Installing Cline CLI (Coding Agent)"
+    
+    if command_exists cline; then
+        print_success "Cline CLI is already installed"
+        cline --version 2>/dev/null || true
+        return 0
+    fi
+    
+    # Check if npm is available
+    if ! command_exists npm; then
+        print_warning "npm not found - Cline CLI requires Node.js/npm"
+        print_info "Install Node.js from https://nodejs.org/ to enable coding automation"
+        print_info "Then run: npm install -g cline"
+        return 0
+    fi
+    
+    print_info "Installing Cline CLI globally..."
+    
+    if npm install -g cline 2>/dev/null; then
+        print_success "Cline CLI installed successfully"
+        print_warning "Configure Cline with: cline auth"
+        print_info "Cline uses its own LLM configuration (separate from this project)"
+    else
+        print_warning "Failed to install Cline CLI automatically"
+        print_info "You can install it manually with: npm install -g cline"
+        print_info "Or run: sudo npm install -g cline"
+    fi
+}
+
 # Create .env file
 setup_env_file() {
     print_step "Setting Up Environment Configuration"
@@ -397,6 +428,14 @@ print_next_steps() {
     echo "  • Open Calculator and compute 25 × 36"
     echo "  • Create folder named 'reports' in Documents"
     echo "  • Move file from Downloads to Documents folder"
+    echo "  • Write unit tests for the API module"
+    echo "  • Fix the bug in authentication code"
+    echo ""
+    
+    print_info "Coding Agent (Cline):"
+    echo "  • Requires Cline CLI: npm install -g cline"
+    echo "  • Configure with: cline auth"
+    echo "  • Handles code writing, bug fixes, refactoring, tests"
     echo ""
     
     print_info "Voice Input (Optional):"
@@ -431,6 +470,7 @@ main() {
     check_python
     install_python_deps
     install_platform_deps
+    install_cline_cli
     setup_env_file
     prompt_api_keys
     test_installation

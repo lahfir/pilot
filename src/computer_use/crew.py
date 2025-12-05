@@ -5,6 +5,7 @@ from typing import Optional, Dict, List, Any
 from crewai import Agent, Task, Crew, Process
 from .config.llm_config import LLMConfig
 from .agents.browser_agent import BrowserAgent
+from .agents.coding_agent import CodingAgent
 from .schemas import TaskCompletionOutput, TaskExecutionResult
 from .crew_tools import (
     TakeScreenshotTool,
@@ -21,6 +22,7 @@ from .crew_tools import (
     ExecuteShellCommandTool,
     FindApplicationTool,
     RequestHumanInputTool,
+    CodingAgentTool,
 )
 from .utils.coordinate_validator import CoordinateValidator
 from .tools.platform_registry import PlatformToolRegistry
@@ -63,6 +65,8 @@ class ComputerUseCrew:
         vision_llm_client: Optional[Any] = None,
         browser_llm_client: Optional[Any] = None,
         confirmation_manager: Optional[Any] = None,
+        use_browser_profile: bool = False,
+        browser_profile_directory: str = "Default",
     ) -> None:
         """
         Initialize CrewAI-based automation system.
@@ -74,10 +78,14 @@ class ComputerUseCrew:
             vision_llm_client: Optional LLM client for vision tasks
             browser_llm_client: Optional LLM client for browser automation
             confirmation_manager: CommandConfirmation instance
+            use_browser_profile: Use existing Chrome profile for authenticated sessions
+            browser_profile_directory: Chrome profile name (Default, Profile 1, etc.)
         """
         self.capabilities = capabilities
         self.safety_checker = safety_checker
         self.confirmation_manager = confirmation_manager
+        self.use_browser_profile = use_browser_profile
+        self.browser_profile_directory = browser_profile_directory
 
         self.llm = llm_client or LLMConfig.get_llm()
         self.vision_llm = vision_llm_client or LLMConfig.get_vision_llm()
@@ -88,9 +96,11 @@ class ComputerUseCrew:
 
         self.tool_registry = self._initialize_tool_registry()
         self.browser_agent = self._initialize_browser_agent()
+        self.coding_agent = self._initialize_coding_agent()
 
         self.gui_tools = self._initialize_gui_tools()
         self.web_automation_tool = self._initialize_web_tool()
+        self.coding_automation_tool = self._initialize_coding_tool()
         self.execute_command_tool = self._initialize_system_tool()
 
         self.crew: Optional[Crew] = None
@@ -160,7 +170,20 @@ class ComputerUseCrew:
         Returns:
             BrowserAgent instance
         """
-        return BrowserAgent(llm_client=self.browser_llm)
+        return BrowserAgent(
+            llm_client=self.browser_llm,
+            use_user_profile=self.use_browser_profile,
+            profile_directory=self.browser_profile_directory,
+        )
+
+    def _initialize_coding_agent(self) -> CodingAgent:
+        """
+        Initialize Cline-based coding agent.
+
+        Returns:
+            CodingAgent instance
+        """
+        return CodingAgent()
 
     def _initialize_gui_tools(self) -> Dict[str, Any]:
         """
@@ -202,6 +225,17 @@ class ComputerUseCrew:
         tool._browser_agent = self.browser_agent
         return tool
 
+    def _initialize_coding_tool(self) -> CodingAgentTool:
+        """
+        Initialize and configure coding automation tool.
+
+        Returns:
+            Configured CodingAgentTool instance
+        """
+        tool = CodingAgentTool()
+        tool._coding_agent = self.coding_agent
+        return tool
+
     def _initialize_system_tool(self) -> ExecuteShellCommandTool:
         """
         Initialize and configure system command execution tool.
@@ -223,6 +257,7 @@ class ComputerUseCrew:
         """
         return {
             "web_automation": self.web_automation_tool,
+            "coding_automation": self.coding_automation_tool,
             **self.gui_tools,
             "execute_shell_command": self.execute_command_tool,
         }
@@ -286,6 +321,7 @@ class ComputerUseCrew:
         browser_tools = self.agents_config["browser_agent"].get("tools", [])
         gui_tools = self.agents_config["gui_agent"].get("tools", [])
         system_tools = self.agents_config["system_agent"].get("tools", [])
+        coding_tools = self.agents_config["coding_agent"].get("tools", [])
 
         browser_agent = self._create_agent(
             "browser_agent", browser_tools, self.llm, tool_map
@@ -296,12 +332,16 @@ class ComputerUseCrew:
         system_agent = self._create_agent(
             "system_agent", system_tools, self.llm, tool_map
         )
+        coding_agent = self._create_agent(
+            "coding_agent", coding_tools, self.llm, tool_map
+        )
 
         return {
             "manager": manager_agent,
             "browser_agent": browser_agent,
             "gui_agent": gui_agent,
             "system_agent": system_agent,
+            "coding_agent": coding_agent,
         }
 
     def _extract_context_from_history(

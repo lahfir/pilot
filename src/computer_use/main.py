@@ -20,12 +20,18 @@ from .utils.ui import (
 from .crew import ComputerUseCrew
 
 
-async def main(voice_input: bool = False):
+async def main(
+    voice_input: bool = False,
+    use_browser_profile: bool = False,
+    browser_profile: str = "Default",
+):
     """
     Main execution function.
 
     Args:
         voice_input: Start with voice input mode enabled
+        use_browser_profile: Use existing Chrome profile for authentication
+        browser_profile: Chrome profile name (Default, Profile 1, etc.)
     """
     import logging
     import warnings
@@ -78,6 +84,8 @@ async def main(voice_input: bool = False):
         capabilities,
         SafetyChecker(),
         confirmation_manager=CommandConfirmation(),
+        use_browser_profile=use_browser_profile,
+        browser_profile_directory=browser_profile,
     )
 
     console.print(
@@ -188,11 +196,28 @@ def cli():
         action="store_true",
         help="Start with voice input mode enabled (toggle with F5)",
     )
+    parser.add_argument(
+        "--use-browser-profile",
+        action="store_true",
+        help="Use existing Chrome user profile for authenticated sessions",
+    )
+    parser.add_argument(
+        "--browser-profile",
+        type=str,
+        default="Default",
+        help="Chrome profile directory name (Default, Profile 1, etc.)",
+    )
 
     args = parser.parse_args()
 
     try:
-        asyncio.run(main(voice_input=args.voice_input))
+        asyncio.run(
+            main(
+                voice_input=args.voice_input,
+                use_browser_profile=args.use_browser_profile,
+                browser_profile=args.browser_profile,
+            )
+        )
     except KeyboardInterrupt:
         console.print("\n\n[bold cyan]👋 Goodbye![/bold cyan]")
 

@@ -21,6 +21,7 @@ from .gui_interaction_tools import (
 from .web_tools import WebAutomationTool
 from .system_tools import ExecuteShellCommandTool
 from .capability_tools import FindApplicationTool
+from .coding_tools import CodingAgentTool
 
 __all__ = [
     "TakeScreenshotTool",
@@ -37,4 +38,5 @@ __all__ = [
     "WebAutomationTool",
     "ExecuteShellCommandTool",
     "FindApplicationTool",
+    "CodingAgentTool",
 ]

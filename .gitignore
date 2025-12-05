@@ -59,5 +59,7 @@ examples/
 
 .ruff_cache/
 
+# Coding agent projects
+code/
 
 landing/

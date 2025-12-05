@@ -7,11 +7,45 @@ from pathlib import Path
 from typing import Optional
 import tempfile
 import glob
+import platform
+import os
 
 from ..schemas.actions import ActionResult
 from ..schemas.browser_output import BrowserOutput, FileDetail
 from ..prompts.browser_prompts import build_full_context
 from ..tools.browser import load_browser_tools
+
+
+def get_default_chrome_paths() -> dict:
+    """
+    Get platform-specific default Chrome paths.
+
+    Returns:
+        Dictionary with executable_path and user_data_dir for the current platform.
+    """
+    system = platform.system()
+
+    if system == "Darwin":
+        return {
+            "executable_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "user_data_dir": os.path.expanduser(
+                "~/Library/Application Support/Google/Chrome"
+            ),
+        }
+    elif system == "Windows":
+        return {
+            "executable_path": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            "user_data_dir": os.path.expandvars(
+                r"%LOCALAPPDATA%\Google\Chrome\User Data"
+            ),
+        }
+    elif system == "Linux":
+        return {
+            "executable_path": "/usr/bin/google-chrome",
+            "user_data_dir": os.path.expanduser("~/.config/google-chrome"),
+        }
+    else:
+        return {"executable_path": None, "user_data_dir": None}
 
 
 class BrowserAgent:
@@ -20,16 +54,69 @@ class BrowserAgent:
     Handles all web-based tasks with Browser-Use autonomous agent.
     """
 
-    def __init__(self, llm_client):
+    def __init__(
+        self,
+        llm_client,
+        use_user_profile: bool = False,
+        user_data_dir: Optional[str] = None,
+        profile_directory: str = "Default",
+        executable_path: Optional[str] = None,
+        headless: bool = False,
+    ):
         """
         Initialize browser agent with Browser-Use.
 
         Args:
             llm_client: LLM client for Browser-Use Agent
+            use_user_profile: If True, use existing Chrome user profile for authentication
+            user_data_dir: Path to Chrome user data directory (auto-detected if not provided)
+            profile_directory: Chrome profile name (Default, Profile 1, etc.)
+            executable_path: Path to Chrome executable (auto-detected if not provided)
+            headless: Run browser in headless mode (no visible window)
         """
         self.llm_client = llm_client
-        self.browser_tools = load_browser_tools()
+        self.use_user_profile = use_user_profile
+        self.profile_directory = profile_directory
+        self.headless = headless
+
+        self._configure_profile_paths(user_data_dir, executable_path)
+
+        self.browser_tools, self.has_twilio, self.has_image_gen = load_browser_tools()
         self.available = self._initialize_browser()
+
+    def _configure_profile_paths(
+        self, user_data_dir: Optional[str], executable_path: Optional[str]
+    ) -> None:
+        """
+        Configure Chrome profile paths, using defaults if not provided.
+
+        Args:
+            user_data_dir: User-provided Chrome data directory
+            executable_path: User-provided Chrome executable path
+        """
+        defaults = get_default_chrome_paths()
+
+        self.user_data_dir = user_data_dir or defaults.get("user_data_dir")
+        self.executable_path = executable_path or defaults.get("executable_path")
+
+    def _create_browser_session(self):
+        """
+        Create BrowserSession with user profile settings if enabled.
+
+        Returns:
+            BrowserSession configured with user profile or default settings.
+        """
+        from browser_use import BrowserSession
+
+        if self.use_user_profile and self.user_data_dir:
+            return BrowserSession(
+                is_local=True,
+                executable_path=self.executable_path,
+                headless=self.headless,
+                args=["--disable-extensions"],
+            )
+
+        return BrowserSession(is_local=True, headless=self.headless)
 
     def _initialize_browser(self) -> bool:
         """
@@ -83,26 +170,27 @@ class BrowserAgent:
             )
 
         try:
-            from browser_use import Agent, BrowserSession, BrowserProfile
+            from browser_use import Agent
             from browser_use.agent.views import AgentHistoryList
 
-            has_tools = self.browser_tools is not None
-            tool_context = build_full_context(has_twilio=has_tools)
+            tool_context = build_full_context(
+                has_twilio=self.has_twilio, has_image_gen=self.has_image_gen
+            )
             full_task = tool_context + "\n\n" + task
 
             temp_dir = Path(tempfile.mkdtemp(prefix="browser_agent_"))
 
-            browser_session = BrowserSession(browser_profile=BrowserProfile())
+            browser_session = self._create_browser_session()
 
             agent = Agent(
                 task=full_task,
                 llm=self.llm_client,
                 browser_session=browser_session,
                 tools=self.browser_tools,
-                max_failures=5,
+                max_failures=10,
             )
 
-            result: AgentHistoryList = await agent.run(max_steps=30)
+            result: AgentHistoryList = await agent.run(max_steps=200)
 
             try:
                 await browser_session.kill()
