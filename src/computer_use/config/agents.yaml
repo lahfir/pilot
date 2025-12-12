@@ -63,6 +63,7 @@ browser_agent:
     - web_automation
   verbose: true
   max_iter: 2
+  allow_delegation: false
 
 gui_agent:
   role: >
@@ -106,6 +107,7 @@ gui_agent:
     - request_human_input
   verbose: true
   max_iter: 25
+  allow_delegation: false
 
 system_agent:
   role: >
@@ -134,6 +136,7 @@ system_agent:
     - execute_shell_command
   verbose: true
   max_iter: 10
+  allow_delegation: false
 
 coding_agent:
   role: >
@@ -162,3 +165,4 @@ coding_agent:
     - coding_automation
   verbose: true
   max_iter: 3
+  allow_delegation: false

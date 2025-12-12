@@ -46,8 +46,8 @@ htmlcov/
 # Project specific
 output/
 *.md.bak
-test_*.py
-demo_*.py
+/test_*.py
+/demo_*.py
 examples/
 
 # UV
