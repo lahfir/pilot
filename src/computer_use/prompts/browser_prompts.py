@@ -149,7 +149,12 @@ def get_image_tools_docs() -> str:
     Returns:
         Documentation for image generation tools
     """
-    return """🎨 IMAGE GENERATION TOOLS:
+    return """🎨 IMAGE GENERATION TOOLS (USE THIS INSTEAD OF WEBSITE BUILT-IN OPTIONS):
+
+⚠️ CRITICAL: When the user asks to "use the image generator tool", "generate an image", 
+or "use the inbuilt image generator", you MUST use the generate_image() function below.
+DO NOT use website-provided alternatives like Google Illustrations, stock images, or 
+pre-made icons. The user wants AI-GENERATED custom images.
 
 • generate_image(prompt, filename) - Generate an image using AI
   Parameters:
@@ -158,31 +163,82 @@ def get_image_tools_docs() -> str:
   Returns: File path to the generated image
   
   USE FOR:
+    - Profile pictures: Avatar images, account photos, social media profiles
     - Google Ads: Product images, banner images, display ads
     - Facebook/Instagram Ads: Visual content, promotional images
     - Marketing campaigns: Themed images, campaign visuals
     - Form uploads: When a website requires uploading an image
     - Content creation: Blog images, social media posts
+    - ANY task where the user wants a custom AI-generated image
   
-  WORKFLOW:
+  WORKFLOW FOR PROFILE PICTURES:
+  1. Call generate_image(prompt="creative prompt for profile picture")
+  2. Note the returned file path
+  3. Navigate to the profile picture upload section
+  4. Click on "Upload from computer" or similar option (NOT illustrations/icons)
+  5. Use delegate_to_gui() to handle the native file picker with the generated image path
+  
+  WORKFLOW FOR ADS/FORMS:
   1. When you encounter an image upload field in Google Ads, Facebook Ads, etc.
   2. Call generate_image(prompt="descriptive prompt for the image")
-  3. Use the returned file path to upload the image
+  3. Use the returned file path to upload the image via file picker
   
   Example usage:
+    # For a profile picture
+    generate_image(
+        prompt="A stylized digital avatar with vibrant colors, abstract geometric patterns, modern artistic style, suitable for a professional profile picture",
+        filename="profile_picture.png"
+    )
+    # Then upload this file when the file picker opens
+    
     # For a Google Ad about coffee
     generate_image(
         prompt="Professional product photo of a steaming cup of premium coffee with coffee beans scattered around, warm lighting, advertising style",
         filename="coffee_ad.png"
     )
-    # Then use the returned path to upload in the ad form
 
 • check_image_generation_status() - Check if image generation is available
   Returns: Configuration status
   Use when: Before attempting to generate images
 
-IMPORTANT: Generate images ONLY when needed for ads, forms, or content that requires images.
-Create prompts that are specific, professional, and appropriate for advertising.
+⚠️ PRIORITY RULE: When user mentions "image generator", "generate image", or "inbuilt tool",
+ALWAYS use generate_image() first. Never substitute with website's built-in options unless
+the generate_image tool fails or user explicitly asks for illustrations/icons.
+
+"""
+
+
+def get_gui_delegation_docs() -> str:
+    """
+    Get GUI delegation tool documentation for OS-native dialogs.
+
+    Returns:
+        Documentation for GUI delegation tool
+    """
+    return """🖥️ GUI DELEGATION TOOL (OS-NATIVE DIALOGS):
+
+• delegate_to_gui(task) - Delegate OS-native dialog handling to the GUI agent
+  Use when:
+    - A native file picker appears after clicking an Upload/Choose File button
+    - OS permission dialogs appear (Allow, Don't Allow, OK)
+    - Any OS-level dialog is blocking progress outside the webpage
+
+  How to use:
+    - Write ONE clear task string that describes:
+      1) What dialog you see
+      2) The exact goal (e.g., select a file path)
+      3) The exact file path if you have it
+    - After the tool returns, immediately verify on the webpage that the dialog closed
+      and the file/permission state updated.
+
+  Example (file upload):
+    delegate_to_gui(
+      task="A native file picker is open. Select the file at: /Users/me/Downloads/ad.png and confirm Open."
+    )
+
+IMPORTANT:
+- Use this ONLY for OS-native dialogs.
+- For CAPTCHA / QR / biometric / 2FA flows, use request_human_help instead.
 
 """
 
@@ -276,19 +332,27 @@ FAILURE CRITERIA:
 """
 
 
-def build_full_context(has_twilio: bool = False, has_image_gen: bool = False) -> str:
+def build_full_context(
+    has_twilio: bool = False,
+    has_image_gen: bool = False,
+    has_gui_delegate: bool = False,
+) -> str:
     """
     Build complete Browser-Use Agent context with all guidance.
 
     Args:
         has_twilio: Whether Twilio tools are available
         has_image_gen: Whether image generation tools are available
+        has_gui_delegate: Whether GUI delegation tool is available
 
     Returns:
         Complete context string for Browser-Use Agent
     """
     context = get_base_prompt()
     context += "\n🔧 AVAILABLE TOOLS:\n\n"
+
+    if has_gui_delegate:
+        context += get_gui_delegation_docs()
 
     if has_twilio:
         context += get_twilio_tools_docs()

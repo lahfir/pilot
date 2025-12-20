@@ -38,6 +38,7 @@ from .utils.ui import (
     print_info,
     print_success,
 )
+from .services.crew_gui_delegate import CrewGuiDelegate
 
 
 class ComputerUseCrew:
@@ -85,18 +86,19 @@ class ComputerUseCrew:
         self.browser_llm = browser_llm_client or LLMConfig.get_browser_llm()
 
         self.agents_config = self._load_yaml_config("agents.yaml")
+        self.platform_context = self._get_platform_context()
 
         self.tool_registry = self._initialize_tool_registry()
+        self.gui_tools = self._initialize_gui_tools()
+
         self.browser_agent = self._initialize_browser_agent()
         self.coding_agent = self._initialize_coding_agent()
 
-        self.gui_tools = self._initialize_gui_tools()
         self.web_automation_tool = self._initialize_web_tool()
         self.coding_automation_tool = self._initialize_coding_tool()
         self.execute_command_tool = self._initialize_system_tool()
 
         self.crew: Optional[Crew] = None
-        self.platform_context = self._get_platform_context()
 
     def _load_yaml_config(self, filename: str) -> Dict[str, Any]:
         config_path = Path(__file__).parent / "config" / filename
@@ -116,10 +118,17 @@ class ComputerUseCrew:
         )
 
     def _initialize_browser_agent(self) -> BrowserAgent:
+        gui_delegate = CrewGuiDelegate(
+            agents_config=self.agents_config,
+            tool_map=self.gui_tools,
+            platform_context=self.platform_context,
+            gui_llm=self.vision_llm,
+        )
         return BrowserAgent(
             llm_client=self.browser_llm,
             use_user_profile=self.use_browser_profile,
             profile_directory=self.browser_profile_directory,
+            gui_delegate=gui_delegate,
         )
 
     def _initialize_coding_agent(self) -> CodingAgent:

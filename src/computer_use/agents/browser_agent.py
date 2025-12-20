@@ -49,10 +49,7 @@ def get_default_chrome_paths() -> dict:
 
 
 class BrowserAgent:
-    """
-    Web automation specialist using Browser-Use library.
-    Handles all web-based tasks with Browser-Use autonomous agent.
-    """
+    """Web automation specialist using Browser-Use library."""
 
     def __init__(
         self,
@@ -62,9 +59,9 @@ class BrowserAgent:
         profile_directory: str = "Default",
         executable_path: Optional[str] = None,
         headless: bool = False,
+        gui_delegate=None,
     ):
-        """
-        Initialize browser agent with Browser-Use.
+        """Initialize browser agent with Browser-Use.
 
         Args:
             llm_client: LLM client for Browser-Use Agent
@@ -73,39 +70,32 @@ class BrowserAgent:
             profile_directory: Chrome profile name (Default, Profile 1, etc.)
             executable_path: Path to Chrome executable (auto-detected if not provided)
             headless: Run browser in headless mode (no visible window)
+            gui_delegate: Optional GUI delegation bridge for OS-native dialogs
         """
         self.llm_client = llm_client
         self.use_user_profile = use_user_profile
         self.profile_directory = profile_directory
         self.headless = headless
+        self.gui_delegate = gui_delegate
 
         self._configure_profile_paths(user_data_dir, executable_path)
 
-        self.browser_tools, self.has_twilio, self.has_image_gen = load_browser_tools()
+        self.browser_tools, self.has_twilio, self.has_image_gen = load_browser_tools(
+            gui_delegate=gui_delegate
+        )
         self.available = self._initialize_browser()
 
     def _configure_profile_paths(
         self, user_data_dir: Optional[str], executable_path: Optional[str]
     ) -> None:
-        """
-        Configure Chrome profile paths, using defaults if not provided.
-
-        Args:
-            user_data_dir: User-provided Chrome data directory
-            executable_path: User-provided Chrome executable path
-        """
+        """Configure Chrome profile paths, using defaults if not provided."""
         defaults = get_default_chrome_paths()
 
         self.user_data_dir = user_data_dir or defaults.get("user_data_dir")
         self.executable_path = executable_path or defaults.get("executable_path")
 
     def _create_browser_session(self):
-        """
-        Create BrowserSession with user profile settings if enabled.
-
-        Returns:
-            BrowserSession configured with user profile or default settings.
-        """
+        """Create BrowserSession with user profile settings if enabled."""
         from browser_use import BrowserSession
 
         if self.use_user_profile and self.user_data_dir:
@@ -119,12 +109,7 @@ class BrowserAgent:
         return BrowserSession(is_local=True, headless=self.headless)
 
     def _initialize_browser(self) -> bool:
-        """
-        Initialize Browser-Use library.
-
-        Returns:
-            True if initialization successful
-        """
+        """Initialize Browser-Use library."""
         try:
             from browser_use import BrowserSession
 
@@ -136,20 +121,7 @@ class BrowserAgent:
     async def execute_task(
         self, task: str, url: Optional[str] = None, context: dict = None
     ) -> ActionResult:
-        """
-        Execute web automation task using Browser-Use Agent.
-
-        Browser-Use handles everything: navigation, clicking, typing, data extraction.
-        We pass the task and it figures out all the actions needed.
-
-        Args:
-            task: Natural language task description
-            url: Optional starting URL (unused - Browser-Use navigates automatically)
-            context: Optional context from previous agents (unused for now)
-
-        Returns:
-            ActionResult with browser output and file tracking
-        """
+        """Execute web automation task using Browser-Use Agent."""
         if not self.available:
             return ActionResult(
                 success=False,
@@ -217,17 +189,16 @@ class BrowserAgent:
 
             try:
                 tool_context = build_full_context(
-                    has_twilio=self.has_twilio, has_image_gen=self.has_image_gen
+                    has_twilio=self.has_twilio,
+                    has_image_gen=self.has_image_gen,
+                    has_gui_delegate=self.gui_delegate is not None,
                 )
                 full_task = tool_context + "\n\n" + task
 
                 temp_dir = Path(tempfile.mkdtemp(prefix="browser_agent_"))
 
                 browser_session = self._create_browser_session()
-                dashboard.set_browser_session(
-                    active=True,
-                    profile=self.browser_profile if self.use_profile else None,
-                )
+                dashboard.set_browser_session(active=True, profile=None)
 
                 agent = Agent(
                     task=full_task,

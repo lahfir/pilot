@@ -5,7 +5,6 @@ Similar to BrowserAgent wrapping Browser-Use library.
 
 import subprocess
 import shutil
-import os
 import re
 import hashlib
 from pathlib import Path
@@ -15,6 +14,7 @@ from ..schemas.actions import ActionResult
 from ..utils.ui import dashboard, ActionType
 
 
+MODULE_DIR = Path(__file__).parent.parent
 CODE_DIR_NAME = "code"
 VENV_NAME = ".venv"
 
@@ -61,10 +61,12 @@ class CodingAgent:
 
         Args:
             working_directory: Directory where Cline executes tasks.
-                             Defaults to current working directory.
+                             Defaults to src/computer_use/code directory.
         """
-        self.base_directory = working_directory or os.getcwd()
-        self.code_root = Path(self.base_directory) / CODE_DIR_NAME
+        if working_directory:
+            self.code_root = Path(working_directory)
+        else:
+            self.code_root = MODULE_DIR / CODE_DIR_NAME
         self.venv_path = self.code_root / VENV_NAME
         self.available = self._check_cline_available()
         self._ensure_code_directory()
@@ -141,8 +143,9 @@ class CodingAgent:
 
         project_path = self._get_project_path(task)
 
-        dashboard.add_log_entry(ActionType.EXECUTE, f"Starting Cline: {task[:80]}")
+        dashboard.add_log_entry(ActionType.PLAN, f"Cline task: {task[:80]}")
         dashboard.add_log_entry(ActionType.OPEN, f"Project: {project_path}")
+        dashboard.set_agent("Coding Agent")
         dashboard.set_action("Cline", target=str(project_path))
 
         enhanced_task = self._build_task_with_guidelines(task, project_path, context)
@@ -252,7 +255,8 @@ class CodingAgent:
             Dictionary with success, output, and error
         """
         task_preview = task.split("ACTUAL TASK:")[-1].strip()[:150]
-        dashboard.add_log_entry(ActionType.PLAN, f"Task: {task_preview}")
+        dashboard.add_log_entry(ActionType.PLAN, f"Executing: {task_preview}")
+        dashboard.set_agent("Coding Agent")
         dashboard.set_action("Cline", target=str(project_path))
 
         output_lines = []
@@ -272,7 +276,21 @@ class CodingAgent:
                     clean_line = line.rstrip()
                     output_lines.append(clean_line)
                     if clean_line.strip():
-                        dashboard.add_log_entry(ActionType.EXECUTE, clean_line[:100])
+                        lower_line = clean_line.lower()
+                        if any(
+                            kw in lower_line
+                            for kw in [
+                                "creat",
+                                "writ",
+                                "success",
+                                "complet",
+                                "error",
+                                "fail",
+                                "install",
+                                "running",
+                            ]
+                        ):
+                            dashboard.add_log_entry(ActionType.PLAN, clean_line[:100])
 
             process.wait(timeout=1800)
             dashboard.set_action("Cline", target="Processing")

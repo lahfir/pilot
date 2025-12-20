@@ -29,6 +29,7 @@ from .utils.ui import (  # noqa: E402
     startup_spinner,
     THEME,
 )
+from rich.text import Text
 
 
 async def main(
@@ -182,7 +183,7 @@ async def main(
                 continue
             except Exception as e:
                 dashboard.stop_dashboard()
-                console.print(f"\n  [{THEME['error']}]Error: {e}[/]")
+                console.print(f"\n  [{THEME['error']}]Error: {Text.escape(str(e))}[/]")
                 if verbosity == VerbosityLevel.VERBOSE:
                     import traceback
 
