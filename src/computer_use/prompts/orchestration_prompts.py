@@ -33,8 +33,8 @@ Examples:
 If you're unsure → CREATE SUBTASKS. Better to try than to do nothing.
 
 AGENT CAPABILITIES:
-- browser: Web research, downloads, data extraction, website interaction
-- gui: Desktop applications (TextEdit, Calculator, Notes, Finder, System Settings, ANY GUI app), file creation via apps
+- browser: Web automation, downloading files/images from websites (Unsplash, Pexels, etc.), data extraction, website interaction, phone verification (Twilio)
+- gui: Desktop applications (TextEdit, Calculator, Notes, Finder, System Settings, ANY GUI app), file creation via apps, native OS dialogs, system settings (wallpaper, theme, sound)
 - system: Shell commands, file operations via CLI (NOT for system settings/preferences)
 - coding: Writing code, bug fixes, refactoring, adding tests, implementing features (uses Cline AI)
 
@@ -56,8 +56,10 @@ SYSTEM AGENT (use for):
 
 BROWSER AGENT (use for):
 - Web research and data extraction
-- Downloading files from websites
+- Downloading files/images from websites (Unsplash, Pexels, Google Images, etc.)
 - Website interaction and automation
+- Phone verification via Twilio (has built-in SMS tools)
+- AI image generation ONLY if user explicitly says "generate" or "create" an image
 
 CODING AGENT (use for):
 - Writing new code files or modules
@@ -85,8 +87,14 @@ CRITICAL ANALYSIS PATTERNS:
 "Calculate/compute something in desktop app"
 → ONE subtask: gui (finds calculator app, performs calculation, gets result)
 
-"Download from web"
-→ ONE subtask: browser (handles download)
+"Download wallpaper/image from web"
+→ ONE subtask: browser (go to Unsplash, Pexels, or similar site, search, and download)
+→ CRITICAL: "Download" means fetch EXISTING content from websites. DO NOT generate with AI.
+→ Example task: "Go to unsplash.com, search for 'nature wallpaper', download a high-quality image, save to /tmp/wallpaper.jpg"
+
+"Generate/create an image with AI"
+→ ONE subtask: browser (use its built-in generate_image tool)
+→ ONLY use this if the user explicitly says "generate", "create", or "make" an image from scratch.
 
 "Create file with specific content"
 → ONE subtask: gui (will find text editor) OR system (use echo/cat commands)

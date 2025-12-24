@@ -11,7 +11,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
 from ..schemas.actions import ActionResult
-from ..utils.ui import dashboard, ActionType
+from ..utils.ui import dashboard, ActionType, LogBatcher
 
 
 MODULE_DIR = Path(__file__).parent.parent
@@ -38,9 +38,15 @@ CRITICAL REQUIREMENTS - DO NOT SKIP:
    - All files for this task go here
    - Do NOT create files outside this directory
 
-4. COMPLETION CHECKLIST:
+4. REQUIREMENTS FILE: ALWAYS create requirements.txt in {project_path}
+   - After installing dependencies, run: pip freeze > {project_path}/requirements.txt
+   - This captures all installed packages with versions
+   - Must be done BEFORE marking task complete
+
+5. COMPLETION CHECKLIST:
    [ ] Code written in {project_path}
    [ ] Dependencies installed in {venv_path}
+   [ ] requirements.txt created in {project_path}
    [ ] Code executed and tested
    [ ] All errors fixed
    [ ] Program runs successfully
@@ -56,19 +62,13 @@ class CodingAgent:
     """
 
     def __init__(self, working_directory: Optional[str] = None):
-        """
-        Initialize coding agent.
-
-        Args:
-            working_directory: Directory where Cline executes tasks.
-                             Defaults to src/computer_use/code directory.
-        """
         if working_directory:
             self.code_root = Path(working_directory)
         else:
             self.code_root = MODULE_DIR / CODE_DIR_NAME
         self.venv_path = self.code_root / VENV_NAME
         self.available = self._check_cline_available()
+        self._log_batcher = LogBatcher(batch_size=10, timeout_sec=0.2)
         self._ensure_code_directory()
 
     def _check_cline_available(self) -> bool:
@@ -290,8 +290,9 @@ class CodingAgent:
                                 "running",
                             ]
                         ):
-                            dashboard.add_log_entry(ActionType.PLAN, clean_line[:100])
+                            self._log_batcher.add(ActionType.PLAN, clean_line[:100])
 
+            self._log_batcher.flush_now()
             process.wait(timeout=1800)
             dashboard.set_action("Cline", target="Processing")
 

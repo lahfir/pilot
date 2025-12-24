@@ -3,10 +3,11 @@ Web automation tool for CrewAI.
 Wraps Browser-Use for autonomous web automation.
 """
 
-from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 from typing import Optional
 import asyncio
+
+from .instrumented_tool import InstrumentedBaseTool
 
 
 class WebAutomationInput(BaseModel):
@@ -32,7 +33,7 @@ class WebAutomationInput(BaseModel):
     )
 
 
-class WebAutomationTool(BaseTool):
+class WebAutomationTool(InstrumentedBaseTool):
     """
     Autonomous web automation via Browser-Use.
     Handles navigation, data extraction, form filling, downloads.

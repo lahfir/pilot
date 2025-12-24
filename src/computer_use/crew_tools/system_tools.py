@@ -3,10 +3,11 @@ System command tool for CrewAI.
 Extracted from system_agent.py, rewritten for CrewAI integration.
 """
 
-from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 import subprocess
 from pathlib import Path
+
+from .instrumented_tool import InstrumentedBaseTool
 
 
 class ExecuteCommandInput(BaseModel):
@@ -16,7 +17,7 @@ class ExecuteCommandInput(BaseModel):
     explanation: str = Field(description="Why this command is needed")
 
 
-class ExecuteShellCommandTool(BaseTool):
+class ExecuteShellCommandTool(InstrumentedBaseTool):
     """
     Execute shell command safely with validation.
     Runs commands in user home directory.

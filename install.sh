@@ -109,32 +109,45 @@ install_uv() {
 # Check Python version
 check_python() {
     print_step "Checking Python Version"
-    
-    if command_exists python3; then
-        PYTHON_VERSION=$(python3 --version | cut -d' ' -f2)
-        PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d'.' -f1)
-        PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d'.' -f2)
-        
-        print_info "Found Python $PYTHON_VERSION"
-        
-        if [[ $PYTHON_MAJOR -eq 3 ]] && [[ $PYTHON_MINOR -ge 11 ]]; then
-            print_success "Python version is compatible (≥3.11)"
-        else
-            print_error "Python 3.11+ is required (found $PYTHON_VERSION)"
-            print_info "Please install Python 3.11 or higher:"
-            
-            if [[ "$OS" == "macos" ]]; then
-                echo "  brew install python@3.11"
-            elif [[ "$OS" == "linux" ]]; then
-                echo "  sudo apt install python3.11  # Debian/Ubuntu"
-                echo "  sudo dnf install python3.11  # Fedora"
+
+    PYTHON_CMD=""
+
+    for cmd in python3.13 python3.12 python3.11 python3; do
+        if command_exists "$cmd"; then
+            VERSION=$("$cmd" --version 2>/dev/null | cut -d' ' -f2)
+            MAJOR=$(echo "$VERSION" | cut -d'.' -f1)
+            MINOR=$(echo "$VERSION" | cut -d'.' -f2)
+
+            if [[ "$MAJOR" -eq 3 ]] && [[ "$MINOR" -ge 11 ]]; then
+                PYTHON_CMD="$cmd"
+                PYTHON_VERSION="$VERSION"
+                break
             fi
-            exit 1
         fi
-    else
-        print_error "Python 3 is not installed"
+    done
+
+    if [[ -z "$PYTHON_CMD" ]]; then
+        if command_exists python3; then
+            PYTHON_VERSION=$(python3 --version | cut -d' ' -f2)
+            print_error "Python 3.11+ is required (found $PYTHON_VERSION)"
+        else
+            print_error "Python 3 is not installed"
+        fi
+        print_info "Please install Python 3.11 or higher:"
+
+        if [[ "$OS" == "macos" ]]; then
+            echo "  brew install python@3.11"
+        elif [[ "$OS" == "linux" ]]; then
+            echo "  sudo apt install python3.11  # Debian/Ubuntu"
+            echo "  sudo dnf install python3.11  # Fedora"
+        fi
         exit 1
     fi
+
+    print_info "Found Python $PYTHON_VERSION ($PYTHON_CMD)"
+    print_success "Python version is compatible (≥3.11)"
+
+    export PYTHON_CMD
 }
 
 # Install Python dependencies

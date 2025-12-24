@@ -206,24 +206,58 @@ class ComputerUseCrew:
         """
 
         def step_callback(step_output):
+            if self.is_cancelled():
+                raise KeyboardInterrupt("Task cancelled by user")
+
             dashboard.set_agent(agent_role)
 
-            if isinstance(step_output, list):
-                for step in step_output:
-                    if hasattr(step, "tool") and hasattr(step, "tool_input"):
-                        dashboard.add_log_entry(
-                            ActionType.EXECUTE,
-                            f"{step.tool}: {step.tool_input}",
-                        )
-                        dashboard.set_action(step.tool, str(step.tool_input))
-            elif hasattr(step_output, "tool") and hasattr(step_output, "tool_input"):
-                dashboard.add_log_entry(
-                    ActionType.EXECUTE,
-                    f"{step_output.tool}: {step_output.tool_input}",
-                )
-                dashboard.set_action(step_output.tool, str(step_output.tool_input))
+            steps = step_output if isinstance(step_output, list) else [step_output]
+            for step in steps:
+                thought = None
+                if hasattr(step, "thought") and step.thought:
+                    thought = step.thought.strip()
+                elif hasattr(step, "text") and step.text:
+                    text = step.text.strip()
+                    if "\nAction:" in text:
+                        thought = text.split("\nAction:")[0].strip()
+                    elif "\nFinal Answer:" in text:
+                        thought = text.split("\nFinal Answer:")[0].strip()
+                    else:
+                        thought = text
+
+                if thought:
+                    thought = thought.replace("Thought:", "").strip()
+                    dashboard.set_thinking(thought)
+
+                if hasattr(step, "tool") and hasattr(step, "tool_input"):
+                    dashboard.log_tool_start(step.tool, step.tool_input)
+
+            self._update_token_usage()
 
         return step_callback
+
+    def _update_token_usage(self) -> None:
+        """Update dashboard with current token usage from all agents."""
+        if not hasattr(self, "crew") or not self.crew:
+            return
+
+        try:
+            total_input = 0
+            total_output = 0
+
+            all_agents = list(self.crew.agents) if self.crew.agents else []
+            if hasattr(self.crew, "manager_agent") and self.crew.manager_agent:
+                all_agents.append(self.crew.manager_agent)
+
+            for agent in all_agents:
+                if hasattr(agent, "llm") and hasattr(agent.llm, "_token_usage"):
+                    usage = agent.llm._token_usage
+                    total_input += usage.get("prompt_tokens", 0)
+                    total_output += usage.get("completion_tokens", 0)
+
+            dashboard.update_token_usage(total_input, total_output)
+        except Exception:
+            pass
 
     def _create_agent(
         self,
@@ -299,14 +333,15 @@ class ComputerUseCrew:
 USER REQUEST: {task_description}
 
 Analyze the request and delegate to the right specialist(s):
-- Web Automation Specialist: Web browsing, data extraction, website interactions
-- Desktop Application Automation Expert: GUI apps, clicking, typing, file operations via UI
-- System Command & Terminal Expert: Shell commands, CLI operations, file system via terminal
+- Web Automation Specialist: Web browsing, data extraction, website interactions, AI image generation (has built-in generate_image tool), phone/SMS verification
+- Desktop Application Automation Expert: GUI apps, clicking, typing, file operations via UI, native OS dialogs, system settings and preferences (wallpaper, theme, sound, etc.)
+- System Command & Terminal Expert: Shell commands, CLI operations, file system via terminal (ls, cp, mv, etc.)
 - Code Automation Specialist: Writing code, debugging, refactoring, testing
 
 IMPORTANT:
 - You can delegate to multiple agents sequentially if the task requires it
 - Pass results from one agent to the next when there are dependencies
+- CRITICAL: Pass EXACT file paths and data between agents. If Agent A returns a path like '/private/tmp/downloads/file.jpg', pass that EXACT path to Agent B. DO NOT simplify or assume standard paths.
 - For browser tasks, delegate the ENTIRE browser portion as ONE task (to maintain session)
 - Report the final consolidated result after all delegations complete""",
             expected_output="""A clear, complete response addressing the user's request. Include:
@@ -361,12 +396,29 @@ IMPORTANT:
                 overall_success=False,
                 error="Task cancelled by user (ESC pressed)",
             )
+        except KeyboardInterrupt:
+            print_failure("Task cancelled by user")
+            return TaskExecutionResult(
+                task=task,
+                result=None,
+                overall_success=False,
+                error="Task cancelled by user (ESC pressed)",
+            )
         except Exception as exc:
+            error_msg = str(exc)
+            if "cancelled" in error_msg.lower():
+                print_failure("Task cancelled by user")
+                return TaskExecutionResult(
+                    task=task,
+                    result=None,
+                    overall_success=False,
+                    error="Task cancelled by user (ESC pressed)",
+                )
             print_failure(f"Execution failed: {exc}")
             return TaskExecutionResult(
                 task=task,
                 overall_success=False,
-                error=str(exc),
+                error=error_msg,
             )
 
     async def execute_task(

@@ -69,10 +69,13 @@ class CrewGuiDelegate:
             verbose=False,
         )
 
-        result = crew.kickoff()
-        output = str(result)
-        success = "could not" not in output.lower() and "failed" not in output.lower()
-        return GuiDelegationResult(success=success, output=output)
+        try:
+            result = crew.kickoff()
+            output = str(result)
+            success = "could not" not in output.lower() and "failed" not in output.lower()
+            return GuiDelegationResult(success=success, output=output)
+        except KeyboardInterrupt:
+            return GuiDelegationResult(success=False, output="Task cancelled by user")
 
     def _create_gui_agent(self) -> Agent:
         """Create the CrewAI GUI specialist agent from config."""
@@ -81,6 +84,11 @@ class CrewGuiDelegate:
         tools = [self._tool_map[name] for name in tool_names if name in self._tool_map]
 
         backstory_with_context = config["backstory"] + self._platform_context
+
+        def step_callback(step_output):
+            from ..crew import ComputerUseCrew
+            if ComputerUseCrew.is_cancelled():
+                raise KeyboardInterrupt("Task cancelled by user")
 
         return Agent(
             role=config["role"],
@@ -92,4 +100,5 @@ class CrewGuiDelegate:
             allow_delegation=config.get("allow_delegation", False),
             memory=True,
             tools=tools,
+            step_callback=step_callback,
         )

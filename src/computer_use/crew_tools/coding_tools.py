@@ -3,9 +3,10 @@ Coding automation tool for CrewAI.
 Wraps CodingAgent (Cline CLI) for autonomous code automation.
 """
 
-from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 import asyncio
+
+from .instrumented_tool import InstrumentedBaseTool
 
 
 class CodingAutomationInput(BaseModel):
@@ -17,7 +18,7 @@ class CodingAutomationInput(BaseModel):
     )
 
 
-class CodingAgentTool(BaseTool):
+class CodingAgentTool(InstrumentedBaseTool):
     """
     Autonomous coding automation via Cline CLI.
     Handles code writing, refactoring, bug fixes, tests, and features.
