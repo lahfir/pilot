@@ -5,10 +5,10 @@ Simple tools: screenshot, open_application, read_screen, scroll.
 
 import atexit
 import os
-from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 from typing import Optional, Set
 
+from .instrumented_tool import InstrumentedBaseTool
 from ..schemas.actions import ActionResult
 from ..config.timing_config import get_timing_config
 from ..utils.ui import ActionType, action_spinner, dashboard, print_action_result
@@ -83,7 +83,7 @@ class TakeScreenshotInput(BaseModel):
     )
 
 
-class TakeScreenshotTool(BaseTool):
+class TakeScreenshotTool(InstrumentedBaseTool):
     """Capture screenshot of screen or region."""
 
     name: str = "take_screenshot"
@@ -167,7 +167,7 @@ class OpenAppInput(BaseModel):
     app_name: str = Field(description="Application name to open")
 
 
-class OpenApplicationTool(BaseTool):
+class OpenApplicationTool(InstrumentedBaseTool):
     """Open desktop application."""
 
     name: str = "open_application"
@@ -314,7 +314,7 @@ class ReadScreenInput(BaseModel):
     )
 
 
-class ReadScreenTextTool(BaseTool):
+class ReadScreenTextTool(InstrumentedBaseTool):
     """Extract text from screen using OCR."""
 
     name: str = "read_screen_text"
@@ -414,7 +414,7 @@ class ScrollInput(BaseModel):
     amount: int = Field(default=3, description="Scroll amount")
 
 
-class ScrollTool(BaseTool):
+class ScrollTool(InstrumentedBaseTool):
     """Scroll screen up or down."""
 
     name: str = "scroll"
@@ -466,7 +466,7 @@ class ListRunningAppsInput(BaseModel):
     pass
 
 
-class ListRunningAppsTool(BaseTool):
+class ListRunningAppsTool(InstrumentedBaseTool):
     """List all currently running applications."""
 
     name: str = "list_running_apps"
@@ -549,7 +549,7 @@ class CheckAppRunningInput(BaseModel):
     app_name: str = Field(description="Application name to check")
 
 
-class CheckAppRunningTool(BaseTool):
+class CheckAppRunningTool(InstrumentedBaseTool):
     """Check if a specific application is currently running."""
 
     name: str = "check_app_running"
@@ -606,12 +606,16 @@ class GetAccessibleElementsInput(BaseModel):
     """Input for getting all accessible elements."""
 
     app_name: str = Field(description="Application name to get elements from")
+    filter_text: Optional[str] = Field(
+        default=None,
+        description="Optional text to filter elements by (case-insensitive search in label/title)"
+    )
 
 
 _get_elements_state = {"last_hash": "", "repeat_count": 0}
 
 
-class GetAccessibleElementsTool(BaseTool):
+class GetAccessibleElementsTool(InstrumentedBaseTool):
     """
     Get all interactive elements from an application using Accessibility API.
     Returns a structured list of clickable elements with their coordinates.
@@ -621,23 +625,33 @@ class GetAccessibleElementsTool(BaseTool):
     description: str = (
         "Get all interactive UI elements from an application using Accessibility API. "
         "Returns a list of elements with label, role, bounds, and center coordinates. "
+        "Use filter_text to search for specific elements (e.g., filter_text='Appearance'). "
         "Use this to discover available clickable elements before clicking."
     )
     args_schema: type[BaseModel] = GetAccessibleElementsInput
 
-    def _run(self, app_name: str) -> ActionResult:
+    def _run(self, app_name: str, filter_text: Optional[str] = None) -> ActionResult:
         """
         Get all accessible elements from app using comprehensive UI element detection.
 
         Args:
             app_name: Application name
+            filter_text: Optional text to filter elements by label/title
 
         Returns:
             ActionResult with categorized list of elements
         """
-        # Check for cancellation
         if cancelled := check_cancellation():
             return cancelled
+
+        if not hasattr(self, "_tool_registry") or self._tool_registry is None:
+            return ActionResult(
+                success=False,
+                action_taken=f"Tool registry not initialized for {app_name}",
+                method_used="accessibility",
+                confidence=0.0,
+                error="Internal error: _tool_registry not set on tool instance",
+            )
 
         accessibility_tool = self._tool_registry.get_tool("accessibility")
 
@@ -677,12 +691,15 @@ class GetAccessibleElementsTool(BaseTool):
                     elements = accessibility_tool.get_all_interactive_elements(app_name)
 
             if not elements:
+                app_ref = accessibility_tool.get_app(app_name)
+                windows = accessibility_tool.get_windows(app_ref) if app_ref else []
+                debug_info = f"app_found={app_ref is not None}, windows={len(windows)}"
                 return ActionResult(
                     success=True,
-                    action_taken=f"No interactive elements found in {app_name}",
+                    action_taken=f"No interactive elements found in {app_name}. Debug: {debug_info}. Verify if the application is correctly focused or if it contains any UI.",
                     method_used="accessibility",
                     confidence=1.0,
-                    data={"elements": [], "count": 0},
+                    data={"elements": [], "count": 0, "debug": debug_info},
                 )
 
             print_action_result(True, f"Found {len(elements)} elements")
@@ -737,6 +754,22 @@ class GetAccessibleElementsTool(BaseTool):
                 )
             )
 
+            if filter_text:
+                filter_lower = filter_text.lower()
+                normalized_elements = [
+                    e for e in normalized_elements
+                    if filter_lower in (e.get("label", "") or "").lower()
+                    or filter_lower in (e.get("title", "") or "").lower()
+                ]
+                if not normalized_elements:
+                    return ActionResult(
+                        success=True,
+                        action_taken=f"No elements matching '{filter_text}' found in {app_name}",
+                        method_used="accessibility",
+                        confidence=1.0,
+                        data={"elements": [], "count": 0, "filter": filter_text},
+                    )
+
             # Filter elements: Keep those with meaningful labels
             # Exclude only generic spatial-only labels (our own annotations)
             generic_labels = {
@@ -765,11 +798,11 @@ class GetAccessibleElementsTool(BaseTool):
             ]
 
             result_elements = (
-                meaningful_elements[:75]
+                meaningful_elements[:200]
                 if meaningful_elements
-                else normalized_elements[:75]
+                else normalized_elements[:200]
             )
-            display_limit = 15
+            display_limit = 75
             truncated_note = ""
             if len(result_elements) > display_limit:
                 truncated_note = f"\n... +{len(result_elements) - display_limit} more"
@@ -852,7 +885,7 @@ class GetWindowImageInput(BaseModel):
     )
 
 
-class GetWindowImageTool(BaseTool):
+class GetWindowImageTool(InstrumentedBaseTool):
     """
     Get window image as base64 for vision analysis (on-demand, cost-aware).
     Only call this when OCR and accessibility are insufficient.
@@ -958,7 +991,7 @@ class RequestHumanInputInput(BaseModel):
     )
 
 
-class RequestHumanInputTool(BaseTool):
+class RequestHumanInputTool(InstrumentedBaseTool):
     """Request human input for ambiguous decisions or dialog choices."""
 
     name: str = "request_human_input"

@@ -3,10 +3,10 @@ Capability-based app finder tool for CrewAI.
 Uses LLM intelligence to find best app for capability - NO hardcoding.
 """
 
-from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 import asyncio
 
+from .instrumented_tool import InstrumentedBaseTool
 from ..schemas.actions import ActionResult
 
 
@@ -26,7 +26,7 @@ class FindAppInput(BaseModel):
     )
 
 
-class FindApplicationTool(BaseTool):
+class FindApplicationTool(InstrumentedBaseTool):
     """
     Intelligently find best application for capability using LLM.
     NO hardcoded mappings - LLM decides based on running apps.

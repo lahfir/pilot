@@ -4,12 +4,58 @@ Provides AI image generation using Google Gemini for ads, marketing, and content
 """
 
 import os
+import re
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from browser_use import Tools, ActionResult
 from ...utils.ui import dashboard, ActionType
+
+IMAGE_GEN_DIR = Path(tempfile.gettempdir()) / "browser_use_generated_images"
+IMAGE_GEN_DIR.mkdir(exist_ok=True)
+
+MAX_IMAGES = 10
+_image_counter = 0
+
+
+def _slugify(text: str, max_length: int = 30) -> str:
+    """
+    Convert text to a safe filename slug.
+
+    Args:
+        text: Input text to slugify
+        max_length: Maximum length of the slug
+
+    Returns:
+        Safe filename string
+    """
+    slug = re.sub(r"[^\w\s-]", "", text.lower())
+    slug = re.sub(r"[-\s]+", "_", slug).strip("_")
+    return slug[:max_length]
+
+
+def _get_image_slot_path(slot: int) -> Path:
+    """
+    Get the path for a specific image slot.
+
+    Args:
+        slot: Image slot number (0 to MAX_IMAGES-1)
+
+    Returns:
+        Path object for the image file
+    """
+    return IMAGE_GEN_DIR / f"generated_image_{slot:02d}.png"
+
+
+def get_generated_image_paths() -> List[str]:
+    """
+    Get all pre-defined image slot paths for whitelisting.
+
+    Returns:
+        List of file paths that can be uploaded by the browser agent
+    """
+    return [str(_get_image_slot_path(i)) for i in range(MAX_IMAGES)]
 
 
 def load_image_tools() -> Optional[Tools]:
@@ -40,13 +86,12 @@ def _create_image_tools(api_key: str) -> Tools:
     tools = Tools()
 
     @tools.action(
-        description="Generate an image using AI for ads, marketing, banners, or content creation"
+        description="Generate an image using AI for ads, marketing, banners, or content creation. Each image gets a unique filename based on the prompt."
     )
-    def generate_image(
-        prompt: str, filename: str = "generated_image.png"
-    ) -> ActionResult:
+    def generate_image(prompt: str) -> ActionResult:
         """
         Generate an image from a text description using Google Gemini.
+        Each image is saved with a unique filename based on prompt context.
         Use this when you need to create images for:
         - Google Ads or Facebook Ads
         - Marketing campaigns and banners
@@ -55,10 +100,9 @@ def _create_image_tools(api_key: str) -> Tools:
 
         Args:
             prompt: Detailed description of the image to generate
-            filename: Output filename (default: generated_image.png)
 
         Returns:
-            ActionResult with file path for upload or error
+            ActionResult with file path for upload_file action
         """
         try:
             from google import genai
@@ -70,21 +114,26 @@ def _create_image_tools(api_key: str) -> Tools:
                 contents=[prompt],
             )
 
-            temp_dir = Path(tempfile.mkdtemp(prefix="browser_image_gen_"))
-            output_path = temp_dir / filename
+            global _image_counter
+            slot = _image_counter % MAX_IMAGES
+            _image_counter += 1
+
+            output_path = _get_image_slot_path(slot)
+            slug = _slugify(prompt)
 
             for part in response.parts:
                 if part.inline_data is not None:
                     image = part.as_image()
                     image.save(str(output_path))
+
                     dashboard.add_log_entry(
                         ActionType.COMPLETE,
-                        f"Image generated: {output_path}",
+                        f"Image generated ({slug}): {output_path}",
                         status="complete",
                     )
                     return ActionResult(
-                        extracted_content=f"Image generated successfully and saved to: {output_path}",
-                        long_term_memory=f"Generated image at: {output_path}",
+                        extracted_content=f"Image generated successfully. Context: '{slug}'. Saved to: {output_path}",
+                        long_term_memory=f"Generated image ({slug}) at: {output_path}",
                     )
                 elif part.text is not None:
                     return ActionResult(

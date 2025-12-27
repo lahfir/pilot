@@ -3,10 +3,10 @@ Interactive GUI automation tools for CrewAI.
 Refactored for clarity: discovery separate from execution.
 """
 
-from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 from typing import Optional
 
+from .instrumented_tool import InstrumentedBaseTool
 from ..schemas.actions import ActionResult
 from ..utils.ui import action_spinner, dashboard, print_action_result
 from ..utils.ocr_targeting import (
@@ -61,7 +61,7 @@ class ClickInput(BaseModel):
     )
 
 
-class ClickElementTool(BaseTool):
+class ClickElementTool(InstrumentedBaseTool):
     """
     Click element using native accessibility or OCR fallback.
 
@@ -304,7 +304,7 @@ class TypeInput(BaseModel):
     use_clipboard: bool = Field(default=False, description="Force clipboard paste")
 
 
-class TypeTextTool(BaseTool):
+class TypeTextTool(InstrumentedBaseTool):
     """Type text with smart paste detection and hotkey support."""
 
     name: str = "type_text"

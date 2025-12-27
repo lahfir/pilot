@@ -5,18 +5,90 @@ Similar to BrowserAgent wrapping Browser-Use library.
 
 import subprocess
 import shutil
-import os
 import re
 import hashlib
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
 from ..schemas.actions import ActionResult
-from ..utils.ui import dashboard, ActionType
+from ..utils.ui import dashboard, ActionType, LogBatcher
 
 
+MODULE_DIR = Path(__file__).parent.parent
 CODE_DIR_NAME = "code"
 VENV_NAME = ".venv"
+
+class ClineOutputFormatter:
+    """Formats Cline CLI output with rich UI elements."""
+
+    def __init__(self):
+        self._in_code_block = False
+        self._code_lang = ""
+        self._spinner_frames = ["◐", "◓", "◑", "◒"]
+        self._spinner_idx = 0
+
+    def _get_spinner(self) -> str:
+        frame = self._spinner_frames[self._spinner_idx]
+        self._spinner_idx = (self._spinner_idx + 1) % len(self._spinner_frames)
+        return frame
+
+    def format_line(self, line: str) -> Optional[str]:
+        """Format a single line for display. Returns None to skip."""
+        stripped = line.strip()
+
+        if stripped.startswith("```"):
+            if not self._in_code_block:
+                self._in_code_block = True
+                self._code_lang = stripped[3:].strip() or "text"
+                return f"  [dim]┌─ {self._code_lang} ─[/]"
+            else:
+                self._in_code_block = False
+                return "  [dim]└────────────[/]"
+
+        if self._in_code_block:
+            return f"  [dim]│[/] [white]{line[:100]}[/]"
+
+        if "### Cline is running" in line:
+            cmd = line.split("`")[1] if "`" in line else "command"
+            cmd = cmd[:60] + "..." if len(cmd) > 60 else cmd
+            return f"  [cyan]{self._get_spinner()}[/] [bold]Running[/] [dim]{cmd}[/]"
+
+        if "## API request completed" in line:
+            if "`" in line:
+                tokens = line.split("`")[1]
+                return f"  [dim]⚡ {tokens}[/]"
+            return None
+
+        if "## Checkpoint created" in line:
+            return "  [dim]📍[/]"
+
+        if "thinking" in line.lower() or "## Cline" in line:
+            return f"  [cyan]{self._get_spinner()}[/] [italic dim]Thinking...[/]"
+
+        if any(x in line.lower() for x in ["created", "wrote", "written to"]):
+            return f"  [green]✓[/] {stripped[:80]}"
+
+        if "error" in line.lower() or "failed" in line.lower():
+            return f"  [red]✗[/] {stripped[:80]}"
+
+        if any(x in line.lower() for x in ["success", "passed", "complete"]):
+            return f"  [green]●[/] {stripped[:80]}"
+
+        if line.startswith("*Conversation history"):
+            return None
+
+        if not stripped:
+            return None
+
+        if stripped.startswith("##"):
+            text = stripped.lstrip("#").strip()
+            return f"  [dim italic]💭 {text[:80]}[/]"
+
+        if stripped and not stripped.startswith("#"):
+            return f"  [dim]│[/] {stripped[:100]}"
+
+        return f"  [dim]│[/] {stripped[:100]}"
+
 
 CODING_GUIDELINES = """
 CRITICAL REQUIREMENTS - DO NOT SKIP:
@@ -38,9 +110,15 @@ CRITICAL REQUIREMENTS - DO NOT SKIP:
    - All files for this task go here
    - Do NOT create files outside this directory
 
-4. COMPLETION CHECKLIST:
+4. REQUIREMENTS FILE: ALWAYS create requirements.txt in {project_path}
+   - After installing dependencies, run: pip freeze > {project_path}/requirements.txt
+   - This captures all installed packages with versions
+   - Must be done BEFORE marking task complete
+
+5. COMPLETION CHECKLIST:
    [ ] Code written in {project_path}
    [ ] Dependencies installed in {venv_path}
+   [ ] requirements.txt created in {project_path}
    [ ] Code executed and tested
    [ ] All errors fixed
    [ ] Program runs successfully
@@ -56,17 +134,13 @@ class CodingAgent:
     """
 
     def __init__(self, working_directory: Optional[str] = None):
-        """
-        Initialize coding agent.
-
-        Args:
-            working_directory: Directory where Cline executes tasks.
-                             Defaults to current working directory.
-        """
-        self.base_directory = working_directory or os.getcwd()
-        self.code_root = Path(self.base_directory) / CODE_DIR_NAME
+        if working_directory:
+            self.code_root = Path(working_directory)
+        else:
+            self.code_root = MODULE_DIR / CODE_DIR_NAME
         self.venv_path = self.code_root / VENV_NAME
         self.available = self._check_cline_available()
+        self._log_batcher = LogBatcher(batch_size=10, timeout_sec=0.2)
         self._ensure_code_directory()
 
     def _check_cline_available(self) -> bool:
@@ -141,9 +215,9 @@ class CodingAgent:
 
         project_path = self._get_project_path(task)
 
-        dashboard.add_log_entry(ActionType.EXECUTE, f"Starting Cline: {task[:80]}")
-        dashboard.add_log_entry(ActionType.OPEN, f"Project: {project_path}")
-        dashboard.set_action("Cline", target=str(project_path))
+        dashboard.set_agent("Coding Agent")
+        dashboard.console.print(f"\n  [bold cyan]◆ Cline[/] [dim]→[/] {task[:80]}")
+        dashboard.console.print(f"  [dim]  Project:[/] {project_path}")
 
         enhanced_task = self._build_task_with_guidelines(task, project_path, context)
 
@@ -251,10 +325,9 @@ class CodingAgent:
         Returns:
             Dictionary with success, output, and error
         """
-        task_preview = task.split("ACTUAL TASK:")[-1].strip()[:150]
-        dashboard.add_log_entry(ActionType.PLAN, f"Task: {task_preview}")
-        dashboard.set_action("Cline", target=str(project_path))
+        dashboard.console.print(f"  [dim]  Running cline...[/]")
 
+        formatter = ClineOutputFormatter()
         output_lines = []
 
         try:
@@ -271,9 +344,11 @@ class CodingAgent:
                 if line:
                     clean_line = line.rstrip()
                     output_lines.append(clean_line)
-                    if clean_line.strip():
-                        dashboard.add_log_entry(ActionType.EXECUTE, clean_line[:100])
+                    formatted = formatter.format_line(clean_line)
+                    if formatted:
+                        dashboard.console.print(formatted)
 
+            self._log_batcher.flush_now()
             process.wait(timeout=1800)
             dashboard.set_action("Cline", target="Processing")
 

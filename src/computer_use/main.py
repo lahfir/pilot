@@ -5,13 +5,16 @@ Main entry point for computer use automation agent.
 import asyncio
 import sys
 
-from .crew import ComputerUseCrew
-from .utils.command_confirmation import CommandConfirmation
 from .utils.logging_config import setup_logging
-from .utils.permissions import check_and_request_permissions
-from .utils.platform_detector import detect_platform
-from .utils.safety_checker import SafetyChecker
-from .utils.ui import (
+
+setup_logging(verbose=False)
+
+from .crew import ComputerUseCrew  # noqa: E402
+from .utils.command_confirmation import CommandConfirmation  # noqa: E402
+from .utils.permissions import check_and_request_permissions  # noqa: E402
+from .utils.platform_detector import detect_platform  # noqa: E402
+from .utils.safety_checker import SafetyChecker  # noqa: E402
+from .utils.ui import (  # noqa: E402
     ActionType,
     VerbosityLevel,
     console,
@@ -26,6 +29,7 @@ from .utils.ui import (
     startup_spinner,
     THEME,
 )
+from rich.text import Text
 
 
 async def main(
@@ -44,7 +48,8 @@ async def main(
         verbosity: Output verbosity level (QUIET, NORMAL, VERBOSE)
     """
     dashboard.set_verbosity(verbosity)
-    setup_logging(verbose=verbosity == VerbosityLevel.VERBOSE)
+    if verbosity == VerbosityLevel.VERBOSE:
+        setup_logging(verbose=True)
 
     print_banner()
 
@@ -178,7 +183,7 @@ async def main(
                 continue
             except Exception as e:
                 dashboard.stop_dashboard()
-                console.print(f"\n  [{THEME['error']}]Error: {e}[/]")
+                console.print(f"\n  [{THEME['error']}]Error: {Text.escape(str(e))}[/]")
                 if verbosity == VerbosityLevel.VERBOSE:
                     import traceback
 

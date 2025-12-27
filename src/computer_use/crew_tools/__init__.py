@@ -3,6 +3,7 @@ CrewAI-compatible tool implementations.
 All tools return ActionResult (Pydantic) for type safety.
 """
 
+from .instrumented_tool import InstrumentedBaseTool
 from .gui_basic_tools import (
     TakeScreenshotTool,
     OpenApplicationTool,
@@ -24,6 +25,7 @@ from .capability_tools import FindApplicationTool
 from .coding_tools import CodingAgentTool
 
 __all__ = [
+    "InstrumentedBaseTool",
     "TakeScreenshotTool",
     "ClickElementTool",
     "TypeTextTool",

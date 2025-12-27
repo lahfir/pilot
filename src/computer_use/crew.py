@@ -1,14 +1,13 @@
-"""CrewAI-based multi-agent computer automation system."""
+"""CrewAI-based multi-agent computer automation system with hierarchical delegation."""
 
 import asyncio
+import os
 import platform
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
 from crewai import Agent, Crew, Process, Task
-from langchain_core.messages import HumanMessage
-from pydantic import BaseModel, Field
 
 from .agents.browser_agent import BrowserAgent
 from .agents.coding_agent import CodingAgent
@@ -30,57 +29,22 @@ from .crew_tools import (
     TypeTextTool,
     WebAutomationTool,
 )
-from .prompts.orchestration_prompts import get_orchestration_prompt
-from .schemas import TaskCompletionOutput, TaskExecutionResult
+from .schemas import TaskExecutionResult
 from .tools.platform_registry import PlatformToolRegistry
 from .utils.coordinate_validator import CoordinateValidator
 from .utils.ui import (
     ActionType,
     dashboard,
     print_failure,
-    print_info,
     print_success,
-    print_warning,
 )
-
-
-class SubTask(BaseModel):
-    """Structured subtask returned by the orchestration LLM."""
-
-    agent_type: str = Field(
-        description="Agent type: 'browser', 'gui', 'system', or 'coding'"
-    )
-    description: str = Field(
-        description=(
-            "Clear, specific task description with ALL actual values included "
-            "(passwords, emails, URLs) - no references like 'provided password'"
-        )
-    )
-    expected_output: str = Field(description="What this agent should produce")
-    depends_on_previous: bool = Field(
-        description="True if this subtask needs output from the previous subtask"
-    )
-
-
-class TaskPlan(BaseModel):
-    """Task plan with reasoning and ordered subtasks."""
-
-    reasoning: str = Field(
-        description="Analysis of the task and orchestration strategy"
-    )
-    subtasks: List[SubTask] = Field(
-        description=(
-            "List of subtasks in execution order. MUST have at least 1 subtask for any action "
-            "request. Empty list ONLY for pure conversational queries like 'hello' or 'how are you'."
-        ),
-        min_length=0,
-    )
+from .services.crew_gui_delegate import CrewGuiDelegate
 
 
 class ComputerUseCrew:
     """
     CrewAI-powered computer automation system.
-    Uses CrewAI's Agent, Task, and Crew for proper multi-agent orchestration.
+    Uses hierarchical process for dynamic agent delegation at runtime.
     """
 
     _cancellation_requested = False
@@ -122,21 +86,19 @@ class ComputerUseCrew:
         self.browser_llm = browser_llm_client or LLMConfig.get_browser_llm()
 
         self.agents_config = self._load_yaml_config("agents.yaml")
-        self.tasks_config = self._load_yaml_config("tasks.yaml")
+        self.platform_context = self._get_platform_context()
 
         self.tool_registry = self._initialize_tool_registry()
+        self.gui_tools = self._initialize_gui_tools()
+
         self.browser_agent = self._initialize_browser_agent()
         self.coding_agent = self._initialize_coding_agent()
 
-        self.gui_tools = self._initialize_gui_tools()
         self.web_automation_tool = self._initialize_web_tool()
         self.coding_automation_tool = self._initialize_coding_tool()
         self.execute_command_tool = self._initialize_system_tool()
 
         self.crew: Optional[Crew] = None
-        self.platform_context = self._get_platform_context()
-
-    # --- Initialization helpers -------------------------------------------------
 
     def _load_yaml_config(self, filename: str) -> Dict[str, Any]:
         config_path = Path(__file__).parent / "config" / filename
@@ -156,10 +118,17 @@ class ComputerUseCrew:
         )
 
     def _initialize_browser_agent(self) -> BrowserAgent:
+        gui_delegate = CrewGuiDelegate(
+            agents_config=self.agents_config,
+            tool_map=self.gui_tools,
+            platform_context=self.platform_context,
+            gui_llm=self.vision_llm,
+        )
         return BrowserAgent(
             llm_client=self.browser_llm,
             use_user_profile=self.use_browser_profile,
             profile_directory=self.browser_profile_directory,
+            gui_delegate=gui_delegate,
         )
 
     def _initialize_coding_agent(self) -> CodingAgent:
@@ -180,10 +149,8 @@ class ComputerUseCrew:
             "find_application": FindApplicationTool(),
             "request_human_input": RequestHumanInputTool(),
         }
-
         for tool in tools.values():
             tool._tool_registry = self.tool_registry
-
         tools["find_application"]._llm = LLMConfig.get_orchestration_llm()
         return tools
 
@@ -203,7 +170,24 @@ class ComputerUseCrew:
         tool._confirmation_manager = self.confirmation_manager
         return tool
 
-    # --- Agent and tool construction -------------------------------------------
+    def _get_platform_context(self) -> str:
+        os_name = platform.system()
+        platform_names = {"Darwin": "macOS", "Windows": "Windows", "Linux": "Linux"}
+        platform_name = platform_names.get(os_name, os_name)
+        return f"\n\n🖥️  PLATFORM: {platform_name} {platform.release()} ({platform.machine()})\n"
+
+    def _extract_context_from_history(
+        self, conversation_history: List[Dict[str, Any]]
+    ) -> str:
+        if not conversation_history:
+            return ""
+        last_interaction = conversation_history[-1]
+        if "result" not in last_interaction or not last_interaction["result"]:
+            return ""
+        result_data = last_interaction["result"]
+        if isinstance(result_data, dict) and "result" in result_data:
+            return f"\n\nPREVIOUS TASK OUTPUT:\n{result_data['result']}\n"
+        return ""
 
     def _build_tool_map(self) -> Dict[str, Any]:
         return {
@@ -213,6 +197,69 @@ class ComputerUseCrew:
             "execute_shell_command": self.execute_command_tool,
         }
 
+    def _create_step_callback(self, agent_role: str):
+        """
+        Create a callback for agent step logging.
+
+        Args:
+            agent_role: The role/name of the agent for dashboard display
+        """
+
+        def step_callback(step_output):
+            if self.is_cancelled():
+                raise KeyboardInterrupt("Task cancelled by user")
+
+            dashboard.set_agent(agent_role)
+
+            steps = step_output if isinstance(step_output, list) else [step_output]
+            for step in steps:
+                thought = None
+                if hasattr(step, "thought") and step.thought:
+                    thought = step.thought.strip()
+                elif hasattr(step, "text") and step.text:
+                    text = step.text.strip()
+                    if "\nAction:" in text:
+                        thought = text.split("\nAction:")[0].strip()
+                    elif "\nFinal Answer:" in text:
+                        thought = text.split("\nFinal Answer:")[0].strip()
+                    else:
+                        thought = text
+
+                if thought:
+                    thought = thought.replace("Thought:", "").strip()
+                    dashboard.set_thinking(thought)
+
+                if hasattr(step, "tool") and hasattr(step, "tool_input"):
+                    dashboard.log_tool_start(step.tool, step.tool_input)
+
+            self._update_token_usage()
+            dashboard.set_action("Thinking", "planning next action...")
+
+        return step_callback
+
+    def _update_token_usage(self) -> None:
+        """Update dashboard with current token usage from all agents."""
+        if not hasattr(self, "crew") or not self.crew:
+            return
+
+        try:
+            total_input = 0
+            total_output = 0
+
+            all_agents = list(self.crew.agents) if self.crew.agents else []
+            if hasattr(self.crew, "manager_agent") and self.crew.manager_agent:
+                all_agents.append(self.crew.manager_agent)
+
+            for agent in all_agents:
+                if hasattr(agent, "llm") and hasattr(agent.llm, "_token_usage"):
+                    usage = agent.llm._token_usage
+                    total_input += usage.get("prompt_tokens", 0)
+                    total_output += usage.get("completion_tokens", 0)
+
+            dashboard.update_token_usage(total_input, total_output)
+        except Exception:
+            pass
+
     def _create_agent(
         self,
         config_key: str,
@@ -221,34 +268,14 @@ class ComputerUseCrew:
         tool_map: Dict[str, Any],
         is_manager: bool = False,
     ) -> Agent:
+        """Create a CrewAI agent from configuration."""
         config = self.agents_config[config_key]
         tools = [tool_map[name] for name in tool_names if name in tool_map]
-
         backstory_with_context = config["backstory"] + self.platform_context
-
-        def step_callback(step_output):
-            """Callback for agent steps to update dashboard."""
-            if isinstance(step_output, list):
-                for step in step_output:
-                    if hasattr(step, "tool") and hasattr(step, "tool_input"):
-                        tool_name = step.tool
-                        tool_input = str(step.tool_input)
-                        dashboard.add_log_entry(
-                            ActionType.EXECUTE,
-                            f"{tool_name}: {tool_input}",
-                        )
-                        dashboard.set_action(tool_name, tool_input)
-            elif hasattr(step_output, "tool") and hasattr(step_output, "tool_input"):
-                tool_name = step_output.tool
-                tool_input = str(step_output.tool_input)
-                dashboard.add_log_entry(
-                    ActionType.EXECUTE,
-                    f"{tool_name}: {tool_input}",
-                )
-                dashboard.set_action(tool_name, tool_input)
+        agent_role = config["role"]
 
         agent_params = {
-            "role": config["role"],
+            "role": agent_role,
             "goal": config["goal"],
             "backstory": backstory_with_context,
             "verbose": False,
@@ -256,16 +283,18 @@ class ComputerUseCrew:
             "max_iter": config.get("max_iter", 15),
             "allow_delegation": config.get("allow_delegation", False),
             "memory": True,
-            "step_callback": step_callback,
+            "step_callback": self._create_step_callback(agent_role),
         }
 
-        if not is_manager:
+        if is_manager:
+            agent_params["tools"] = []
+        else:
             agent_params["tools"] = tools
-            agent_params["output_pydantic"] = TaskCompletionOutput
 
         return Agent(**agent_params)
 
     def _create_crewai_agents(self) -> Dict[str, Agent]:
+        """Create all CrewAI agents for the hierarchical crew."""
         tool_map = self._build_tool_map()
 
         manager_agent = self._create_agent(
@@ -277,232 +306,115 @@ class ComputerUseCrew:
         system_tools = self.agents_config["system_agent"].get("tools", [])
         coding_tools = self.agents_config["coding_agent"].get("tools", [])
 
-        browser_agent = self._create_agent(
-            "browser_agent", browser_tools, self.llm, tool_map
-        )
-        gui_agent = self._create_agent(
-            "gui_agent", gui_tools, self.vision_llm, tool_map
-        )
-        system_agent = self._create_agent(
-            "system_agent", system_tools, self.llm, tool_map
-        )
-        coding_agent = self._create_agent(
-            "coding_agent", coding_tools, self.llm, tool_map
-        )
-
         return {
             "manager": manager_agent,
-            "browser_agent": browser_agent,
-            "gui_agent": gui_agent,
-            "system_agent": system_agent,
-            "coding_agent": coding_agent,
+            "browser_agent": self._create_agent(
+                "browser_agent", browser_tools, self.llm, tool_map
+            ),
+            "gui_agent": self._create_agent(
+                "gui_agent", gui_tools, self.vision_llm, tool_map
+            ),
+            "system_agent": self._create_agent(
+                "system_agent", system_tools, self.llm, tool_map
+            ),
+            "coding_agent": self._create_agent(
+                "coding_agent", coding_tools, self.llm, tool_map
+            ),
         }
 
-    # --- Task planning and context ---------------------------------------------
+    def _create_manager_task(self, task: str, context_str: str) -> Task:
+        """Create the manager task for hierarchical delegation."""
+        task_description = task
+        if context_str:
+            task_description = f"{task}{context_str}"
 
-    def _get_platform_context(self) -> str:
-        os_name = platform.system()
-        os_version = platform.release()
-        machine = platform.machine()
+        return Task(
+            description=f"""Complete this user request by delegating to the appropriate specialist agents:
 
-        if os_name == "Darwin":
-            platform_name = "macOS"
-        elif os_name == "Windows":
-            platform_name = "Windows"
-        elif os_name == "Linux":
-            platform_name = "Linux"
-        else:
-            platform_name = os_name
+USER REQUEST: {task_description}
 
-        return f"\n\n🖥️  PLATFORM: {platform_name} {os_version} ({machine})\n"
+Analyze the request and delegate to the right specialist(s):
+- Web Automation Specialist: Web browsing, data extraction, website interactions, AI image generation (has built-in generate_image tool), phone/SMS verification
+- Desktop Application Automation Expert: GUI apps, clicking, typing, file operations via UI, native OS dialogs, system settings and preferences (wallpaper, theme, sound, etc.)
+- System Command & Terminal Expert: Shell commands, CLI operations, file system via terminal (ls, cp, mv, etc.)
+- Code Automation Specialist: Writing code, debugging, refactoring, testing
 
-    def _extract_context_from_history(
-        self, conversation_history: List[Dict[str, Any]]
-    ) -> str:
-        if not conversation_history:
-            return ""
-
-        last_interaction = conversation_history[-1]
-        if "result" not in last_interaction or not last_interaction["result"]:
-            return ""
-
-        result_data = last_interaction["result"]
-        if isinstance(result_data, dict) and "result" in result_data:
-            return f"\n\nPREVIOUS TASK OUTPUT:\n{result_data['result']}\n"
-
-        return ""
-
-    def _generate_task_plan(self, task: str) -> TaskPlan:
-        orchestration_prompt = get_orchestration_prompt(task)
-        orchestration_llm = LLMConfig.get_orchestration_llm()
-        structured_llm = orchestration_llm.with_structured_output(TaskPlan)
-        return structured_llm.invoke([HumanMessage(content=orchestration_prompt)])
-
-    def _display_plan(self, plan: TaskPlan) -> None:
-        """Display the task plan and update dashboard."""
-        dashboard.add_log_entry(
-            ActionType.PLAN,
-            f"Analyzed: {plan.reasoning}",
-            status="complete",
+IMPORTANT:
+- You can delegate to multiple agents sequentially if the task requires it
+- Pass results from one agent to the next when there are dependencies
+- CRITICAL: Pass EXACT file paths and data between agents. If Agent A returns a path like '/private/tmp/downloads/file.jpg', pass that EXACT path to Agent B. DO NOT simplify or assume standard paths.
+- For browser tasks, delegate the ENTIRE browser portion as ONE task (to maintain session)
+- Report the final consolidated result after all delegations complete""",
+            expected_output="""A clear, complete response addressing the user's request. Include:
+1. Summary of what was accomplished
+2. Any data, files, or results produced
+3. Confirmation of successful completion or explanation of any issues encountered""",
         )
-        dashboard.set_steps(0, len(plan.subtasks))
 
-        if dashboard.verbosity.value >= 1:
-            print_info(f"Analysis: {plan.reasoning}")
-            print_info(f"Plan: {len(plan.subtasks)} subtask(s)")
-            for i, subtask in enumerate(plan.subtasks, 1):
-                print_info(f"  {i}. {subtask.agent_type}: {subtask.description}")
-
-    def _build_tasks_from_plan(
-        self, plan: TaskPlan, context_str: str, agents_dict: Dict[str, Agent]
-    ) -> tuple[list[Task], list[Agent]]:
-        """Build CrewAI tasks from the plan and update dashboard progress."""
-        crew_agents: list[Agent] = []
-        crew_tasks: list[Task] = []
-
-        for idx, subtask in enumerate(plan.subtasks):
-            agent_key = f"{subtask.agent_type}_agent"
-            if agent_key not in agents_dict:
-                print_failure(f"Invalid agent: {subtask.agent_type}, skipping")
-                continue
-
-            agent = agents_dict[agent_key]
-            crew_agents.append(agent)
-
-            dashboard.set_steps(idx + 1, len(plan.subtasks))
-
-            task_desc = subtask.description
-            if idx == 0 and context_str:
-                task_desc = f"{task_desc}{context_str}"
-
-            crew_task = Task(
-                description=task_desc,
-                expected_output=subtask.expected_output,
-                agent=agent,
-                output_pydantic=TaskCompletionOutput,
-                context=(
-                    [crew_tasks[-1]]
-                    if subtask.depends_on_previous and crew_tasks
-                    else None
-                ),
-            )
-            crew_tasks.append(crew_task)
-
-        return crew_tasks, crew_agents
-
-    # --- Crew execution --------------------------------------------------------
-
-    def _unique_agents(self, agents: List[Agent]) -> List[Agent]:
-        seen = set()
-        unique_list = []
-        for agent in agents:
-            if agent not in seen:
-                unique_list.append(agent)
-                seen.add(agent)
-        return unique_list
-
-    async def _run_crew(
-        self, task: str, crew_agents: List[Agent], crew_tasks: List[Task]
+    async def _run_hierarchical_crew(
+        self, task: str, context_str: str
     ) -> TaskExecutionResult:
-        """Execute the crew and update dashboard progress."""
-        if not crew_tasks:
-            return TaskExecutionResult(
-                task=task,
-                overall_success=True,
-                result="Hello! I'm ready to help you with computer automation tasks. What would you like me to do?",
-                error=None,
-            )
-
-        self.crew = Crew(
-            agents=self._unique_agents(crew_agents),
-            tasks=crew_tasks,
-            process=Process.sequential,
-            verbose=False,
-        )
-
+        """Execute the hierarchical crew with thread-based execution."""
         dashboard.add_log_entry(
             ActionType.EXECUTE,
-            f"Executing {len(crew_agents)} agent(s), {len(crew_tasks)} task(s)",
+            "Starting hierarchical execution",
             status="pending",
         )
+        dashboard.set_agent("Task Orchestration Manager")
 
-        if crew_agents:
-            first_agent_role = crew_agents[0].role if crew_agents[0].role else "Agent"
-            dashboard.set_agent(first_agent_role)
+        agents_dict = self._create_crewai_agents()
+        manager_task = self._create_manager_task(task, context_str)
 
-        print_success(
-            f"Executing {len(crew_agents)} agent(s), {len(crew_tasks)} task(s)"
+        specialist_agents = [
+            agents_dict["browser_agent"],
+            agents_dict["gui_agent"],
+            agents_dict["system_agent"],
+            agents_dict["coding_agent"],
+        ]
+
+        self.crew = Crew(
+            agents=specialist_agents,
+            tasks=[manager_task],
+            process=Process.hierarchical,
+            manager_agent=agents_dict["manager"],
+            verbose=False,
         )
 
         loop = asyncio.get_event_loop()
         try:
             result = await loop.run_in_executor(None, self.crew.kickoff)
-            dashboard.set_steps(len(crew_tasks), len(crew_tasks))
             print_success("Execution completed")
             return TaskExecutionResult(
                 task=task, result=str(result), overall_success=True
             )
-        except asyncio.CancelledError:
-            print_failure("Task cancelled by user")
-            return TaskExecutionResult(
-                task=task,
-                result=None,
-                overall_success=False,
-                error="Task cancelled by user (ESC pressed)",
-            )
-        except ValueError as exc:
-            if "Invalid response from LLM call" not in str(exc):
-                raise
-            print_warning("LLM returned empty response, retrying...")
-            try:
-                result = await loop.run_in_executor(None, self.crew.kickoff)
-                print_success("Execution completed after retry")
-                return TaskExecutionResult(
-                    task=task, result=str(result), overall_success=True
-                )
-            except Exception as retry_err:
-                print_failure(f"Retry failed: {retry_err}")
+        except Exception as exc:
+            if self._cancellation_requested:
+                print_failure("Task cancelled by user")
                 return TaskExecutionResult(
                     task=task,
+                    result=None,
                     overall_success=False,
-                    error=str(retry_err),
+                    error="Task cancelled by user",
                 )
-
-    # --- Public API ------------------------------------------------------------
+            print_failure(f"Execution failed: {exc}")
+            return TaskExecutionResult(
+                task=task, overall_success=False, error=str(exc)
+            )
 
     async def execute_task(
         self,
         task: str,
         conversation_history: Optional[List[Dict[str, Any]]] = None,
     ) -> TaskExecutionResult:
-        """Execute a task using the crew system with dashboard updates."""
+        """Execute a task using hierarchical crew delegation."""
         conversation_history = conversation_history or []
 
         try:
-            dashboard.set_action("Planning", "Analyzing task...")
+            dashboard.set_action("Analyzing", "Processing request...")
 
             context_str = self._extract_context_from_history(conversation_history)
-            plan = self._generate_task_plan(task)
-            self._display_plan(plan)
 
-            dashboard.set_action("Building", "Creating agents...")
-            agents_dict = self._create_crewai_agents()
-            crew_tasks, crew_agents = self._build_tasks_from_plan(
-                plan, context_str, agents_dict
-            )
-
-            if not crew_tasks:
-                dashboard.clear_action()
-                print_info("Conversational message detected")
-                return TaskExecutionResult(
-                    task=task,
-                    overall_success=True,
-                    result=plan.reasoning
-                    or "Hello! I'm ready to help. What would you like me to do?",
-                    error=None,
-                )
-
-            result = await self._run_crew(task, crew_agents, crew_tasks)
+            result = await self._run_hierarchical_crew(task, context_str)
 
             if result and hasattr(result, "result"):
                 conversation_history.append({"user": task, "result": result})

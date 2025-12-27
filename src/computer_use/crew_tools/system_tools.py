@@ -3,10 +3,11 @@ System command tool for CrewAI.
 Extracted from system_agent.py, rewritten for CrewAI integration.
 """
 
-from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 import subprocess
 from pathlib import Path
+
+from .instrumented_tool import InstrumentedBaseTool
 
 
 class ExecuteCommandInput(BaseModel):
@@ -16,7 +17,7 @@ class ExecuteCommandInput(BaseModel):
     explanation: str = Field(description="Why this command is needed")
 
 
-class ExecuteShellCommandTool(BaseTool):
+class ExecuteShellCommandTool(InstrumentedBaseTool):
     """
     Execute shell command safely with validation.
     Runs commands in user home directory.
@@ -49,24 +50,21 @@ class ExecuteShellCommandTool(BaseTool):
 
         dashboard.add_log_entry(ActionType.EXECUTE, f"Executing: {command}")
 
-        # Safety check
         safety_checker = self._safety_checker
+        confirmation_manager = self._confirmation_manager
+
         if safety_checker:
-            if safety_checker.is_destructive(command):
-                error_msg = f"Destructive command blocked: {command}"
+            if safety_checker.is_protected_path_in_command(command):
+                error_msg = f"Command targets protected system path: {command}"
                 dashboard.add_log_entry(ActionType.ERROR, error_msg, status="error")
                 return f"ERROR: {error_msg}"
 
-        # Confirmation check
-        confirmation_manager = self._confirmation_manager
-        if confirmation_manager and safety_checker:
-            requires_confirmation = safety_checker.requires_confirmation(command)
-            if requires_confirmation:
-                approved, reason = confirmation_manager.request_confirmation(command)
-                if not approved:
-                    error_msg = f"User {reason} command: {command}"
-                    dashboard.add_log_entry(ActionType.ERROR, error_msg, status="error")
-                    return f"ERROR: {error_msg}"
+        if confirmation_manager:
+            approved, reason = confirmation_manager.request_confirmation(command)
+            if not approved:
+                error_msg = f"User {reason} command: {command}"
+                dashboard.add_log_entry(ActionType.ERROR, error_msg, status="error")
+                return f"ERROR: {error_msg}"
 
         # Execute command
         try:
