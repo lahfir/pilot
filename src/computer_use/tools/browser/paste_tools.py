@@ -263,15 +263,18 @@ def _create_paste_tools():
             return ActionResult(error=f"Paste failed: {str(e)}")
 
     @tools.registry.action(
-        description="""Type text into the currently focused element using CDP Input.insertText.
+        description="""Insert text INSTANTLY into the currently focused element.
         PERFECT for canvas-based editors like Google Docs, Notion, Figma.
+        
+        HANDLES ANY AMOUNT OF TEXT IN ONE CALL - do NOT chunk or batch.
         
         WORKFLOW:
         1. First click() the canvas/editor area to focus it
-        2. Then call type_to_focused(text="your content") to insert text
+        2. Then call type_to_focused(text="ALL your content here") - ONE call only
         
-        This works because canvas editors use a hidden input that captures keystrokes.
-        Clicking the canvas focuses that hidden input, then insertText types into it.""",
+        Example: type_to_focused(text="# Full Report\\n\\nParagraph 1...\\n\\nParagraph 2...")
+        
+        This is INSTANT regardless of text length. Never break into multiple calls.""",
         param_model=TypeToFocusedAction,
     )
     async def type_to_focused(

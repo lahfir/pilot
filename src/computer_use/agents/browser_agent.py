@@ -333,11 +333,14 @@ class BrowserAgent:
             dashboard.set_browser_session(active=True, profile=None)
 
             available_files = []
+            task_id = None
             if self.has_image_gen:
                 from computer_use.tools.browser.image_tools import (
                     get_generated_image_paths,
+                    initialize_task_images,
                 )
 
+                task_id = initialize_task_images()
                 available_files.extend(get_generated_image_paths())
 
             agent = Agent(
@@ -366,6 +369,12 @@ class BrowserAgent:
                 pass
             finally:
                 dashboard.set_browser_session(active=False)
+                if self.has_image_gen and task_id:
+                    from computer_use.tools.browser.image_tools import (
+                        cleanup_task_images,
+                    )
+
+                    cleanup_task_images()
 
             downloaded_files = []
             file_details = []

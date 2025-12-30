@@ -78,16 +78,19 @@ FOR CANVAS EDITORS (Google Docs, Notion, etc.):
   1. CLICK the canvas/editor area (this focuses the hidden input)
      - Google Docs: Look for 'kix-canvas-tile-content' canvas
   2. WAIT 1-2 seconds for focus
-  3. Call type_to_focused(text="your content")
-  4. For LONG content: Make multiple type_to_focused calls
-     - type_to_focused(text="# Heading\\n\\n")
-     - type_to_focused(text="Paragraph 1...\\n\\n")
-     - type_to_focused(text="Paragraph 2...")
+  3. Call type_to_focused(text="ALL your content in ONE call")
+  
+  IMPORTANT: type_to_focused handles ANY amount of text INSTANTLY.
+  DO NOT break content into chunks. Paste EVERYTHING in a single call.
+  
+  Example:
+    click(index=42)  # Focus the canvas
+    type_to_focused(text="# Research Report\\n\\nSection 1...\\n\\nSection 2...")
 
 DECISION TREE:
-  Is it a standard input/textarea? → paste_text
-  Is it a canvas/rich editor? → click() then type_to_focused()
-  Did both fail? → input() as last resort
+  Is it a standard input/textarea? → paste_text (all content, one call)
+  Is it a canvas/rich editor? → click() then type_to_focused (all content, one call)
+  Did both fail? → input() as last resort (chunked, slow)
 """
 
 
@@ -241,11 +244,24 @@ Creates AI-generated images from text descriptions. Useful for profile pictures,
 ads, marketing materials, banners, product images, or any scenario requiring
 an image that doesn't exist yet.
 
+CRITICAL: Images do NOT exist until you call generate_image()!
+You MUST generate images BEFORE attempting to upload them.
+
+WORKFLOW:
+1. Call generate_image(prompt) with a detailed description
+2. Note the returned file path
+3. Use that exact path to upload the image
+
 FUNCTIONS:
 
 generate_image(prompt)
   Input: Text description of the desired image
-  Output: File path to the generated image
+  Output: File path to the generated image (file is created after this call)
+  IMPORTANT: Call this FIRST before trying to upload any image!
+
+list_generated_images()
+  Output: List of images that have been generated in this task
+  Use this to see what images are available for upload
 
 check_image_generation_status()
   Output: Whether image generation is available
@@ -253,6 +269,7 @@ check_image_generation_status()
 UPLOADING:
   - Web file input visible: use upload_file(index, path)
   - Native OS file picker opens: use delegate_to_gui with the file path
+  - ONLY upload files returned by generate_image() or list_generated_images()
 """
 
 
