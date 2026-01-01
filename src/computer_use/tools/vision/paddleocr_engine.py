@@ -13,17 +13,28 @@ class PaddleOCREngine:
     """
     Fast OCR using PaddleOCR with GPU/CPU support.
     Significantly faster than EasyOCR while maintaining accuracy.
+    Uses lazy initialization to defer heavy PaddleOCR loading until first use.
     """
 
     def __init__(self, use_gpu: bool = None):
         """
-        Initialize PaddleOCR engine.
+        Initialize PaddleOCR engine with lazy loading.
 
         Args:
             use_gpu: Whether to use GPU (ignored, auto-detected by PaddleOCR).
         """
-        self.ocr = None
-        self._initialize_paddle()
+        self._ocr = None
+        self._initialized = False
+        self._available = None
+        self.use_gpu = use_gpu
+
+    @property
+    def ocr(self):
+        """Lazy-load PaddleOCR on first access."""
+        if not self._initialized:
+            self._initialize_paddle()
+            self._initialized = True
+        return self._ocr
 
     def _detect_gpu(self) -> bool:
         """
@@ -43,9 +54,7 @@ class PaddleOCREngine:
             return False
 
     def _initialize_paddle(self):
-        """
-        Initialize PaddleOCR with appropriate settings.
-        """
+        """Initialize PaddleOCR with appropriate settings."""
         try:
             import os
             import warnings
@@ -59,23 +68,36 @@ class PaddleOCREngine:
             with redirect_stdout(f), redirect_stderr(f):
                 from paddleocr import PaddleOCR
 
-                self.ocr = PaddleOCR(
+                self._ocr = PaddleOCR(
                     use_textline_orientation=True,
                     lang="en",
                 )
+            self._available = True
         except ImportError:
-            self.ocr = None
+            self._ocr = None
+            self._available = False
         except Exception:
-            self.ocr = None
+            self._ocr = None
+            self._available = False
 
     def is_available(self) -> bool:
         """
-        Check if PaddleOCR is available.
+        Check if PaddleOCR is available without triggering full initialization.
 
         Returns:
             True if PaddleOCR is available
         """
-        return self.ocr is not None
+        if self._available is not None:
+            return self._available
+
+        try:
+            import importlib.util
+
+            self._available = importlib.util.find_spec("paddleocr") is not None
+            return self._available
+        except Exception:
+            self._available = False
+            return False
 
     def recognize_text(
         self,

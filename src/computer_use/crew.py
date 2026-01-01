@@ -106,6 +106,8 @@ class ComputerUseCrew:
         self.execute_command_tool = self._initialize_system_tool()
 
         self.crew: Optional[Crew] = None
+        self._cached_agents: Optional[Dict[str, Agent]] = None
+        self._last_token_update: float = 0
 
     def _load_yaml_config(self, filename: str) -> Dict[str, Any]:
         config_path = Path(__file__).parent / "config" / filename
@@ -303,6 +305,13 @@ class ComputerUseCrew:
         if not hasattr(self, "crew") or not self.crew:
             return
 
+        import time
+
+        now = time.time()
+        if (now - self._last_token_update) < 5.0:
+            return
+        self._last_token_update = now
+
         try:
             metrics = self.crew.calculate_usage_metrics()
             if metrics.prompt_tokens > 0 or metrics.completion_tokens > 0:
@@ -399,6 +408,19 @@ class ComputerUseCrew:
             ),
         }
 
+    def _get_or_create_agents(self) -> Dict[str, Agent]:
+        """
+        Get cached agents or create new ones if not cached.
+        Reuses agents across task executions for better performance.
+        """
+        if self._cached_agents is None:
+            self._cached_agents = self._create_crewai_agents()
+        return self._cached_agents
+
+    def clear_agent_cache(self) -> None:
+        """Clear cached agents to force recreation on next task."""
+        self._cached_agents = None
+
     def _create_manager_task(self, task: str, context_str: str) -> Task:
         """Create the manager task for hierarchical delegation."""
         task_description = task
@@ -439,7 +461,7 @@ IMPORTANT:
         )
         dashboard.set_agent("Task Orchestration Manager")
 
-        agents_dict = self._create_crewai_agents()
+        agents_dict = self._get_or_create_agents()
         manager_task = self._create_manager_task(task, context_str)
 
         specialist_agents = [

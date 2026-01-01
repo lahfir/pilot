@@ -176,7 +176,7 @@ class MacOSAccessibility:
         for attempt in range(retry_count):
             if attempt > 0:
                 self._app_cache.pop(cache_key, None)
-                time.sleep(0.2)
+                time.sleep(0.1)
 
             candidates = []
             try:
@@ -261,7 +261,7 @@ class MacOSAccessibility:
         if not self.available:
             return []
 
-        if (time.time() - self._last_interaction_time) < 2.0:
+        if (time.time() - self._last_interaction_time) < 5.0:
             self._element_cache.clear()
 
         cache_key = f"{app_name.lower()}:{interactive_only}"
@@ -511,7 +511,7 @@ class MacOSAccessibility:
                 import pyautogui
 
                 pyautogui.click(center[0], center[1])
-                time.sleep(0.15)
+                time.sleep(0.05)
                 self.invalidate_cache()
                 return (True, f"Clicked '{label}' at {tuple(center)}")
             except Exception:
@@ -527,13 +527,13 @@ class MacOSAccessibility:
         try:
             if hasattr(node, "Press"):
                 node.Press()
-                time.sleep(0.1)
+                time.sleep(0.05)
                 self.invalidate_cache()
                 return (True, f"Clicked '{label}' via Press")
 
             if hasattr(node, "AXPress"):
                 node.AXPress()
-                time.sleep(0.1)
+                time.sleep(0.05)
                 self.invalidate_cache()
                 return (True, f"Clicked '{label}' via AXPress")
 
@@ -543,7 +543,7 @@ class MacOSAccessibility:
                     if "press" in action_lower or "click" in action_lower:
                         if hasattr(node, "performAction"):
                             node.performAction(action)
-                            time.sleep(0.1)
+                            time.sleep(0.05)
                             self.invalidate_cache()
                             return (True, f"Clicked '{label}' via {action}")
 
@@ -555,7 +555,7 @@ class MacOSAccessibility:
                 import pyautogui
 
                 pyautogui.click(x, y)
-                time.sleep(0.15)
+                time.sleep(0.05)
                 self.invalidate_cache()
                 return (True, f"Clicked '{label}' at ({x}, {y})")
 

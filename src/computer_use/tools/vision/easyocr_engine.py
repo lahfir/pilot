@@ -13,19 +13,25 @@ class EasyOCREngine:
     """
     EasyOCR wrapper for fallback compatibility.
     Slower but widely compatible.
+    Uses lazy initialization to defer heavy loading until first use.
     """
 
     def __init__(self):
-        """
-        Initialize EasyOCR engine.
-        """
-        self.reader = None
-        self._initialize_reader()
+        """Initialize EasyOCR engine with lazy loading."""
+        self._reader = None
+        self._initialized = False
+        self._available = None
+
+    @property
+    def reader(self):
+        """Lazy-load EasyOCR reader on first access."""
+        if not self._initialized:
+            self._initialize_reader()
+            self._initialized = True
+        return self._reader
 
     def _initialize_reader(self):
-        """
-        Initialize EasyOCR reader.
-        """
+        """Initialize EasyOCR reader."""
         try:
             import warnings
             import logging
@@ -39,18 +45,30 @@ class EasyOCREngine:
             with redirect_stdout(f), redirect_stderr(f):
                 import easyocr
 
-                self.reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+                self._reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+            self._available = True
         except ImportError:
-            self.reader = None
+            self._reader = None
+            self._available = False
 
     def is_available(self) -> bool:
         """
-        Check if EasyOCR is available.
+        Check if EasyOCR is available without triggering full initialization.
 
         Returns:
             True if EasyOCR is available
         """
-        return self.reader is not None
+        if self._available is not None:
+            return self._available
+
+        try:
+            import importlib.util
+
+            self._available = importlib.util.find_spec("easyocr") is not None
+            return self._available
+        except Exception:
+            self._available = False
+            return False
 
     def recognize_text(
         self,

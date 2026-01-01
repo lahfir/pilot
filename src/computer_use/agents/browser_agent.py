@@ -1,22 +1,104 @@
 """
 Browser agent for web automation using Browser-Use.
-Contains Browser-Use Agent creation and execution logic.
+Contains Browser-Use Agent creation and execution logic with session pooling.
 """
 
-from pathlib import Path
-from typing import Any, Dict, Optional
-import tempfile
+import asyncio
 import glob
-import platform
 import os
+import platform
+import tempfile
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 
+from ..prompts.browser_prompts import build_full_context
 from ..schemas.actions import ActionResult
 from ..schemas.browser_output import BrowserOutput, FileDetail
-from ..prompts.browser_prompts import build_full_context
 from ..tools.browser import load_browser_tools
+
+
+class BrowserSessionPool:
+    """
+    Pool for reusing browser sessions across tasks.
+    Reduces startup overhead by keeping sessions warm.
+    """
+
+    _pool: List[Any] = []
+    _max_size: int = 2
+    _lock: asyncio.Lock = None
+
+    @classmethod
+    def _get_lock(cls) -> asyncio.Lock:
+        """Get or create the asyncio lock."""
+        if cls._lock is None:
+            cls._lock = asyncio.Lock()
+        return cls._lock
+
+    @classmethod
+    async def acquire(cls, create_fn) -> Any:
+        """
+        Acquire a browser session from the pool or create a new one.
+
+        Args:
+            create_fn: Function to create a new session if pool is empty
+
+        Returns:
+            Browser session instance
+        """
+        async with cls._get_lock():
+            if cls._pool:
+                return cls._pool.pop()
+        return create_fn()
+
+    @classmethod
+    async def release(cls, session: Any, force_kill: bool = False) -> None:
+        """
+        Release a browser session back to the pool.
+
+        Args:
+            session: Browser session to release
+            force_kill: If True, kill session instead of pooling
+        """
+        if force_kill:
+            try:
+                await session.kill()
+            except Exception:
+                pass
+            return
+
+        async with cls._get_lock():
+            if len(cls._pool) < cls._max_size:
+                try:
+                    context = await session.get_context()
+                    pages = context.pages if context else []
+                    for page in pages:
+                        try:
+                            await page.goto("about:blank")
+                        except Exception:
+                            pass
+                    cls._pool.append(session)
+                    return
+                except Exception:
+                    pass
+
+        try:
+            await session.kill()
+        except Exception:
+            pass
+
+    @classmethod
+    async def clear(cls) -> None:
+        """Kill all pooled sessions."""
+        async with cls._get_lock():
+            for session in cls._pool:
+                try:
+                    await session.kill()
+                except Exception:
+                    pass
+            cls._pool.clear()
 
 
 class TokenTrackingCallback(BaseCallbackHandler):
@@ -329,7 +411,9 @@ class BrowserAgent:
 
             temp_dir = Path(tempfile.mkdtemp(prefix="browser_agent_"))
 
-            browser_session = self._create_browser_session()
+            browser_session = await BrowserSessionPool.acquire(
+                self._create_browser_session
+            )
             dashboard.set_browser_session(active=True, profile=None)
 
             available_files = []
@@ -364,9 +448,12 @@ class BrowserAgent:
                 )
 
             try:
-                await browser_session.kill()
+                await BrowserSessionPool.release(browser_session, force_kill=False)
             except Exception:
-                pass
+                try:
+                    await browser_session.kill()
+                except Exception:
+                    pass
             finally:
                 dashboard.set_browser_session(active=False)
                 if self.has_image_gen and task_id:

@@ -17,30 +17,28 @@ class TimingConfig:
     Prevents hardcoded values scattered throughout the codebase.
     """
 
-    # UI State Change Delays
-    ui_state_change_delay: float = 0.2
+    ui_state_change_delay: float = 0.05
     """Time to wait after clicking for UI to update"""
 
-    app_launch_base_delay: float = 0.3
+    app_launch_base_delay: float = 0.1
     """Base delay after launching an app"""
 
-    app_focus_delay: float = 0.5
+    app_focus_delay: float = 0.2
     """Delay when bringing app to front"""
 
-    accessibility_api_delay: float = 0.1
+    accessibility_api_delay: float = 0.05
     """Delay for accessibility API to settle"""
 
-    typing_delay: float = 0.3
+    typing_delay: float = 0.1
     """Delay before typing to ensure field is focused"""
 
-    # Retry Configuration
     app_launch_max_attempts: int = 5
     """Max attempts to verify app launched"""
 
     app_launch_frontmost_attempts: int = 3
     """Max attempts to verify app is frontmost"""
 
-    app_launch_retry_interval: float = 0.2
+    app_launch_retry_interval: float = 0.1
     """Seconds between app launch verification attempts"""
 
     accessibility_retry_count: int = 3

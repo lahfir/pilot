@@ -1,0 +1,167 @@
+{
+  "timestamp": "2025-12-30T13:56:54.937331",
+  "warmup_iterations": 0,
+  "test_iterations": 2,
+  "results": {
+    "module_import": {
+      "name": "module_import",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 2
+    },
+    "timing_config_access": {
+      "name": "timing_config_access",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 2
+    },
+    "screenshot_capture": {
+      "name": "screenshot_capture",
+      "iterations": 2,
+      "mean_ms": 385.51,
+      "median_ms": 385.51,
+      "std_dev_ms": 6.75,
+      "min_ms": 380.74,
+      "max_ms": 390.29,
+      "error_count": 0
+    },
+    "screenshot_region_capture": {
+      "name": "screenshot_region_capture",
+      "iterations": 2,
+      "mean_ms": 383.14,
+      "median_ms": 383.14,
+      "std_dev_ms": 4.44,
+      "min_ms": 380.0,
+      "max_ms": 386.28,
+      "error_count": 0
+    },
+    "input_tool_click": {
+      "name": "input_tool_click",
+      "iterations": 2,
+      "mean_ms": 62.32,
+      "median_ms": 62.32,
+      "std_dev_ms": 37.38,
+      "min_ms": 35.89,
+      "max_ms": 88.75,
+      "error_count": 0
+    },
+    "input_tool_type": {
+      "name": "input_tool_type",
+      "iterations": 2,
+      "mean_ms": 228.64,
+      "median_ms": 228.64,
+      "std_dev_ms": 29.43,
+      "min_ms": 207.83,
+      "max_ms": 249.44,
+      "error_count": 0
+    },
+    "pyautogui_click": {
+      "name": "pyautogui_click",
+      "iterations": 2,
+      "mean_ms": 48.19,
+      "median_ms": 48.19,
+      "std_dev_ms": 17.73,
+      "min_ms": 35.65,
+      "max_ms": 60.72,
+      "error_count": 0
+    },
+    "accessibility_initialization": {
+      "name": "accessibility_initialization",
+      "iterations": 2,
+      "mean_ms": 425.6,
+      "median_ms": 425.6,
+      "std_dev_ms": 601.26,
+      "min_ms": 0.44,
+      "max_ms": 850.75,
+      "error_count": 0
+    },
+    "accessibility_element_discovery": {
+      "name": "accessibility_element_discovery",
+      "iterations": 2,
+      "mean_ms": 1458.61,
+      "median_ms": 1458.61,
+      "std_dev_ms": 2062.76,
+      "min_ms": 0.01,
+      "max_ms": 2917.2,
+      "error_count": 0
+    },
+    "accessibility_element_discovery_cached": {
+      "name": "accessibility_element_discovery_cached",
+      "iterations": 2,
+      "mean_ms": 0.01,
+      "median_ms": 0.01,
+      "std_dev_ms": 0.0,
+      "min_ms": 0.01,
+      "max_ms": 0.02,
+      "error_count": 0
+    },
+    "ocr_initialization": {
+      "name": "ocr_initialization",
+      "iterations": 2,
+      "mean_ms": 52.08,
+      "median_ms": 52.08,
+      "std_dev_ms": 73.6,
+      "min_ms": 0.04,
+      "max_ms": 104.13,
+      "error_count": 0
+    },
+    "ocr_text_extraction": {
+      "name": "ocr_text_extraction",
+      "iterations": 2,
+      "mean_ms": 3948.85,
+      "median_ms": 3948.85,
+      "std_dev_ms": 3830.18,
+      "min_ms": 1240.5,
+      "max_ms": 6657.2,
+      "error_count": 0
+    },
+    "Platform Registry Init": {
+      "name": "Platform Registry Init",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 1
+    },
+    "llm_config_get_llm": {
+      "name": "llm_config_get_llm",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 2
+    },
+    "Crew Initialization": {
+      "name": "Crew Initialization",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 1
+    },
+    "Agent Creation": {
+      "name": "Agent Creation",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 1
+    }
+  }
+}

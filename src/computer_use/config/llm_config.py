@@ -41,7 +41,7 @@ load_dotenv()
 
 class LLMConfig:
     """
-    LLM configuration for all agents.
+    LLM configuration for all agents with singleton caching.
     Supports multiple providers: OpenAI, Anthropic, Google, Ollama.
 
     Environment Variables:
@@ -54,6 +54,17 @@ class LLMConfig:
     - Vision LLM: GUI agent for screenshot analysis (Langchain)
     - Browser LLM: Browser agent for web automation (Browser-Use)
     """
+
+    _llm_cache: dict = {}
+    _orchestration_cache: dict = {}
+    _browser_cache: dict = {}
+
+    @classmethod
+    def clear_cache(cls) -> None:
+        """Clear all cached LLM instances."""
+        cls._llm_cache.clear()
+        cls._orchestration_cache.clear()
+        cls._browser_cache.clear()
 
     @staticmethod
     def get_llm(provider: Optional[str] = None, model: Optional[str] = None):
@@ -111,7 +122,13 @@ class LLMConfig:
                 f"Please set the appropriate environment variable in your .env file."
             )
 
-        return LLM(model=model_name, api_key=api_key)
+        cache_key = f"{provider}:{model_name}"
+        if cache_key in LLMConfig._llm_cache:
+            return LLMConfig._llm_cache[cache_key]
+
+        llm = LLM(model=model_name, api_key=api_key)
+        LLMConfig._llm_cache[cache_key] = llm
+        return llm
 
     @staticmethod
     def get_orchestration_llm(
@@ -138,20 +155,25 @@ class LLMConfig:
             }
             model_name = default_models.get(provider, "gpt-4o-mini")
 
+        cache_key = f"orch:{provider}:{model_name}"
+        if cache_key in LLMConfig._orchestration_cache:
+            return LLMConfig._orchestration_cache[cache_key]
+
+        llm = None
         if provider == "openai":
             api_key = os.getenv("OPENAI_API_KEY")
             if not api_key:
                 raise ValueError(
                     "OPENAI_API_KEY not found. Please set it in your .env file."
                 )
-            return ChatOpenAI(model=model_name, api_key=api_key)
+            llm = ChatOpenAI(model=model_name, api_key=api_key)
         elif provider == "anthropic":
             api_key = os.getenv("ANTHROPIC_API_KEY")
             if not api_key:
                 raise ValueError(
                     "ANTHROPIC_API_KEY not found. Please set it in your .env file."
                 )
-            return ChatAnthropic(model=model_name, api_key=api_key)
+            llm = ChatAnthropic(model=model_name, api_key=api_key)
         elif provider == "google":
             api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
             if not api_key:
@@ -162,18 +184,20 @@ class LLMConfig:
             if not os.getenv("GOOGLE_API_KEY"):
                 os.environ["GOOGLE_API_KEY"] = api_key
             try:
-                return ChatGoogleGenerativeAI(model=model_name, google_api_key=api_key)
+                llm = ChatGoogleGenerativeAI(model=model_name, google_api_key=api_key)
             finally:
                 if gemini_key_backup:
                     os.environ["GEMINI_API_KEY"] = gemini_key_backup
         else:
-            # Fallback to OpenAI
             api_key = os.getenv("OPENAI_API_KEY")
             if not api_key:
                 raise ValueError(
                     "OPENAI_API_KEY not found. Please set it in your .env file."
                 )
-            return ChatOpenAI(model="gpt-4o-mini", api_key=api_key)
+            llm = ChatOpenAI(model="gpt-4o-mini", api_key=api_key)
+
+        LLMConfig._orchestration_cache[cache_key] = llm
+        return llm
 
     @staticmethod
     def get_vision_llm(provider: Optional[str] = None, model: Optional[str] = None):
@@ -224,17 +248,22 @@ class LLMConfig:
         )
         model = model or os.getenv("BROWSER_LLM_MODEL") or os.getenv("LLM_MODEL")
 
+        cache_key = f"browser:{provider}:{model}"
+        if cache_key in LLMConfig._browser_cache:
+            return LLMConfig._browser_cache[cache_key]
+
+        llm = None
         if provider == "openai":
             from browser_use.llm.openai.chat import ChatOpenAI
 
             model_name = model or "gpt-4o-mini"
-            return ChatOpenAI(model=model_name, api_key=os.getenv("OPENAI_API_KEY"))
+            llm = ChatOpenAI(model=model_name, api_key=os.getenv("OPENAI_API_KEY"))
 
         elif provider == "anthropic":
             from browser_use.llm.anthropic.chat import ChatAnthropic
 
             model_name = model or "claude-3-5-sonnet-20241022"
-            return ChatAnthropic(
+            llm = ChatAnthropic(
                 model=model_name, api_key=os.getenv("ANTHROPIC_API_KEY")
             )
 
@@ -242,7 +271,10 @@ class LLMConfig:
             from browser_use.llm.google.chat import ChatGoogle
 
             model_name = model or "gemini-2.0-flash-exp"
-            return ChatGoogle(model=model_name, api_key=os.getenv("GOOGLE_API_KEY"))
+            llm = ChatGoogle(model=model_name, api_key=os.getenv("GOOGLE_API_KEY"))
 
         else:
             raise ValueError(f"Unsupported Browser-Use provider: {provider}")
+
+        LLMConfig._browser_cache[cache_key] = llm
+        return llm

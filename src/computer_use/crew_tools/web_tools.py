@@ -7,6 +7,14 @@ from pydantic import BaseModel, Field
 from typing import Optional
 import asyncio
 
+try:
+    import nest_asyncio
+
+    nest_asyncio.apply()
+    _NEST_ASYNCIO_APPLIED = True
+except ImportError:
+    _NEST_ASYNCIO_APPLIED = False
+
 from .instrumented_tool import InstrumentedBaseTool
 
 
@@ -87,66 +95,34 @@ class WebAutomationTool(InstrumentedBaseTool):
         if not browser_agent:
             return "ERROR: Browser agent unavailable - browser agent not initialized"
 
-        # Event loop management: handle both async and sync calling contexts
         try:
-            running_loop = asyncio.get_running_loop()
-            # We're in an async context, but CrewAI called us synchronously
-            # This shouldn't happen, but if it does, we need to handle it
-            dashboard.add_log_entry(
-                ActionType.NAVIGATE, "Async context detected, using nest_asyncio"
-            )
-            import nest_asyncio
-
-            nest_asyncio.apply()
-            result = running_loop.run_until_complete(
-                browser_agent.execute_task(task, url)
-            )
-        except RuntimeError:
-            # No running loop - we need to create one or use an existing loop
-            # Try to get the event loop that was used to create the LLM clients
             try:
-                # Get the existing event loop if available
-                loop = asyncio.get_event_loop()
-                if loop.is_closed():
-                    # Loop is closed, create a new one
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    need_cleanup = True
-                else:
-                    # Reuse existing loop
-                    need_cleanup = False
+                loop = asyncio.get_running_loop()
             except RuntimeError:
-                # No event loop at all, create one
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                need_cleanup = True
+                loop = None
 
-            try:
-                result = loop.run_until_complete(browser_agent.execute_task(task, url))
-            finally:
-                # Only clean up if we created a new loop
-                if need_cleanup:
-                    try:
-                        # Cancel all pending tasks
-                        pending = asyncio.all_tasks(loop)
-                        for pending_task in pending:
-                            pending_task.cancel()
+            if loop and loop.is_running():
+                if _NEST_ASYNCIO_APPLIED:
+                    result = loop.run_until_complete(
+                        browser_agent.execute_task(task, url)
+                    )
+                else:
+                    import concurrent.futures
 
-                        # Allow tasks to complete cancellation
-                        if pending:
-                            loop.run_until_complete(
-                                asyncio.gather(*pending, return_exceptions=True)
-                            )
-
-                        # Shutdown async generators
-                        loop.run_until_complete(loop.shutdown_asyncgens())
-
-                        # Shutdown default executor
-                        loop.run_until_complete(loop.shutdown_default_executor())
-                    except Exception:
-                        pass
-                    finally:
-                        loop.close()
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        future = pool.submit(
+                            asyncio.run, browser_agent.execute_task(task, url)
+                        )
+                        result = future.result()
+            else:
+                result = asyncio.run(browser_agent.execute_task(task, url))
+        except Exception as exec_error:
+            dashboard.add_log_entry(
+                ActionType.ERROR,
+                f"Browser execution error: {exec_error}",
+                status="error",
+            )
+            raise
 
         # Process result
         try:

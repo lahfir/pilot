@@ -1,0 +1,167 @@
+{
+  "timestamp": "2025-12-30T13:55:47.675046",
+  "warmup_iterations": 0,
+  "test_iterations": 2,
+  "results": {
+    "module_import": {
+      "name": "module_import",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 2
+    },
+    "timing_config_access": {
+      "name": "timing_config_access",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 2
+    },
+    "screenshot_capture": {
+      "name": "screenshot_capture",
+      "iterations": 2,
+      "mean_ms": 435.38,
+      "median_ms": 435.38,
+      "std_dev_ms": 38.33,
+      "min_ms": 408.28,
+      "max_ms": 462.49,
+      "error_count": 0
+    },
+    "screenshot_region_capture": {
+      "name": "screenshot_region_capture",
+      "iterations": 2,
+      "mean_ms": 391.17,
+      "median_ms": 391.17,
+      "std_dev_ms": 2.74,
+      "min_ms": 389.24,
+      "max_ms": 393.11,
+      "error_count": 0
+    },
+    "input_tool_click": {
+      "name": "input_tool_click",
+      "iterations": 2,
+      "mean_ms": 73.64,
+      "median_ms": 73.64,
+      "std_dev_ms": 48.33,
+      "min_ms": 39.46,
+      "max_ms": 107.82,
+      "error_count": 0
+    },
+    "input_tool_type": {
+      "name": "input_tool_type",
+      "iterations": 2,
+      "mean_ms": 235.17,
+      "median_ms": 235.17,
+      "std_dev_ms": 25.74,
+      "min_ms": 216.97,
+      "max_ms": 253.37,
+      "error_count": 0
+    },
+    "pyautogui_click": {
+      "name": "pyautogui_click",
+      "iterations": 2,
+      "mean_ms": 42.65,
+      "median_ms": 42.65,
+      "std_dev_ms": 9.88,
+      "min_ms": 35.66,
+      "max_ms": 49.63,
+      "error_count": 0
+    },
+    "accessibility_initialization": {
+      "name": "accessibility_initialization",
+      "iterations": 2,
+      "mean_ms": 275.28,
+      "median_ms": 275.28,
+      "std_dev_ms": 388.56,
+      "min_ms": 0.52,
+      "max_ms": 550.03,
+      "error_count": 0
+    },
+    "accessibility_element_discovery": {
+      "name": "accessibility_element_discovery",
+      "iterations": 2,
+      "mean_ms": 1458.06,
+      "median_ms": 1458.06,
+      "std_dev_ms": 2061.99,
+      "min_ms": 0.01,
+      "max_ms": 2916.11,
+      "error_count": 0
+    },
+    "accessibility_element_discovery_cached": {
+      "name": "accessibility_element_discovery_cached",
+      "iterations": 2,
+      "mean_ms": 0.01,
+      "median_ms": 0.01,
+      "std_dev_ms": 0.0,
+      "min_ms": 0.01,
+      "max_ms": 0.01,
+      "error_count": 0
+    },
+    "ocr_initialization": {
+      "name": "ocr_initialization",
+      "iterations": 2,
+      "mean_ms": 239.03,
+      "median_ms": 239.03,
+      "std_dev_ms": 337.98,
+      "min_ms": 0.04,
+      "max_ms": 478.01,
+      "error_count": 0
+    },
+    "ocr_text_extraction": {
+      "name": "ocr_text_extraction",
+      "iterations": 2,
+      "mean_ms": 4590.08,
+      "median_ms": 4590.08,
+      "std_dev_ms": 5060.84,
+      "min_ms": 1011.53,
+      "max_ms": 8168.63,
+      "error_count": 0
+    },
+    "Platform Registry Init": {
+      "name": "Platform Registry Init",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 1
+    },
+    "llm_config_get_llm": {
+      "name": "llm_config_get_llm",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 2
+    },
+    "Crew Initialization": {
+      "name": "Crew Initialization",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 1
+    },
+    "Agent Creation": {
+      "name": "Agent Creation",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 1
+    }
+  }
+}
