@@ -27,6 +27,8 @@ class WindowsAccessibility:
     - click_by_id() uses registry for direct native clicks
     """
 
+    _CACHE_TTL: float = 30.0
+
     def __init__(self, screen_width: int = 1920, screen_height: int = 1080):
         """
         Initialize Windows UI Automation with pywinauto.
@@ -41,7 +43,7 @@ class WindowsAccessibility:
         self.pywinauto = None
         self.Desktop = None
         self._app_cache: Dict[str, Any] = {}
-        self._element_cache: Dict[str, List[Dict[str, Any]]] = {}
+        self._element_cache: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
         self._element_registry: Dict[str, Dict[str, Any]] = {}
         self._last_interaction_time: float = 0
 
@@ -80,7 +82,7 @@ class WindowsAccessibility:
         Args:
             app_name: Application name to set as active
         """
-        self._element_cache.clear()
+        self.invalidate_cache(app_name)
         app = self.get_app(app_name)
         if app:
             self._app_cache[app_name.lower()] = app
@@ -90,13 +92,24 @@ class WindowsAccessibility:
         self._app_cache.clear()
         self._element_cache.clear()
 
-    def invalidate_cache(self):
+    def invalidate_cache(self, app_name: Optional[str] = None):
         """
-        Invalidate element cache and registry after interactions.
-        Should be called after clicks, focus changes, etc.
+        Invalidate element cache after interactions.
+
+        Args:
+            app_name: If provided, only invalidate cache for this app
         """
-        self._element_cache.clear()
-        self._element_registry.clear()
+        if app_name:
+            prefix = app_name.lower()
+            keys_to_remove = [k for k in self._element_cache if k.startswith(prefix)]
+            for key in keys_to_remove:
+                self._element_cache.pop(key, None)
+            registry_keys = [k for k in self._element_registry if k.startswith(prefix)]
+            for key in registry_keys:
+                self._element_registry.pop(key, None)
+        else:
+            self._element_cache.clear()
+            self._element_registry.clear()
         self._last_interaction_time = time.time()
 
     def get_app(self, app_name: str, retry_count: int = 3) -> Optional[Any]:
@@ -155,7 +168,7 @@ class WindowsAccessibility:
         Args:
             app_name: Application name
             interactive_only: Only return elements that can be interacted with
-            use_cache: Use cached elements if available
+            use_cache: Use cached elements if available (TTL-based, 2s default)
 
         Returns:
             List of element dictionaries with coordinates and metadata
@@ -164,17 +177,21 @@ class WindowsAccessibility:
             return []
 
         cache_key = f"{app_name.lower()}:{interactive_only}"
+
         if use_cache and cache_key in self._element_cache:
-            return self._element_cache[cache_key]
+            cached_time, cached_elements = self._element_cache[cache_key]
+            if (time.time() - cached_time) < self._CACHE_TTL:
+                return cached_elements
 
         app = self.get_app(app_name)
         if not app:
             return []
 
-        elements = []
-        self._traverse(app, elements, interactive_only)
+        elements: List[Dict[str, Any]] = []
+        app_name_lower = app_name.lower()
+        self._traverse(app, elements, interactive_only, 0, app_name_lower)
 
-        self._element_cache[cache_key] = elements
+        self._element_cache[cache_key] = (time.time(), elements)
         return elements
 
     def _traverse(
@@ -183,6 +200,7 @@ class WindowsAccessibility:
         elements: List[Dict[str, Any]],
         interactive_only: bool,
         depth: int = 0,
+        app_name: str = "",
     ):
         """
         Single unified traversal - the API tells us what's interactive.
@@ -224,13 +242,13 @@ class WindowsAccessibility:
             )
 
             if not interactive_only or is_interactive:
-                element_info = self._extract_info(node, ctrl_type, is_enabled)
+                element_info = self._extract_info(node, ctrl_type, is_enabled, app_name)
                 if element_info:
                     elements.append(element_info)
 
             try:
                 for child in node.children():
-                    self._traverse(child, elements, interactive_only, depth + 1)
+                    self._traverse(child, elements, interactive_only, depth + 1, app_name)
             except Exception:
                 pass
 
@@ -238,7 +256,7 @@ class WindowsAccessibility:
             pass
 
     def _extract_info(
-        self, node: Any, ctrl_type: str, is_enabled: bool
+        self, node: Any, ctrl_type: str, is_enabled: bool, app_name: str = ""
     ) -> Optional[Dict[str, Any]]:
         """
         Extract element info and register it with unique ID.
@@ -247,6 +265,7 @@ class WindowsAccessibility:
             node: UI element
             ctrl_type: Control type string
             is_enabled: Whether element is enabled
+            app_name: Application name for selective cache invalidation
 
         Returns:
             Element dict with element_id, or None if invalid
@@ -282,6 +301,7 @@ class WindowsAccessibility:
                 "has_actions": True,
                 "enabled": is_enabled,
                 "_element": node,
+                "_app_name": app_name,
             }
 
             self._element_registry[element_id] = element_info
@@ -322,11 +342,13 @@ class WindowsAccessibility:
 
         node = element.get("_element")
         label = element.get("label", element_id)
+        app_name = element.get("_app_name", "")
+        invalidate_target = app_name if app_name else None
 
         if node:
             try:
                 self._perform_click(node)
-                self.invalidate_cache()
+                self.invalidate_cache(invalidate_target)
                 return (True, f"Clicked '{label}'")
             except Exception:
                 pass
@@ -338,7 +360,7 @@ class WindowsAccessibility:
 
                 x, y = center
                 pyautogui.click(x, y)
-                self.invalidate_cache()
+                self.invalidate_cache(invalidate_target)
                 return (True, f"Clicked '{label}' at ({x}, {y})")
             except Exception as e:
                 return (False, f"Coordinate click failed: {e}")

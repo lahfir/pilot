@@ -23,6 +23,8 @@ class MacOSAccessibility:
     registry pattern - each element gets a unique ID for direct clicks.
     """
 
+    _CACHE_TTL: float = 30.0
+
     def __init__(self, screen_width: int = 0, screen_height: int = 0):
         """
         Initialize macOS accessibility.
@@ -39,7 +41,7 @@ class MacOSAccessibility:
         self.available = self._check_availability()
         self.atomacos = None
         self._app_cache: Dict[str, Any] = {}
-        self._element_cache: Dict[str, List[Dict[str, Any]]] = {}
+        self._element_cache: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
         self._element_registry: Dict[str, Dict[str, Any]] = {}
         self._last_interaction_time: float = 0
 
@@ -105,15 +107,29 @@ class MacOSAccessibility:
         self._app_cache.clear()
         self._element_cache.clear()
 
-    def invalidate_cache(self) -> None:
-        """Invalidate caches after interactions."""
-        self._element_cache.clear()
-        self._element_registry.clear()
+    def invalidate_cache(self, app_name: Optional[str] = None) -> None:
+        """
+        Invalidate element cache after interactions.
+
+        Args:
+            app_name: If provided, only invalidate cache for this app
+        """
+        if app_name:
+            prefix = app_name.lower()
+            keys_to_remove = [k for k in self._element_cache if k.startswith(prefix)]
+            for key in keys_to_remove:
+                self._element_cache.pop(key, None)
+            registry_keys = [k for k in self._element_registry if k.startswith(prefix)]
+            for key in registry_keys:
+                self._element_registry.pop(key, None)
+        else:
+            self._element_cache.clear()
+            self._element_registry.clear()
         self._last_interaction_time = time.time()
 
     def set_active_app(self, app_name: str) -> None:
         """Set and cache the active application."""
-        self._element_cache.clear()
+        self.invalidate_cache(app_name)
         self.get_app(app_name)
 
     def _is_valid_app_ref(self, app_ref: Any) -> bool:
@@ -253,7 +269,7 @@ class MacOSAccessibility:
         Args:
             app_name: Application name
             interactive_only: Only return interactive elements
-            use_cache: Use cached elements if available
+            use_cache: Use cached elements if available (TTL-based, 2s default)
 
         Returns:
             List of element dictionaries
@@ -261,29 +277,32 @@ class MacOSAccessibility:
         if not self.available:
             return []
 
-        if (time.time() - self._last_interaction_time) < 5.0:
-            self._element_cache.clear()
-
         cache_key = f"{app_name.lower()}:{interactive_only}"
+
         if use_cache and cache_key in self._element_cache:
-            return self._element_cache[cache_key]
+            cached_time, cached_elements = self._element_cache[cache_key]
+            if (time.time() - cached_time) < self._CACHE_TTL:
+                return cached_elements
 
         app = self.get_app(app_name)
         if not app:
             return []
 
         elements: List[Dict[str, Any]] = []
+        app_name_lower = app_name.lower()
 
         if hasattr(app, "AXMenuBar"):
             try:
-                self._traverse(app.AXMenuBar, elements, interactive_only)
+                self._traverse(
+                    app.AXMenuBar, elements, interactive_only, 0, app_name_lower
+                )
             except Exception:
                 pass
 
         for window in self.get_windows(app):
-            self._traverse(window, elements, interactive_only)
+            self._traverse(window, elements, interactive_only, 0, app_name_lower)
 
-        self._element_cache[cache_key] = elements
+        self._element_cache[cache_key] = (time.time(), elements)
         return elements
 
     _SKIP_ROLES = frozenset(
@@ -331,6 +350,7 @@ class MacOSAccessibility:
         elements: List[Dict[str, Any]],
         interactive_only: bool,
         depth: int = 0,
+        app_name: str = "",
     ) -> bool:
         """
         Recursively traverse accessibility tree collecting elements.
@@ -349,7 +369,7 @@ class MacOSAccessibility:
                 if children:
                     for child in children:
                         if not self._traverse(
-                            child, elements, interactive_only, depth + 1
+                            child, elements, interactive_only, depth + 1, app_name
                         ):
                             return False
                 return True
@@ -359,7 +379,7 @@ class MacOSAccessibility:
                 if children:
                     for child in children:
                         if not self._traverse(
-                            child, elements, interactive_only, depth + 1
+                            child, elements, interactive_only, depth + 1, app_name
                         ):
                             return False
                 return True
@@ -368,7 +388,7 @@ class MacOSAccessibility:
 
             if interactive_only:
                 if is_known_interactive:
-                    info = self._extract_element_info(node, role, True, True)
+                    info = self._extract_element_info(node, role, True, True, app_name)
                     if info:
                         elements.append(info)
                         if len(elements) >= self._max_elements:
@@ -378,7 +398,7 @@ class MacOSAccessibility:
                     is_enabled = bool(getattr(node, "AXEnabled", False))
                     if has_actions or is_enabled:
                         info = self._extract_element_info(
-                            node, role, has_actions, is_enabled
+                            node, role, has_actions, is_enabled, app_name
                         )
                         if info:
                             elements.append(info)
@@ -387,7 +407,9 @@ class MacOSAccessibility:
             else:
                 has_actions = bool(getattr(node, "AXActions", None))
                 is_enabled = bool(getattr(node, "AXEnabled", False))
-                info = self._extract_element_info(node, role, has_actions, is_enabled)
+                info = self._extract_element_info(
+                    node, role, has_actions, is_enabled, app_name
+                )
                 if info:
                     elements.append(info)
                     if len(elements) >= self._max_elements:
@@ -396,7 +418,9 @@ class MacOSAccessibility:
             children = getattr(node, "AXChildren", None)
             if children:
                 for child in children:
-                    if not self._traverse(child, elements, interactive_only, depth + 1):
+                    if not self._traverse(
+                        child, elements, interactive_only, depth + 1, app_name
+                    ):
                         return False
 
             return True
@@ -404,7 +428,12 @@ class MacOSAccessibility:
             return True
 
     def _extract_element_info(
-        self, node: Any, role: str, has_actions: bool, is_enabled: bool
+        self,
+        node: Any,
+        role: str,
+        has_actions: bool,
+        is_enabled: bool,
+        app_name: str = "",
     ) -> Optional[Dict[str, Any]]:
         """Extract element info and register with unique ID."""
         try:
@@ -447,6 +476,7 @@ class MacOSAccessibility:
                 "has_actions": has_actions,
                 "enabled": is_enabled,
                 "_element": node,
+                "_app_name": app_name,
             }
 
             self._element_registry[element_id] = info
@@ -506,35 +536,40 @@ class MacOSAccessibility:
                 if result[0]:
                     return result
 
+        app_name = element.get("_app_name", "")
+
         if center and len(center) == 2:
             try:
                 import pyautogui
 
                 pyautogui.click(center[0], center[1])
                 time.sleep(0.05)
-                self.invalidate_cache()
+                self.invalidate_cache(app_name if app_name else None)
                 return (True, f"Clicked '{label}' at {tuple(center)}")
             except Exception:
                 pass
 
         if node:
-            return self._click_node(node, label)
+            return self._click_node(node, label, app_name)
 
         return (False, f"No click method for '{label}'")
 
-    def _click_node(self, node: Any, label: str) -> Tuple[bool, str]:
+    def _click_node(
+        self, node: Any, label: str, app_name: str = ""
+    ) -> Tuple[bool, str]:
         """Click a node using available methods."""
+        invalidate_target = app_name if app_name else None
         try:
             if hasattr(node, "Press"):
                 node.Press()
                 time.sleep(0.05)
-                self.invalidate_cache()
+                self.invalidate_cache(invalidate_target)
                 return (True, f"Clicked '{label}' via Press")
 
             if hasattr(node, "AXPress"):
                 node.AXPress()
                 time.sleep(0.05)
-                self.invalidate_cache()
+                self.invalidate_cache(invalidate_target)
                 return (True, f"Clicked '{label}' via AXPress")
 
             if hasattr(node, "AXActions") and node.AXActions:
@@ -544,7 +579,7 @@ class MacOSAccessibility:
                         if hasattr(node, "performAction"):
                             node.performAction(action)
                             time.sleep(0.05)
-                            self.invalidate_cache()
+                            self.invalidate_cache(invalidate_target)
                             return (True, f"Clicked '{label}' via {action}")
 
             if hasattr(node, "AXPosition") and hasattr(node, "AXSize"):
@@ -556,7 +591,7 @@ class MacOSAccessibility:
 
                 pyautogui.click(x, y)
                 time.sleep(0.05)
-                self.invalidate_cache()
+                self.invalidate_cache(invalidate_target)
                 return (True, f"Clicked '{label}' at ({x}, {y})")
 
         except Exception as e:
