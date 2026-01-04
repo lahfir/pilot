@@ -4,6 +4,7 @@ Cross-platform screenshot capture tool.
 
 import base64
 import io
+import time
 from typing import Optional, Tuple, Dict, Any
 from PIL import Image
 import pyautogui
@@ -14,13 +15,17 @@ class ScreenshotTool:
     """
     Cross-platform screenshot capture with region support.
     Handles Retina/HiDPI display scaling automatically.
+    Includes short-lived caching to avoid redundant captures.
     """
+
+    CACHE_TTL = 0.1
 
     def __init__(self):
         """Initialize and detect display scaling."""
         self.scaling_factor = self._detect_scaling()
         self.os_type = platform.system().lower()
         self.active_window_bounds = None
+        self._cache: Optional[Tuple[float, Optional[Tuple], Image.Image]] = None
 
     def _detect_scaling(self) -> float:
         """Detect display scaling factor (Retina = 2.0, normal = 1.0)."""
@@ -185,17 +190,26 @@ class ScreenshotTool:
         return (x, y)
 
     def capture(
-        self, region: Optional[Tuple[int, int, int, int]] = None
+        self,
+        region: Optional[Tuple[int, int, int, int]] = None,
+        use_cache: bool = True,
     ) -> Image.Image:
         """
         Capture screenshot of entire screen or specific region.
 
         Args:
             region: Optional region as (x, y, width, height) in SCREEN coordinates
+            use_cache: Whether to use cached screenshot if available (default True)
 
         Returns:
             PIL Image object at full resolution
         """
+        now = time.time()
+        if use_cache and self._cache is not None:
+            cache_time, cache_region, cache_image = self._cache
+            if (now - cache_time) < self.CACHE_TTL and cache_region == region:
+                return cache_image
+
         if region:
             x, y, w, h = region
             scaled_region = (
@@ -208,7 +222,12 @@ class ScreenshotTool:
         else:
             screenshot = pyautogui.screenshot()
 
+        self._cache = (now, region, screenshot)
         return screenshot
+
+    def invalidate_cache(self) -> None:
+        """Clear the screenshot cache."""
+        self._cache = None
 
     def capture_as_base64(
         self, region: Optional[Tuple[int, int, int, int]] = None, format: str = "PNG"

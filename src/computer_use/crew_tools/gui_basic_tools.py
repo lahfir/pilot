@@ -610,9 +610,75 @@ class GetAccessibleElementsInput(BaseModel):
         default=None,
         description="Optional text to filter elements by (case-insensitive search in label/title)",
     )
+    filter_role: Optional[str] = Field(
+        default=None,
+        description="Filter by element role/type (TextField, TextArea, Button, CheckBox, MenuItem, etc.)",
+    )
 
 
 _get_elements_state = {"last_hash": "", "repeat_count": 0}
+
+INPUT_PRIORITY_ROLES = frozenset(
+    {
+        "textfield",
+        "textarea",
+        "searchfield",
+        "combobox",
+        "securetextfield",
+        "edit",
+        "text",
+        "entry",
+    }
+)
+
+
+def _get_element_priority(element: dict) -> tuple:
+    """Get sort priority for element - input fields first, then by position."""
+    role = (element.get("role") or "").lower()
+    center = element.get("center", [9999, 9999])
+    is_input = 0 if role in INPUT_PRIORITY_ROLES else 1
+    return (is_input, center[1] if center else 9999, center[0] if center else 9999)
+
+
+def _format_elements_compact(elements: list, limit: int = 75) -> str:
+    """Format elements in compact, categorized format for efficient LLM parsing."""
+    from typing import Dict, List
+
+    by_role: Dict[str, List[dict]] = {}
+    for e in elements[:limit]:
+        role = e.get("role", "Other")
+        by_role.setdefault(role, []).append(e)
+
+    lines = []
+    priority_order = [
+        "TextField",
+        "TextArea",
+        "SearchField",
+        "Edit",
+        "Entry",
+        "Button",
+        "MenuItem",
+        "MenuBarItem",
+        "CheckBox",
+        "RadioButton",
+    ]
+
+    for role in priority_order:
+        if role in by_role:
+            items = by_role.pop(role)
+            formatted = " | ".join(
+                f"[{e['element_id']}]{(e.get('label', '') or '')[:25]}"
+                for e in items[:15]
+            )
+            lines.append(f"{role}({len(items)}): {formatted}")
+
+    for role, items in sorted(by_role.items()):
+        formatted = " | ".join(
+            f"[{e['element_id']}]{(e.get('label', '') or '')[:25]}" for e in items[:10]
+        )
+        lines.append(f"{role}({len(items)}): {formatted}")
+
+    return "\n".join(lines)
 
 
 class GetAccessibleElementsTool(InstrumentedBaseTool):
@@ -623,20 +689,26 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
 
     name: str = "get_accessible_elements"
     description: str = (
-        "Get all interactive UI elements from an application using Accessibility API. "
-        "Returns a list of elements with label, role, bounds, and center coordinates. "
-        "Use filter_text to search for specific elements (e.g., filter_text='Appearance'). "
-        "Use this to discover available clickable elements before clicking."
+        "Get interactive UI elements from an application using native accessibility APIs. "
+        "Use filter_role to find specific element types (TextField, TextArea, Button, etc). "
+        "Use filter_text to find elements by label. Elements cached for 30s - reuse element_ids. "
+        "Returns elements with unique IDs for click_element."
     )
     args_schema: type[BaseModel] = GetAccessibleElementsInput
 
-    def _run(self, app_name: str, filter_text: Optional[str] = None) -> ActionResult:
+    def _run(
+        self,
+        app_name: str,
+        filter_text: Optional[str] = None,
+        filter_role: Optional[str] = None,
+    ) -> ActionResult:
         """
         Get all accessible elements from app using comprehensive UI element detection.
 
         Args:
             app_name: Application name
             filter_text: Optional text to filter elements by label/title
+            filter_role: Optional role/type to filter elements by (TextField, Button, etc.)
 
         Returns:
             ActionResult with categorized list of elements
@@ -673,7 +745,7 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
             elements = []
             with action_spinner("Scanning", f"{app_name} UI"):
                 elements = accessibility_tool.get_elements(
-                    app_name, interactive_only=True, use_cache=False
+                    app_name, interactive_only=True, use_cache=True
                 )
 
             if not elements:
@@ -748,12 +820,23 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
                 }
                 normalized_elements.append(normalized)
 
-            normalized_elements.sort(
-                key=lambda e: (
-                    e["center"][1] if e["center"] else 9999,
-                    e["center"][0] if e["center"] else 9999,
-                )
-            )
+            normalized_elements.sort(key=_get_element_priority)
+
+            if filter_role:
+                role_lower = filter_role.lower()
+                normalized_elements = [
+                    e
+                    for e in normalized_elements
+                    if role_lower in (e.get("role", "") or "").lower()
+                ]
+                if not normalized_elements:
+                    return ActionResult(
+                        success=True,
+                        action_taken=f"No elements with role '{filter_role}' found in {app_name}",
+                        method_used="accessibility",
+                        confidence=1.0,
+                        data={"elements": [], "count": 0, "filter_role": filter_role},
+                    )
 
             if filter_text:
                 filter_lower = filter_text.lower()
@@ -799,29 +882,32 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
                 )
             ]
 
-            result_elements = (
-                meaningful_elements[:200]
-                if meaningful_elements
-                else normalized_elements[:200]
+            base_elements = (
+                meaningful_elements if meaningful_elements else normalized_elements
             )
-            display_limit = 75
+            input_elements = [
+                e
+                for e in base_elements
+                if (e.get("role") or "").lower() in INPUT_PRIORITY_ROLES
+            ]
+            other_elements = [
+                e
+                for e in base_elements
+                if (e.get("role") or "").lower() not in INPUT_PRIORITY_ROLES
+            ]
+            max_display = 75
+            remaining_slots = max(0, max_display - len(input_elements))
+            result_elements = (input_elements + other_elements[:remaining_slots])[:200]
+            display_elements = result_elements[:max_display]
             truncated_note = ""
-            if len(result_elements) > display_limit:
-                truncated_note = f"\n... +{len(result_elements) - display_limit} more"
-            display_elements = result_elements[:display_limit]
+            if len(base_elements) > len(display_elements):
+                truncated_note = (
+                    f"\n... +{len(base_elements) - len(display_elements)} more"
+                )
 
-            element_lines = []
-            for e in display_elements:
-                elem_id = e.get("element_id", "")
-                label = e.get("label", "")
-                role = e.get("role", "")
-
-                display_label = label if label else f"(unlabeled {role})"
-                element_lines.append(f"• [{elem_id}] {display_label} ({role})")
-
-            elements_summary = (
-                "\n".join(element_lines) if element_lines else "No elements found"
-            )
+            elements_summary = _format_elements_compact(display_elements, max_display)
+            if not elements_summary:
+                elements_summary = "No elements found"
             elements_summary += truncated_note
 
             import hashlib

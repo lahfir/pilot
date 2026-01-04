@@ -74,7 +74,7 @@ def create_ocr_engine(use_gpu: Optional[bool] = None) -> Optional[OCREngine]:
         if engine.is_available():
             if dashboard.verbosity == VerbosityLevel.VERBOSE:
                 console.print(
-                    f"[{THEME['success']}]Using Apple Vision Framework OCR[/]"
+                    f"[{THEME['tool_success']}]Using Apple Vision Framework OCR[/]"
                 )
             return engine
 
@@ -84,7 +84,7 @@ def create_ocr_engine(use_gpu: Optional[bool] = None) -> Optional[OCREngine]:
     if engine.is_available():
         if dashboard.verbosity == VerbosityLevel.VERBOSE:
             gpu_status = "GPU" if engine.use_gpu else "CPU"
-            console.print(f"[{THEME['success']}]Using PaddleOCR ({gpu_status})[/]")
+            console.print(f"[{THEME['tool_success']}]Using PaddleOCR ({gpu_status})[/]")
         return engine
 
     from .easyocr_engine import EasyOCREngine
@@ -92,7 +92,7 @@ def create_ocr_engine(use_gpu: Optional[bool] = None) -> Optional[OCREngine]:
     engine = EasyOCREngine()
     if engine.is_available():
         if dashboard.verbosity == VerbosityLevel.VERBOSE:
-            console.print(f"[{THEME['success']}]Using EasyOCR (fallback)[/]")
+            console.print(f"[{THEME['tool_success']}]Using EasyOCR (fallback)[/]")
         return engine
 
     return None

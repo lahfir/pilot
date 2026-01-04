@@ -136,6 +136,7 @@ class ClickElementTool(InstrumentedBaseTool):
                     action_taken=message,
                     method_used="accessibility_native",
                     confidence=1.0 if success else 0.0,
+                    data={"requires_verification": False},
                 )
 
         input_tool = self._tool_registry.get_tool("input")
@@ -171,7 +172,7 @@ class ClickElementTool(InstrumentedBaseTool):
                     action_taken=f"Clicked {target}",
                     method_used="element_coordinates",
                     confidence=1.0,
-                    data={"coordinates": (x, y)},
+                    data={"coordinates": (x, y), "requires_verification": False},
                 )
 
         screenshot_tool = self._tool_registry.get_tool("screenshot")
@@ -293,6 +294,7 @@ class ClickElementTool(InstrumentedBaseTool):
                 "coordinates": (x_screen, y_screen),
                 "matched_text": best_match.text,
                 "score": best_score,
+                "requires_verification": True,
             },
         )
 

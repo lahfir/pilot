@@ -1,0 +1,167 @@
+{
+  "timestamp": "2025-12-30T13:57:43.704041",
+  "warmup_iterations": 2,
+  "test_iterations": 5,
+  "results": {
+    "module_import": {
+      "name": "module_import",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 5
+    },
+    "timing_config_access": {
+      "name": "timing_config_access",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 5
+    },
+    "screenshot_capture": {
+      "name": "screenshot_capture",
+      "iterations": 5,
+      "mean_ms": 539.92,
+      "median_ms": 539.11,
+      "std_dev_ms": 50.1,
+      "min_ms": 491.05,
+      "max_ms": 619.26,
+      "error_count": 0
+    },
+    "screenshot_region_capture": {
+      "name": "screenshot_region_capture",
+      "iterations": 5,
+      "mean_ms": 389.37,
+      "median_ms": 393.74,
+      "std_dev_ms": 11.4,
+      "min_ms": 376.82,
+      "max_ms": 403.78,
+      "error_count": 0
+    },
+    "input_tool_click": {
+      "name": "input_tool_click",
+      "iterations": 5,
+      "mean_ms": 41.92,
+      "median_ms": 41.46,
+      "std_dev_ms": 2.79,
+      "min_ms": 38.55,
+      "max_ms": 45.92,
+      "error_count": 0
+    },
+    "input_tool_type": {
+      "name": "input_tool_type",
+      "iterations": 5,
+      "mean_ms": 213.63,
+      "median_ms": 213.02,
+      "std_dev_ms": 3.64,
+      "min_ms": 208.48,
+      "max_ms": 218.11,
+      "error_count": 0
+    },
+    "pyautogui_click": {
+      "name": "pyautogui_click",
+      "iterations": 5,
+      "mean_ms": 39.75,
+      "median_ms": 41.28,
+      "std_dev_ms": 4.91,
+      "min_ms": 34.17,
+      "max_ms": 45.9,
+      "error_count": 0
+    },
+    "accessibility_initialization": {
+      "name": "accessibility_initialization",
+      "iterations": 5,
+      "mean_ms": 0.49,
+      "median_ms": 0.52,
+      "std_dev_ms": 0.06,
+      "min_ms": 0.41,
+      "max_ms": 0.54,
+      "error_count": 0
+    },
+    "accessibility_element_discovery": {
+      "name": "accessibility_element_discovery",
+      "iterations": 5,
+      "mean_ms": 0.01,
+      "median_ms": 0.01,
+      "std_dev_ms": 0.0,
+      "min_ms": 0.01,
+      "max_ms": 0.02,
+      "error_count": 0
+    },
+    "accessibility_element_discovery_cached": {
+      "name": "accessibility_element_discovery_cached",
+      "iterations": 5,
+      "mean_ms": 0.01,
+      "median_ms": 0.01,
+      "std_dev_ms": 0.0,
+      "min_ms": 0.01,
+      "max_ms": 0.01,
+      "error_count": 0
+    },
+    "ocr_initialization": {
+      "name": "ocr_initialization",
+      "iterations": 5,
+      "mean_ms": 0.04,
+      "median_ms": 0.04,
+      "std_dev_ms": 0.0,
+      "min_ms": 0.04,
+      "max_ms": 0.04,
+      "error_count": 0
+    },
+    "ocr_text_extraction": {
+      "name": "ocr_text_extraction",
+      "iterations": 5,
+      "mean_ms": 1295.41,
+      "median_ms": 1355.09,
+      "std_dev_ms": 322.99,
+      "min_ms": 968.86,
+      "max_ms": 1745.19,
+      "error_count": 0
+    },
+    "Platform Registry Init": {
+      "name": "Platform Registry Init",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 1
+    },
+    "llm_config_get_llm": {
+      "name": "llm_config_get_llm",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 5
+    },
+    "Crew Initialization": {
+      "name": "Crew Initialization",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 1
+    },
+    "Agent Creation": {
+      "name": "Agent Creation",
+      "iterations": 0,
+      "mean_ms": 0,
+      "median_ms": 0,
+      "std_dev_ms": 0,
+      "min_ms": 0,
+      "max_ms": 0,
+      "error_count": 1
+    }
+  }
+}

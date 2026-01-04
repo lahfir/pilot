@@ -20,35 +20,53 @@ class ExecutionProfiler:
 
     def __init__(self):
         self.start_time = None
+        self.last_event_time = None
         self.tool_calls: List[Dict[str, Any]] = []
         self.llm_calls: List[Dict[str, Any]] = []
+        self.events: List[Dict[str, Any]] = []
 
     def log_tool(self, name: str, duration: float, inputs: str, output: str):
         """Log a tool call."""
+        now = time.time()
+        gap = now - self.last_event_time if self.last_event_time else 0
+        self.last_event_time = now
+
         entry = {
+            "type": "tool",
             "name": name,
             "duration": duration,
-            "timestamp": time.time() - self.start_time if self.start_time else 0,
+            "gap_before": gap - duration,
+            "timestamp": now - self.start_time if self.start_time else 0,
             "inputs": inputs,
             "output": output,
         }
         self.tool_calls.append(entry)
+        self.events.append(entry)
 
     def log_llm(self, duration: float, prompt_len: int, response_len: int):
         """Log an LLM call."""
+        now = time.time()
+        gap = now - self.last_event_time if self.last_event_time else 0
+        self.last_event_time = now
+
         entry = {
+            "type": "llm",
             "duration": duration,
-            "timestamp": time.time() - self.start_time if self.start_time else 0,
+            "gap_before": gap - duration,
+            "timestamp": now - self.start_time if self.start_time else 0,
             "prompt_len": prompt_len,
             "response_len": response_len,
         }
         self.llm_calls.append(entry)
+        self.events.append(entry)
 
     def start(self):
         """Start profiling."""
         self.start_time = time.time()
+        self.last_event_time = time.time()
         self.tool_calls = []
         self.llm_calls = []
+        self.events = []
 
     def print_summary(self):
         """Print profiling summary."""
@@ -62,30 +80,47 @@ class ExecutionProfiler:
 
         tool_time = sum(c["duration"] for c in self.tool_calls)
         llm_time = sum(c["duration"] for c in self.llm_calls)
+        gap_time = sum(max(0, c.get("gap_before", 0)) for c in self.events)
 
         print(f"\nTOOL CALLS: {len(self.tool_calls)}, Total time: {tool_time:.2f}s")
         print(f"LLM CALLS: {len(self.llm_calls)}, Total time: {llm_time:.2f}s")
+        print(f"GAP TIME (overhead/waiting): {gap_time:.2f}s")
+        print(f"ACCOUNTED: {tool_time + llm_time + gap_time:.2f}s / {total_time:.2f}s")
 
-        if self.tool_calls:
-            print("\n--- ALL TOOL CALLS (chronological) ---")
-            for i, call in enumerate(self.tool_calls):
-                print(f"\n  {i+1}. [{call['duration']:.2f}s] {call['name']}")
-                print(f"      Inputs: {call['inputs'][:100]}")
-                print(f"      Output: {call['output'][:150]}")
+        print("\n--- EVENT TIMELINE ---")
+        for i, event in enumerate(self.events):
+            ts = event["timestamp"]
+            dur = event["duration"]
+            gap = event.get("gap_before", 0)
 
-        if self.llm_calls:
-            print("\n--- ALL LLM CALLS ---")
-            for i, call in enumerate(self.llm_calls):
+            if gap > 0.5:
+                print(f"  ... [{gap:.2f}s GAP/WAITING] ...")
+
+            if event["type"] == "llm":
                 print(
-                    f"  {i+1}. [{call['duration']:.2f}s] prompt={call['prompt_len']} -> response={call['response_len']}"
+                    f"  @{ts:6.1f}s | LLM [{dur:.2f}s] "
+                    f"prompt={event['prompt_len']} -> response={event['response_len']}"
                 )
+            else:
+                print(f"  @{ts:6.1f}s | TOOL [{dur:.2f}s] {event['name']}")
 
-        print("\n--- SLOWEST TOOL CALLS ---")
-        sorted_tools = sorted(
-            self.tool_calls, key=lambda x: x["duration"], reverse=True
+        print("\n--- SLOWEST OPERATIONS ---")
+        sorted_events = sorted(self.events, key=lambda x: x["duration"], reverse=True)
+        for event in sorted_events[:10]:
+            if event["type"] == "llm":
+                print(f"  [{event['duration']:.2f}s] LLM call")
+            else:
+                print(f"  [{event['duration']:.2f}s] {event['name']}")
+
+        print("\n--- LARGEST GAPS (overhead/coordination) ---")
+        sorted_gaps = sorted(
+            self.events, key=lambda x: x.get("gap_before", 0), reverse=True
         )
-        for call in sorted_tools[:5]:
-            print(f"  [{call['duration']:.2f}s] {call['name']}")
+        for event in sorted_gaps[:5]:
+            gap = event.get("gap_before", 0)
+            if gap > 0.1:
+                name = event["name"] if event["type"] == "tool" else "LLM"
+                print(f"  [{gap:.2f}s] before {name}")
 
         print("\n" + "=" * 80)
 
@@ -149,7 +184,68 @@ def patch_gui_tools(gui_tools: Dict[str, Any]):
 
 
 def patch_llm_calls():
-    """Patch CrewAI's LLM.call method to log all LLM calls."""
+    """Patch LiteLLM's completion function to log all LLM calls."""
+    patched = False
+
+    try:
+        import litellm
+
+        original_completion = litellm.completion
+
+        def traced_completion(*args, **kwargs):
+            model = kwargs.get("model", args[0] if args else "unknown")
+            messages = kwargs.get("messages", args[1] if len(args) > 1 else [])
+
+            if isinstance(messages, list):
+                prompt_len = sum(len(str(m.get("content", ""))) for m in messages)
+                msg_count = len(messages)
+                last_msg = (
+                    str(messages[-1].get("content", ""))[:400] if messages else ""
+                )
+            else:
+                prompt_len = len(str(messages))
+                msg_count = 1
+                last_msg = str(messages)[:400]
+
+            print(f"\n{'*'*60}")
+            print(f">>> LLM CALL START (litellm.completion)")
+            print(f"    Model: {model}")
+            print(f"    Messages: {msg_count}")
+            print(f"    Prompt length: {prompt_len} chars")
+            print(f"    Last message preview:")
+            for line in last_msg.split("\n")[:3]:
+                print(f"      {line[:120]}")
+            sys.stdout.flush()
+
+            start = time.time()
+            result = original_completion(*args, **kwargs)
+            duration = time.time() - start
+
+            response_text = ""
+            if hasattr(result, "choices") and result.choices:
+                choice = result.choices[0]
+                if hasattr(choice, "message") and choice.message:
+                    response_text = str(choice.message.content or "")
+            response_len = len(response_text)
+
+            print(f"<<< LLM CALL END [{duration:.2f}s]")
+            print(f"    Response length: {response_len} chars")
+            print(f"    Response preview:")
+            for line in response_text[:600].split("\n")[:5]:
+                print(f"      {line[:120]}")
+            print(f"{'*'*60}")
+            sys.stdout.flush()
+
+            profiler.log_llm(duration, prompt_len, response_len)
+            return result
+
+        litellm.completion = traced_completion
+        print("[PROFILER] Patched litellm.completion")
+        patched = True
+
+    except Exception as e:
+        print(f"[PROFILER] Could not patch litellm: {e}")
+
     try:
         from crewai import LLM
 
@@ -160,24 +256,17 @@ def patch_llm_calls():
 
             if isinstance(messages, str):
                 prompt_len = len(messages)
-                msg_count = 1
                 last_msg = messages[:300]
             else:
                 prompt_len = sum(len(str(m.get("content", ""))) for m in messages)
-                msg_count = len(messages)
-                if messages:
-                    last_msg = str(messages[-1].get("content", ""))[:300]
-                else:
-                    last_msg = ""
+                last_msg = (
+                    str(messages[-1].get("content", ""))[:300] if messages else ""
+                )
 
-            print(f"\n{'*'*60}")
-            print(f">>> LLM CALL START")
+            print(f"\n{'#'*60}")
+            print(f">>> CREWAI LLM.call START")
             print(f"    Model: {model}")
-            print(f"    Messages: {msg_count}")
             print(f"    Prompt length: {prompt_len} chars")
-            print(f"    Last message preview:")
-            for line in last_msg.split("\n")[:5]:
-                print(f"      {line[:100]}")
             sys.stdout.flush()
 
             start = time.time()
@@ -187,15 +276,13 @@ def patch_llm_calls():
             response_text = str(result) if result else ""
             response_len = len(response_text)
 
-            print(f"<<< LLM CALL END [{duration:.2f}s]")
+            print(f"<<< CREWAI LLM.call END [{duration:.2f}s]")
             print(f"    Response length: {response_len} chars")
-            print(f"    Response preview:")
-            for line in response_text[:500].split("\n")[:5]:
-                print(f"      {line[:100]}")
-            print(f"{'*'*60}")
+            print(f"{'#'*60}")
             sys.stdout.flush()
 
-            profiler.log_llm(duration, prompt_len, response_len)
+            if not patched:
+                profiler.log_llm(duration, prompt_len, response_len)
             return result
 
         LLM.call = traced_call

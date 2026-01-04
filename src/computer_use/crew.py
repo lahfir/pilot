@@ -106,6 +106,8 @@ class ComputerUseCrew:
         self.execute_command_tool = self._initialize_system_tool()
 
         self.crew: Optional[Crew] = None
+        self._cached_agents: Optional[Dict[str, Agent]] = None
+        self._last_token_update: float = 0
 
     def _load_yaml_config(self, filename: str) -> Dict[str, Any]:
         config_path = Path(__file__).parent / "config" / filename
@@ -303,6 +305,13 @@ class ComputerUseCrew:
         if not hasattr(self, "crew") or not self.crew:
             return
 
+        import time
+
+        now = time.time()
+        if (now - self._last_token_update) < 5.0:
+            return
+        self._last_token_update = now
+
         try:
             metrics = self.crew.calculate_usage_metrics()
             if metrics.prompt_tokens > 0 or metrics.completion_tokens > 0:
@@ -399,6 +408,19 @@ class ComputerUseCrew:
             ),
         }
 
+    def _get_or_create_agents(self) -> Dict[str, Agent]:
+        """
+        Get cached agents or create new ones if not cached.
+        Reuses agents across task executions for better performance.
+        """
+        if self._cached_agents is None:
+            self._cached_agents = self._create_crewai_agents()
+        return self._cached_agents
+
+    def clear_agent_cache(self) -> None:
+        """Clear cached agents to force recreation on next task."""
+        self._cached_agents = None
+
     def _create_manager_task(self, task: str, context_str: str) -> Task:
         """Create the manager task for hierarchical delegation."""
         task_description = task
@@ -406,26 +428,18 @@ class ComputerUseCrew:
             task_description = f"{task}{context_str}"
 
         return Task(
-            description=f"""Complete this user request by delegating to the appropriate specialist agents:
+            description=f"""USER REQUEST: {task_description}
 
-USER REQUEST: {task_description}
+Understand what the user wants to achieve, then delegate to the appropriate specialist(s).
 
-Analyze the request and delegate to the right specialist(s):
-- Web Automation Specialist: Web browsing, data extraction, website interactions, AI image generation (has built-in generate_image tool), phone/SMS verification
-- Desktop Application Automation Expert: GUI apps, clicking, typing, file operations via UI, native OS dialogs, system settings and preferences (wallpaper, theme, sound, etc.)
-- System Command & Terminal Expert: Shell commands, CLI operations, file system via terminal (ls, cp, mv, etc.)
-- Code Automation Specialist: Writing code, debugging, refactoring, testing
-
-IMPORTANT:
-- You can delegate to multiple agents sequentially if the task requires it
-- Pass results from one agent to the next when there are dependencies
-- CRITICAL: Pass EXACT file paths and data between agents. If Agent A returns a path like '/private/tmp/downloads/file.jpg', pass that EXACT path to Agent B. DO NOT simplify or assume standard paths.
-- For browser tasks, delegate the ENTIRE browser portion as ONE task (to maintain session)
-- Report the final consolidated result after all delegations complete""",
-            expected_output="""A clear, complete response addressing the user's request. Include:
-1. Summary of what was accomplished
-2. Any data, files, or results produced
-3. Confirmation of successful completion or explanation of any issues encountered""",
+CRITICAL REMINDERS:
+- Pass EXACT file paths/URLs between agents (never paraphrase or simplify paths)
+- Browser tasks = ONE delegation (session continuity)
+- Verify outcomes, not just actions""",
+            expected_output="""Confirmation that the user's goal was achieved, with:
+- What was accomplished
+- Any outputs produced (files, data, results)
+- Evidence of completion""",
         )
 
     async def _run_hierarchical_crew(
@@ -439,7 +453,7 @@ IMPORTANT:
         )
         dashboard.set_agent("Task Orchestration Manager")
 
-        agents_dict = self._create_crewai_agents()
+        agents_dict = self._get_or_create_agents()
         manager_task = self._create_manager_task(task, context_str)
 
         specialist_agents = [

@@ -1,8 +1,11 @@
 """
 Platform-aware tool registry for dynamic tool serving.
+Uses parallel initialization for faster startup.
 """
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, List, Optional, Union
+
 from .screenshot_tool import ScreenshotTool
 from .input_tool import InputTool
 from .process_tool import ProcessTool
@@ -63,40 +66,75 @@ class PlatformToolRegistry:
 
     def _initialize_tools(self) -> Dict[str, ToolType]:
         """
-        Load appropriate tools for current platform.
+        Load appropriate tools for current platform using parallel initialization.
 
         Returns:
             Dictionary of initialized tools
         """
         tools: Dict[str, ToolType] = {}
 
-        if self.capabilities.accessibility_api_available:
-            screen_width, screen_height = self.capabilities.screen_resolution
-            if self.capabilities.os_type == "macos":
-                tools["accessibility"] = MacOSAccessibility(screen_width, screen_height)
-            elif self.capabilities.os_type == "windows":
-                tools["accessibility"] = WindowsAccessibility(
-                    screen_width, screen_height
-                )
-            elif self.capabilities.os_type == "linux":
-                tools["accessibility"] = LinuxAccessibility(screen_width, screen_height)
-
         use_gpu = (
             self.capabilities.gpu_available
             if hasattr(self.capabilities, "gpu_available")
             else None
         )
-        ocr_tool = OCRTool(use_gpu=use_gpu)
-        tools["ocr"] = ocr_tool
-        tools["template_matcher"] = TemplateMatcher()
-        tools["element_detector"] = ElementDetector(ocr_tool=ocr_tool)
+
+        def init_accessibility():
+            if not self.capabilities.accessibility_api_available:
+                return None
+            screen_width, screen_height = self.capabilities.screen_resolution
+            if self.capabilities.os_type == "macos":
+                return MacOSAccessibility(screen_width, screen_height)
+            elif self.capabilities.os_type == "windows":
+                return WindowsAccessibility(screen_width, screen_height)
+            elif self.capabilities.os_type == "linux":
+                return LinuxAccessibility(screen_width, screen_height)
+            return None
+
+        def init_ocr():
+            return OCRTool(use_gpu=use_gpu)
+
+        def init_screenshot():
+            return ScreenshotTool()
+
+        def init_input():
+            return InputTool(validator=self.coordinate_validator)
+
+        def init_process():
+            return ProcessTool()
+
+        def init_file():
+            return FileTool(safety_checker=self.safety_checker)
+
+        init_tasks = {
+            "accessibility": init_accessibility,
+            "ocr": init_ocr,
+            "screenshot": init_screenshot,
+            "input": init_input,
+            "process": init_process,
+            "file": init_file,
+        }
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {executor.submit(func): name for name, func in init_tasks.items()}
+            for future in as_completed(futures):
+                name = futures[future]
+                try:
+                    result = future.result()
+                    if result is not None:
+                        tools[name] = result
+                except Exception:
+                    pass
+
+        if "ocr" in tools:
+            ocr_tool = tools["ocr"]
+            tools["template_matcher"] = TemplateMatcher()
+            tools["element_detector"] = ElementDetector(ocr_tool=ocr_tool)
+        else:
+            tools["template_matcher"] = TemplateMatcher()
+            tools["element_detector"] = ElementDetector(ocr_tool=None)
 
         tools["vision_coordinates"] = VisionCoordinateTool()
-
-        tools["screenshot"] = ScreenshotTool()
-        tools["input"] = InputTool(validator=self.coordinate_validator)
-        tools["process"] = ProcessTool()
-        tools["file"] = FileTool(safety_checker=self.safety_checker)
 
         return tools
 

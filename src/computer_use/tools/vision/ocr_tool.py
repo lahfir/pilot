@@ -1,19 +1,35 @@
 """
 OCR tool for text detection with precise coordinates.
+Includes LRU caching for performance optimization.
 """
 
+import hashlib
 from typing import List, Optional, Tuple
 from PIL import Image
+
 from .ocr_factory import create_ocr_engine, get_all_available_ocr_engines
 from .ocr_protocol import OCREngine
 from ...schemas.ocr_result import OCRResult
+
+
+def _compute_image_hash(image: Image.Image) -> str:
+    """
+    Compute a fast hash of an image for cache keying.
+    Uses a sample of pixels for speed while maintaining uniqueness.
+    """
+    small = image.resize((32, 32), Image.Resampling.NEAREST)
+    data = small.tobytes()
+    return hashlib.md5(data).hexdigest()
 
 
 class OCRTool:
     """
     Text detection with precise bounding box coordinates.
     Uses platform-optimized OCR engines with automatic fallback.
+    Includes LRU caching based on image hash for repeated OCR calls.
     """
+
+    CACHE_SIZE = 32
 
     def __init__(self, use_gpu: Optional[bool] = None):
         """
@@ -25,6 +41,8 @@ class OCRTool:
         self.engine: Optional[OCREngine] = None
         self.fallback_engines: List[OCREngine] = []
         self._initialize_engine(use_gpu)
+        self._ocr_cache: dict = {}
+        self._cache_order: list = []
 
     def _initialize_engine(self, use_gpu: Optional[bool]) -> None:
         """
@@ -103,33 +121,67 @@ class OCRTool:
 
         return []
 
-    def extract_all_text(self, screenshot: Image.Image) -> List[OCRResult]:
-        """
-        Extract all text from screenshot with coordinates.
-        Automatically tries fallback engines if primary fails.
+    def _cache_get(self, key: str) -> Optional[List[OCRResult]]:
+        """Retrieve from LRU cache."""
+        return self._ocr_cache.get(key)
 
-        Args:
-            screenshot: PIL Image to analyze
+    def _cache_put(self, key: str, value: List[OCRResult]) -> None:
+        """Store in LRU cache with size limit."""
+        if key in self._ocr_cache:
+            self._cache_order.remove(key)
+        elif len(self._ocr_cache) >= self.CACHE_SIZE:
+            oldest = self._cache_order.pop(0)
+            del self._ocr_cache[oldest]
 
-        Returns:
-            List of all detected OCRResult objects with coordinates
-        """
+        self._ocr_cache[key] = value
+        self._cache_order.append(key)
+
+    def _perform_ocr(
+        self, screenshot: Image.Image, region: Optional[Tuple[int, int, int, int]]
+    ) -> List[OCRResult]:
+        """Perform OCR with engine fallback."""
         if not self.fallback_engines:
             return []
 
         for engine in self.fallback_engines:
             try:
-                results = engine.recognize_text(screenshot, region=None)
-
-                if not results or len(results) == 0:
-                    continue
-
-                extracted = [result for result in results if result.confidence > 0.3]
-
-                if extracted:
-                    return extracted
-
+                results = engine.recognize_text(screenshot, region=region)
+                if results and len(results) > 0:
+                    return results
             except Exception:
                 continue
-
         return []
+
+    def extract_all_text(
+        self, screenshot: Image.Image, use_cache: bool = True
+    ) -> List[OCRResult]:
+        """
+        Extract all text from screenshot with coordinates.
+        Uses LRU cache based on image hash for performance.
+
+        Args:
+            screenshot: PIL Image to analyze
+            use_cache: Whether to use cached results if available
+
+        Returns:
+            List of all detected OCRResult objects with coordinates
+        """
+        if use_cache:
+            img_hash = _compute_image_hash(screenshot)
+            cache_key = f"all:{img_hash}"
+            cached = self._cache_get(cache_key)
+            if cached is not None:
+                return cached
+
+        results = self._perform_ocr(screenshot, None)
+        extracted = [r for r in results if r.confidence > 0.3]
+
+        if use_cache and extracted:
+            self._cache_put(cache_key, extracted)
+
+        return extracted
+
+    def clear_cache(self) -> None:
+        """Clear the OCR result cache."""
+        self._ocr_cache.clear()
+        self._cache_order.clear()

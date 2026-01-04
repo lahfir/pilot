@@ -8,7 +8,7 @@ import time
 
 
 pyautogui.FAILSAFE = True
-pyautogui.PAUSE = 0.1
+pyautogui.PAUSE = 0.02
 
 
 class InputTool:
@@ -52,7 +52,7 @@ class InputTool:
                 raise ValueError(f"Invalid coordinates: {error}")
 
             if not self.validator.rate_limit_check():
-                time.sleep(0.1)
+                time.sleep(0.02)
 
         pyautogui.click(x=x, y=y, button=button, clicks=clicks)
         return True
@@ -148,17 +148,15 @@ class InputTool:
         import pyperclip
         import platform
 
-        # Copy to clipboard
         pyperclip.copy(text)
-        time.sleep(0.1)  # Brief pause for clipboard
+        time.sleep(0.05)
 
-        # Paste using platform-specific shortcut
-        if platform.system() == "Darwin":  # macOS
+        if platform.system() == "Darwin":
             pyautogui.hotkey("command", "v")
-        else:  # Windows/Linux
+        else:
             pyautogui.hotkey("ctrl", "v")
 
-        time.sleep(0.2)  # Brief pause for paste to complete
+        time.sleep(0.05)
         return True
 
     def press_key(self, key: str) -> bool:
