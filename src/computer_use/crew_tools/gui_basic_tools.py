@@ -386,13 +386,12 @@ class ReadScreenTextTool(InstrumentedBaseTool):
                     error="No text detected in captured area - window may be blank or not focused",
                 )
 
+            text_preview = full_text[:200] if len(full_text) > 200 else full_text
+            source = f"{app_name} window" if app_name else "screen"
+
             return ActionResult(
                 success=True,
-                action_taken=(
-                    f"Read text from {app_name} window"
-                    if app_name
-                    else "Read screen text"
-                ),
+                action_taken=f"Read text from {source}: {text_preview}",
                 method_used="ocr",
                 confidence=1.0,
                 data={"text": full_text[:500], "count": len(text_results)},

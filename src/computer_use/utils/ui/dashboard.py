@@ -117,6 +117,7 @@ class DashboardManager:
         self._last_thought_hash: Optional[int] = None
         self._header_printed = False
         self._current_agent_name: Optional[str] = None
+        self._current_status_message: str = ""
 
         # Tool history for explorer
         self._tool_history: List[Dict[str, Any]] = []
@@ -174,6 +175,7 @@ class DashboardManager:
         self._last_thought_hash = None
         self._header_printed = False
         self._current_agent_name = None
+        self._current_status_message = ""
         self._tool_history.clear()
 
     def start_dashboard(self) -> None:
@@ -187,11 +189,10 @@ class DashboardManager:
 
     def stop_dashboard(self, print_log: bool = True, cancelled: bool = False) -> None:
         """Stop the dashboard and optionally print summary."""
-        if not self._is_running:
-            return
-
         self._is_running = False
         self._stop_live_status()
+        self._stop_status_timer()
+        self._current_status_message = ""
 
         if self._task and self._task.active_agent_id and not cancelled:
             final_agent = self._task.agents.get(self._task.active_agent_id)
@@ -218,6 +219,10 @@ class DashboardManager:
             return
 
         agent_name = agent_name.strip()
+
+        manager_names = {"Manager", "Task Orchestration Manager"}
+        if agent_name in manager_names:
+            agent_name = "Manager"
 
         if agent_name == self._current_agent_name:
             return
@@ -335,30 +340,43 @@ class DashboardManager:
         if not self._task:
             return
 
+        tool = None
+
         for agent in self._task.agents.values():
             tool = agent.get_tool(tool_id)
             if tool:
-                output = (
-                    action_taken
-                    or data
-                    or (f"method={method_used}" if method_used else "success")
-                )
-                tool.complete(success, output, error)
+                break
 
-                if not success:
-                    self._task.failed_tools += 1
-
-                # Update history
-                for hist in self._tool_history:
-                    if hist["id"] == tool_id:
-                        hist["output"] = output
-                        hist["error"] = error
-                        hist["status"] = "success" if success else "error"
+        if not tool:
+            for agent in self._task.agents.values():
+                for t in reversed(agent.tools):
+                    if t.status == "pending":
+                        tool = t
                         break
+                if tool:
+                    break
 
-                # Print immediately
-                self._print_tool_complete(tool)
-                return
+        if not tool:
+            return
+
+        output = (
+            action_taken
+            or data
+            or (f"method={method_used}" if method_used else "success")
+        )
+        tool.complete(success, output, error)
+
+        if not success:
+            self._task.failed_tools += 1
+
+        for hist in self._tool_history:
+            if hist["id"] == tool.tool_id:
+                hist["output"] = output
+                hist["error"] = error
+                hist["status"] = "success" if success else "error"
+                break
+
+        self._print_tool_complete(tool)
 
     # ─────────────────────────────────────────────────────────────────────
     # Token usage
@@ -556,16 +574,20 @@ class DashboardManager:
     def _start_status_timer(self) -> None:
         """Start timer to refresh status bar every second."""
         self._stop_status_timer()
-        if self._is_running and self._status:
+        if not self._is_running or not self._status:
+            return
 
-            def refresh() -> None:
-                if self._status and self._is_running:
+        def refresh() -> None:
+            if self._status and self._is_running and self._task:
+                try:
                     self._status.update(self._build_status_line())
                     self._start_status_timer()
+                except Exception:
+                    pass
 
-            self._status_timer = threading.Timer(1.0, refresh)
-            self._status_timer.daemon = True
-            self._status_timer.start()
+        self._status_timer = threading.Timer(1.0, refresh)
+        self._status_timer.daemon = True
+        self._status_timer.start()
 
     def _stop_status_timer(self) -> None:
         """Stop the status refresh timer."""
@@ -575,7 +597,11 @@ class DashboardManager:
 
     def _show_status(self, message: str = "") -> None:
         """Show animated status with Rich spinner inline using fresh console."""
-        status_text = self._build_status_line()
+        if not self._is_running or not self._task:
+            return
+
+        self._current_status_message = message
+        status_text = self._build_status_line(message)
         if self._status:
             self._status.update(status_text)
         else:
@@ -595,7 +621,7 @@ class DashboardManager:
         """
         Build clean status line matching TASK header style.
 
-        Format: Agent Name  │  elapsed  │  tokens
+        Format: Agent Name  │  status  │  elapsed  │  tokens
         """
         if not self._task:
             return ""
@@ -610,13 +636,23 @@ class DashboardManager:
         tokens_out = self._task.token_output
 
         agent_name = self._current_agent_name or "Agent"
+        msg = message or self._current_status_message or ""
 
-        return (
-            f"  [{THEME['agent_active']}]{agent_name}[/]  │  "
-            f"[{THEME['muted']}]{time_str}[/]  │  "
-            f"[{THEME['muted']}]{tokens_in}[/][dim]↑[/] "
-            f"[{THEME['muted']}]{tokens_out}[/][dim]↓[/]"
-        )
+        if msg:
+            return (
+                f"  [{THEME['agent_active']}]{agent_name}[/]  │  "
+                f"[{THEME['muted']}]{msg}[/]  │  "
+                f"[{THEME['muted']}]{time_str}[/]  │  "
+                f"[{THEME['muted']}]{tokens_in}[/][dim]↑[/] "
+                f"[{THEME['muted']}]{tokens_out}[/][dim]↓[/]"
+            )
+        else:
+            return (
+                f"  [{THEME['agent_active']}]{agent_name}[/]  │  "
+                f"[{THEME['muted']}]{time_str}[/]  │  "
+                f"[{THEME['muted']}]{tokens_in}[/][dim]↑[/] "
+                f"[{THEME['muted']}]{tokens_out}[/][dim]↓[/]"
+            )
 
     def _print_status_bar(self) -> None:
         """Print inline status bar (matches TASK header style)."""

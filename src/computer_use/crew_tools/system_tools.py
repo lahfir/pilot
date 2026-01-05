@@ -24,14 +24,16 @@ class ExecuteShellCommandTool(InstrumentedBaseTool):
     """
 
     name: str = "execute_shell_command"
-    description: str = """Execute shell commands safely.
+    description: str = """Execute shell commands on the system. REQUIRED for any terminal/system operation.
     
-    Examples:
-    - List files: ls ~/Documents
-    - Copy file: cp ~/file.txt ~/backup/
-    - Find: find ~/Downloads -name "*.pdf"
+    Args:
+        command (str): The shell command to execute
+        explanation (str): Brief explanation of why this command is needed
     
-    Always provide explanation for safety validation."""
+    Returns:
+        Command output or error message
+    
+    Example: execute_shell_command(command="ls -la", explanation="List files")"""
     args_schema: type[BaseModel] = ExecuteCommandInput
 
     def _run(self, command: str, explanation: str) -> str:

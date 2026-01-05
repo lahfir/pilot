@@ -204,12 +204,13 @@ class ComputerUseCrew:
         return ""
 
     def _build_tool_map(self) -> Dict[str, Any]:
-        return {
+        tool_map = {
             "web_automation": self.web_automation_tool,
             "coding_automation": self.coding_automation_tool,
             **self.gui_tools,
             "execute_shell_command": self.execute_command_tool,
         }
+        return tool_map
 
     def _create_step_callback(self, agent_role: str):
         """
@@ -246,6 +247,7 @@ class ComputerUseCrew:
                     thought = thought.replace("Thought:", "").strip()
                     if self._is_valid_reasoning(thought):
                         dashboard.set_thinking(thought)
+                        dashboard._show_status("Processing...")
 
                 if (
                     is_manager
@@ -266,6 +268,7 @@ class ComputerUseCrew:
                     and hasattr(step, "tool_input")
                 ):
                     dashboard.log_tool_start(step.tool, step.tool_input)
+                    dashboard._show_status(f"Running {step.tool}...")
 
             self._update_token_usage()
 
@@ -419,7 +422,7 @@ class ComputerUseCrew:
             ),
             "system_agent": self._create_agent(
                 "system_agent", system_tools, self.llm, tool_map
-            ),
+            ),  # Tools: execute_shell_command
             "coding_agent": self._create_agent(
                 "coding_agent", coding_tools, self.llm, tool_map
             ),
@@ -459,21 +462,22 @@ CRITICAL REMINDERS:
 - Evidence of completion""",
         )
 
-    def _on_llm_call_started(self, source: Any, event: LLMCallStartedEvent) -> None:
-        """Handle LLM call start - show animated status."""
-        model = getattr(event, "model", "LLM") or "LLM"
-        model_name = str(model).split("/")[-1] if "/" in str(model) else str(model)
-        dashboard._show_status(f"Calling {model_name}...")
-
-    def _on_llm_call_completed(self, source: Any, event: LLMCallCompletedEvent) -> None:
-        """Handle LLM call completion - update status."""
-        dashboard._show_status("Processing response...")
-
     def _setup_llm_event_handlers(self) -> None:
         """Subscribe to CrewAI LLM events for real-time status updates."""
         try:
-            crewai_event_bus.on(LLMCallStartedEvent, self._on_llm_call_started)
-            crewai_event_bus.on(LLMCallCompletedEvent, self._on_llm_call_completed)
+
+            @crewai_event_bus.on(LLMCallStartedEvent)
+            def on_llm_start(source: Any, event: LLMCallStartedEvent) -> None:
+                model = getattr(event, "model", "LLM") or "LLM"
+                model_name = (
+                    str(model).split("/")[-1] if "/" in str(model) else str(model)
+                )
+                dashboard._show_status(f"Calling {model_name}...")
+
+            @crewai_event_bus.on(LLMCallCompletedEvent)
+            def on_llm_complete(source: Any, event: LLMCallCompletedEvent) -> None:
+                dashboard._show_status("Processing response...")
+
         except Exception:
             pass
 
@@ -486,7 +490,10 @@ CRITICAL REMINDERS:
             "Starting hierarchical execution",
             status="pending",
         )
-        dashboard.set_agent("Task Orchestration Manager")
+        dashboard.set_agent("Manager")
+        dashboard.set_thinking("Analyzing task and delegating...")
+
+        self._setup_llm_event_handlers()
 
         agents_dict = self._get_or_create_agents()
         manager_task = self._create_manager_task(task, context_str)
@@ -505,8 +512,6 @@ CRITICAL REMINDERS:
             manager_agent=agents_dict["manager"],
             verbose=dashboard.is_verbose,
         )
-
-        self._setup_llm_event_handlers()
 
         loop = asyncio.get_event_loop()
         try:
@@ -545,6 +550,7 @@ CRITICAL REMINDERS:
     ) -> TaskExecutionResult:
         """Execute a task using hierarchical crew delegation."""
         conversation_history = conversation_history or []
+        self.clear_agent_cache()
 
         try:
             dashboard.set_action("Analyzing", "Processing request...")
