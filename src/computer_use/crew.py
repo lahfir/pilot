@@ -188,7 +188,22 @@ class ComputerUseCrew:
         os_name = platform.system()
         platform_names = {"Darwin": "macOS", "Windows": "Windows", "Linux": "Linux"}
         platform_name = platform_names.get(os_name, os_name)
-        return f"\n\n🖥️  PLATFORM: {platform_name} {platform.release()} ({platform.machine()})\n"
+
+        import os
+        import getpass
+
+        username = getpass.getuser()
+        home_dir = os.path.expanduser("~")
+        cwd = os.getcwd()
+
+        return (
+            f"\n\n═══ SYSTEM CONTEXT ═══\n"
+            f"Platform: {platform_name} {platform.release()} ({platform.machine()})\n"
+            f"Username: {username}\n"
+            f"Home Directory: {home_dir}\n"
+            f"Working Directory: {cwd}\n"
+            f"═══════════════════════\n"
+        )
 
     def _extract_context_from_history(
         self, conversation_history: List[Dict[str, Any]]
@@ -226,6 +241,10 @@ class ComputerUseCrew:
             if self.is_cancelled():
                 raise KeyboardInterrupt("Task cancelled by user")
 
+            current_agent = dashboard.get_current_agent_name()
+            if is_manager and current_agent and current_agent != "Manager":
+                return
+
             dashboard.set_agent(display_name)
 
             steps = step_output if isinstance(step_output, list) else [step_output]
@@ -249,26 +268,26 @@ class ComputerUseCrew:
                         dashboard.set_thinking(thought)
                         dashboard._show_status("Processing...")
 
-                if (
-                    is_manager
-                    and hasattr(step, "tool")
-                    and step.tool == "Delegate work to coworker"
-                ):
-                    tool_input = getattr(step, "tool_input", {})
-                    if isinstance(tool_input, dict):
-                        agent_name = tool_input.get("coworker", "agent")
-                        task_desc = tool_input.get("task", "task")[:80]
-                        dashboard.set_thinking(
-                            f"Delegating to {agent_name}: {task_desc}"
-                        )
+                if is_manager and hasattr(step, "tool"):
+                    if step.tool == "Delegate work to coworker":
+                        tool_input = getattr(step, "tool_input", {})
+                        if isinstance(tool_input, dict):
+                            agent_name = tool_input.get("coworker", "agent")
+                            display_agent = AGENT_DISPLAY_NAMES.get(
+                                agent_name.strip(), agent_name
+                            )
+                            task_desc = tool_input.get("task", "task")[:100]
+                            dashboard.log_delegation(display_agent, task_desc)
 
                 if (
                     not is_manager
                     and hasattr(step, "tool")
                     and hasattr(step, "tool_input")
                 ):
-                    dashboard.log_tool_start(step.tool, step.tool_input)
-                    dashboard._show_status(f"Running {step.tool}...")
+                    tool_name = step.tool
+                    if tool_name and tool_name != "Delegate work to coworker":
+                        dashboard.log_tool_start(tool_name, step.tool_input)
+                        dashboard._show_status(f"Running {tool_name}...")
 
             self._update_token_usage()
 
@@ -289,6 +308,9 @@ class ComputerUseCrew:
 
         text_lower = text.lower()
 
+        if "delegate" in text_lower or "delegating" in text_lower:
+            return True
+
         invalid_starts = [
             ": true",
             ": false",
@@ -307,7 +329,6 @@ class ComputerUseCrew:
                 return False
 
         invalid_contains = [
-            "coworker",
             "use the following format",
             "begin!",
         ]
@@ -472,11 +493,35 @@ CRITICAL REMINDERS:
                 model_name = (
                     str(model).split("/")[-1] if "/" in str(model) else str(model)
                 )
-                dashboard._show_status(f"Calling {model_name}...")
+                agent = dashboard.get_current_agent_name() or "Agent"
+                if agent == "Manager":
+                    dashboard._show_status(f"Thinking • {model_name}")
+                else:
+                    dashboard._show_status(f"Reasoning • {model_name}")
 
             @crewai_event_bus.on(LLMCallCompletedEvent)
             def on_llm_complete(source: Any, event: LLMCallCompletedEvent) -> None:
-                dashboard._show_status("Processing response...")
+                agent = dashboard.get_current_agent_name() or "Agent"
+
+                response = getattr(event, "response", None)
+                if response:
+                    reasoning = None
+                    if isinstance(response, dict):
+                        reasoning = response.get("reasoning_content") or response.get(
+                            "thinking"
+                        )
+                    elif hasattr(response, "reasoning_content"):
+                        reasoning = response.reasoning_content
+                    elif hasattr(response, "thinking"):
+                        reasoning = response.thinking
+
+                    if reasoning and len(str(reasoning)) > 20:
+                        dashboard.set_thinking(f"💭 {str(reasoning)[:200]}...")
+
+                if agent == "Manager":
+                    dashboard._show_status("Deciding next action...")
+                else:
+                    dashboard._show_status("Executing...")
 
         except Exception:
             pass
@@ -526,6 +571,25 @@ CRITICAL REMINDERS:
                     prompt = getattr(tu, "prompt_tokens", 0)
                     completion = getattr(tu, "completion_tokens", 0)
                 dashboard.update_token_usage(prompt, completion)
+
+            tool_count = dashboard._task.total_tools if dashboard._task else 0
+            if tool_count == 0:
+                print_failure(
+                    "Warning: Agent claimed success without calling any tools"
+                )
+                result_str = str(result)
+                if len(result_str) > 100:
+                    result_str = (
+                        "⚠️ HALLUCINATION DETECTED: Agent claimed to complete task "
+                        "without executing any commands. The reported results are fabricated. "
+                        "Please retry the task."
+                    )
+                return TaskExecutionResult(
+                    task=task,
+                    result=result_str,
+                    overall_success=False,
+                    error="Agent hallucinated without calling tools",
+                )
 
             print_success("Execution completed")
             return TaskExecutionResult(

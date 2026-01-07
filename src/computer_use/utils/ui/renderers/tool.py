@@ -84,22 +84,124 @@ class ToolRenderer(BaseRenderer):
         """Render tool input parameters - full display, no truncation."""
         line = Text()
         line.append(f"      {ICONS['input']} ", style=THEME["input"])
-        line.append(format_dict_inline(input_data), style=THEME["text"])
+
+        cleaned_data = self._clean_input_data(input_data)
+        line.append(format_dict_inline(cleaned_data), style=THEME["text"])
         return line
 
+    def _clean_input_data(self, input_data: dict) -> dict:
+        """
+        Clean up input data for display.
+        Extracts actual values from JSON arrays/objects if malformed.
+        """
+        import json
+
+        cleaned = {}
+        for key, value in input_data.items():
+            if isinstance(value, str) and (
+                value.strip().startswith("[") or value.strip().startswith("{")
+            ):
+                try:
+                    parsed = json.loads(value.strip())
+                    if isinstance(parsed, list) and len(parsed) > 0:
+                        first = parsed[0]
+                        if isinstance(first, dict) and "command" in first:
+                            cleaned[key] = first["command"]
+                            continue
+                    elif isinstance(parsed, dict) and "command" in parsed:
+                        cleaned[key] = parsed["command"]
+                        continue
+                except json.JSONDecodeError:
+                    pass
+            cleaned[key] = value
+        return cleaned
+
     def _render_output(self, output_data) -> Text:
-        """Render tool output - full display."""
+        """
+        Render tool output as clean indented block.
+
+        Formats long outputs with proper line breaks and indentation.
+        """
         line = Text()
         line.append(f"      {ICONS['output']} ", style=THEME["output"])
 
         if isinstance(output_data, str):
-            line.append(output_data, style=THEME["text"])
+            formatted = self._format_output_string(output_data)
+            line.append(formatted, style=THEME["text"])
         elif isinstance(output_data, dict):
-            line.append(format_dict_inline(output_data), style=THEME["text"])
+            formatted = self._format_output_dict(output_data)
+            line.append(formatted, style=THEME["text"])
         else:
             line.append(str(output_data), style=THEME["text"])
 
         return line
+
+    def _format_output_string(self, output: str) -> str:
+        """
+        Format string output with proper line breaks and indentation.
+
+        Handles multi-line outputs by indenting continuation lines.
+        """
+        if not output:
+            return "success"
+
+        output = output.strip()
+        lines = [line for line in output.split("\n") if line.strip()]
+
+        if not lines:
+            return "success"
+
+        if len(lines) == 1 and len(lines[0]) <= 80:
+            return lines[0]
+
+        if len(lines) == 1:
+            return lines[0][:77] + "..."
+
+        first_line = lines[0]
+        indent = "\n         "
+        formatted = first_line
+
+        for line in lines[1:8]:
+            formatted += f"{indent}{line.strip()}"
+
+        if len(lines) > 8:
+            formatted += f"{indent}... ({len(lines) - 8} more lines)"
+
+        return formatted
+
+    def _format_output_dict(self, output: dict) -> str:
+        """
+        Format dictionary output as clean key-value pairs.
+
+        Groups and summarizes complex nested data.
+        """
+        if not output:
+            return "success"
+
+        parts = []
+        indent = "         "
+
+        for key, value in list(output.items())[:5]:
+            if isinstance(value, list):
+                parts.append(f"{key}: {len(value)} items")
+            elif isinstance(value, dict):
+                parts.append(f"{key}: {{...}}")
+            elif isinstance(value, str) and len(str(value)) > 50:
+                parts.append(f"{key}: {str(value)[:47]}...")
+            else:
+                parts.append(f"{key}: {value}")
+
+        if len(output) > 5:
+            parts.append(f"... +{len(output) - 5} more")
+
+        if len(parts) == 1:
+            return parts[0]
+
+        result = parts[0]
+        for part in parts[1:]:
+            result += f"\n{indent}{part}"
+
+        return result
 
     def _render_error(self, error: str) -> Text:
         """Render tool error - full display."""

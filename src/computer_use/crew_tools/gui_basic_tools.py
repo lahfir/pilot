@@ -1107,6 +1107,10 @@ class RequestHumanInputTool(InstrumentedBaseTool):
 
         from ..utils.ui import THEME, console
 
+        if dashboard.get_current_agent_name() == "Manager":
+            dashboard.set_agent("GUI Agent")
+            dashboard.set_thinking(f"Requesting human input: {question[:60]}...")
+
         was_running = dashboard._is_running
         if was_running:
             dashboard.stop_dashboard()

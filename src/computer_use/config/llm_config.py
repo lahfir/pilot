@@ -122,11 +122,25 @@ class LLMConfig:
                 f"Please set the appropriate environment variable in your .env file."
             )
 
-        cache_key = f"{provider}:{model_name}"
+        reasoning_effort = os.getenv("REASONING_EFFORT")
+        if reasoning_effort and reasoning_effort not in [
+            "none",
+            "low",
+            "medium",
+            "high",
+        ]:
+            reasoning_effort = None
+
+        cache_key = f"{provider}:{model_name}:{reasoning_effort or 'default'}"
         if cache_key in LLMConfig._llm_cache:
             return LLMConfig._llm_cache[cache_key]
 
-        llm = LLM(model=model_name, api_key=api_key)
+        llm_kwargs = {"model": model_name, "api_key": api_key}
+
+        if reasoning_effort:
+            llm_kwargs["reasoning_effort"] = reasoning_effort
+
+        llm = LLM(**llm_kwargs)
         LLMConfig._llm_cache[cache_key] = llm
         return llm
 

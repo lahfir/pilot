@@ -86,6 +86,10 @@ class WebAutomationTool(InstrumentedBaseTool):
         """
         from ..utils.ui import dashboard, ActionType
 
+        if dashboard.get_current_agent_name() == "Manager":
+            dashboard.set_agent("Browser Agent")
+            dashboard.set_thinking(f"Web automation: {task[:80]}...")
+
         dashboard.add_log_entry(
             ActionType.NAVIGATE, f"WebAutomationTool executing: {task}"
         )

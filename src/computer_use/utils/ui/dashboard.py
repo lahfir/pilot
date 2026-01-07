@@ -190,9 +190,11 @@ class DashboardManager:
     def stop_dashboard(self, print_log: bool = True, cancelled: bool = False) -> None:
         """Stop the dashboard and optionally print summary."""
         self._is_running = False
-        self._stop_live_status()
         self._stop_status_timer()
+        self._stop_live_status()
         self._current_status_message = ""
+        sys.stdout.write("\r\x1b[2K")
+        sys.stdout.flush()
 
         if self._task and self._task.active_agent_id and not cancelled:
             final_agent = self._task.agents.get(self._task.active_agent_id)
@@ -213,6 +215,10 @@ class DashboardManager:
     # Agent API
     # ─────────────────────────────────────────────────────────────────────
 
+    def get_current_agent_name(self) -> str:
+        """Get the name of the currently active agent."""
+        return self._current_agent_name or ""
+
     def set_agent(self, agent_name: str) -> None:
         """Set the active agent. Only prints header once per agent."""
         if not self._task:
@@ -227,12 +233,17 @@ class DashboardManager:
         if agent_name == self._current_agent_name:
             return
 
+        was_manager = self._current_agent_name == "Manager"
+
         if self._current_agent_name and self._task.active_agent_id:
             prev_agent = self._task.agents.get(self._task.active_agent_id)
             if prev_agent:
+                if was_manager and agent_name != "Manager":
+                    self._print_delegation(agent_name)
                 self._print_agent_summary(prev_agent)
 
         self._current_agent_name = agent_name
+        self._last_thought_hash = None
         agent = self._task.set_active_agent(agent_name)
 
         if agent.agent_id not in self._printed_agents:
@@ -277,6 +288,27 @@ class DashboardManager:
         """Clear the current action."""
         pass
 
+    def log_delegation(self, agent_name: str, task_summary: str) -> None:
+        """
+        Log Manager's delegation to a specialist agent.
+
+        Prints a clear delegation line before agent switch.
+        """
+        if not self._task:
+            return
+
+        line = Text()
+        line.append("  → ", style=f"bold {THEME['agent_active']}")
+        line.append("Delegating to ", style=THEME["muted"])
+        line.append(agent_name, style=f"bold {THEME['agent_active']}")
+        line.append(": ", style=THEME["muted"])
+
+        if len(task_summary) > 80:
+            task_summary = task_summary[:77] + "..."
+        line.append(task_summary, style=THEME["text"])
+
+        self._print(line)
+
     # ─────────────────────────────────────────────────────────────────────
     # Tool API
     # ─────────────────────────────────────────────────────────────────────
@@ -284,6 +316,9 @@ class DashboardManager:
     def log_tool_start(self, tool_name: str, tool_input: Any) -> str:
         """Log tool execution start - prints immediately."""
         if not self._task or not self._task.active_agent_id:
+            return ""
+
+        if self._current_agent_name == "Manager":
             return ""
 
         agent = self._task.agents.get(self._task.active_agent_id)
@@ -409,6 +444,14 @@ class DashboardManager:
         self._print_raw(f"[{THEME['border']}]{'═' * 70}[/]")
         self.console.print()
         self._flush()
+
+    def _print_delegation(self, target_agent: str) -> None:
+        """Print delegation message when Manager delegates to another agent."""
+        line = Text()
+        line.append("\n  → ", style=f"bold {THEME['agent_active']}")
+        line.append("Delegating to ", style=THEME["muted"])
+        line.append(target_agent, style=f"bold {THEME['agent_active']}")
+        self._print(line)
 
     def _print_agent_summary(self, agent: AgentState) -> None:
         """
@@ -539,7 +582,7 @@ class DashboardManager:
           ✓ tool_name (5.00s)
               ← output
         """
-        self.console.print()
+        self._stop_live_status()
         header = self._tool_renderer._render_tool_header(tool)
         self._print(header)
 
@@ -568,8 +611,14 @@ class DashboardManager:
         """Stop and clear any active status spinner."""
         self._stop_status_timer()
         if self._status:
-            self._status.stop()
+            try:
+                self._status.stop()
+            except Exception:
+                pass
             self._status = None
+        self._current_status_message = ""
+        sys.stdout.write("\r\x1b[2K")
+        sys.stdout.flush()
 
     def _start_status_timer(self) -> None:
         """Start timer to refresh status bar every second."""
@@ -578,10 +627,13 @@ class DashboardManager:
             return
 
         def refresh() -> None:
-            if self._status and self._is_running and self._task:
+            if not self._is_running:
+                return
+            if self._status and self._task:
                 try:
                     self._status.update(self._build_status_line())
-                    self._start_status_timer()
+                    if self._is_running:
+                        self._start_status_timer()
                 except Exception:
                     pass
 
@@ -621,7 +673,7 @@ class DashboardManager:
         """
         Build clean status line matching TASK header style.
 
-        Format: Agent Name  │  status  │  elapsed  │  tokens
+        Format: Agent Name  │  status  │  elapsed  │  tokens  •  esc to interrupt
         """
         if not self._task:
             return ""
@@ -638,21 +690,19 @@ class DashboardManager:
         agent_name = self._current_agent_name or "Agent"
         msg = message or self._current_status_message or ""
 
+        parts = [f"  [{THEME['agent_active']}]{agent_name}[/]"]
+
         if msg:
-            return (
-                f"  [{THEME['agent_active']}]{agent_name}[/]  │  "
-                f"[{THEME['muted']}]{msg}[/]  │  "
-                f"[{THEME['muted']}]{time_str}[/]  │  "
-                f"[{THEME['muted']}]{tokens_in}[/][dim]↑[/] "
-                f"[{THEME['muted']}]{tokens_out}[/][dim]↓[/]"
-            )
-        else:
-            return (
-                f"  [{THEME['agent_active']}]{agent_name}[/]  │  "
-                f"[{THEME['muted']}]{time_str}[/]  │  "
-                f"[{THEME['muted']}]{tokens_in}[/][dim]↑[/] "
-                f"[{THEME['muted']}]{tokens_out}[/][dim]↓[/]"
-            )
+            parts.append(f"[{THEME['muted']}]{msg}[/]")
+
+        parts.append(f"[{THEME['muted']}]{time_str}[/]")
+        parts.append(
+            f"[{THEME['muted']}]{tokens_in}[/][dim]↑[/] "
+            f"[{THEME['muted']}]{tokens_out}[/][dim]↓[/]"
+        )
+        parts.append("[dim]esc to cancel[/]")
+
+        return "  │  ".join(parts)
 
     def _print_status_bar(self) -> None:
         """Print inline status bar (matches TASK header style)."""

@@ -17,9 +17,15 @@ class InstrumentedBaseTool(BaseTool):
                 tool_name = getattr(self, "name", None)
 
                 try:
-                    tool_id = dashboard.get_pending_tool_id(tool_name)
-                    if not tool_id:
-                        tool_id = dashboard.log_tool_start(tool_name, kwargs)
+                    current_agent = dashboard.get_current_agent_name()
+                    is_manager = current_agent == "Manager"
+
+                    if is_manager:
+                        tool_id = None
+                    else:
+                        tool_id = dashboard.get_pending_tool_id(tool_name)
+                        if not tool_id:
+                            tool_id = dashboard.log_tool_start(tool_name, kwargs)
                 except Exception:
                     tool_id = None
 

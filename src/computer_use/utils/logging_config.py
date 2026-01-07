@@ -24,6 +24,9 @@ NOISY_LIBRARIES = [
     "litellm",
     "crewai",
     "grpc",
+    "openai",
+    "openai._base_client",
+    "root",
 ]
 
 BROWSER_LOGGERS = [
@@ -57,6 +60,34 @@ class GoogleApiKeyFilter(logging.Filter):
         return True
 
 
+def _patch_crewai_printer() -> None:
+    """
+    Patch CrewAI's Printer class to suppress noisy debug messages.
+    """
+    try:
+        from crewai.utilities.printer import Printer
+
+        original_print = Printer.print
+
+        @staticmethod
+        def patched_print(
+            content,
+            color=None,
+            sep=" ",
+            end="\n",
+            file=None,
+            flush=False,
+        ) -> None:
+            if isinstance(content, str):
+                if "Repaired JSON" in content:
+                    return
+            original_print(content, color, sep, end, file, flush)
+
+        Printer.print = patched_print
+    except ImportError:
+        pass
+
+
 def setup_logging(verbose: bool = False) -> None:
     """
     Configure logging levels to suppress verbose output from third-party libraries.
@@ -65,6 +96,7 @@ def setup_logging(verbose: bool = False) -> None:
     Args:
         verbose: If True, allow browser-use logs to print. If False, silence them.
     """
+    _patch_crewai_printer()
     warnings.filterwarnings("ignore")
     # Suppress Google API key duplicate warnings specifically
     warnings.filterwarnings(
@@ -94,6 +126,8 @@ def setup_logging(verbose: bool = False) -> None:
 
     root_logger = logging.getLogger()
     root_logger.addFilter(api_key_filter)
+    if not verbose:
+        root_logger.setLevel(logging.WARNING)
 
     browser_level = logging.INFO if verbose else logging.CRITICAL
 
