@@ -24,62 +24,53 @@ Computer Use Agent enables AI to control your computer like a human would. Descr
 ## How It Works
 
 ```mermaid
-%%{init: {'theme': 'neutral', 'themeVariables': { 'fontSize': '14px' }}}%%
 flowchart TB
-    subgraph Input
-        A([User Request])
+    A([User Request]) --> B[Manager Agent]
+    B --> M1[Analyze] --> M2[Plan] --> M3[Delegate]
+    M3 --> Agents
+
+    subgraph Agents [Specialist Agents]
+        direction LR
+
+        subgraph Browser [Browser Agent]
+            B1[paste_text]
+            B2[type_to_focused]
+            B3[get_phone_number]
+            B4[get_verify_code]
+            B5[request_human_help]
+            B6[generate_image]
+            B7[delegate_to_gui]
+        end
+
+        subgraph GUI [GUI Agent]
+            direction LR
+            subgraph GUI_Row1 [" "]
+                G1[open_application]
+                G2[get_accessible_elements]
+                G3[click_element]
+                G4[type_text]
+                G5[read_screen_text]
+                G6[scroll]
+            end
+            subgraph GUI_Row2 [" "]
+                G7[get_window_image]
+                G8[check_app_running]
+                G9[list_running_apps]
+                G10[request_human_input]
+                G11[find_application]
+            end
+        end
+
+        subgraph System [System Agent]
+            S1[execute_shell_command]
+        end
+
+        subgraph Coding [Coding Agent]
+            C1[coding_automation]
+        end
     end
 
-    subgraph Orchestration
-        B[Manager Agent]
-        B1[Analyze] --> B2[Plan] --> B3[Delegate]
-    end
-
-    subgraph BrowserAgent [Browser Agent]
-        BA9[paste_text]
-        BA10[type_to_focused]
-        BA11[get_phone_number]
-        BA12[get_verify_code]
-        BA13[request_human_help]
-        BA14[generate_image]
-        BA15[delegate_to_gui]
-    end
-
-    subgraph GUIAgent [GUI Agent]
-        GA1[open_application]
-        GA2[get_accessible_elements]
-        GA3[click_element]
-        GA4[type_text]
-        GA5[read_screen_text]
-        GA6[scroll]
-        GA7[get_window_image]
-        GA8[check_app_running]
-        GA9[list_running_apps]
-        GA10[request_human_input]
-        GA11[find_application]
-    end
-
-    subgraph SystemAgent [System Agent]
-        SA1[execute_shell_command]
-    end
-
-    subgraph CodingAgent [Coding Agent]
-        CA1[coding_automation]
-    end
-
-    subgraph Output
-        Z([Aggregated Results])
-    end
-
-    A --> B
-    B3 --> BrowserAgent
-    B3 --> GUIAgent
-    B3 --> SystemAgent
-    B3 --> CodingAgent
-    BrowserAgent --> Z
-    GUIAgent --> Z
-    SystemAgent --> Z
-    CodingAgent --> Z
+    Agents --> Z([Results])
 ```
 
 1. **Manager Agent** receives your request and breaks it into subtasks
