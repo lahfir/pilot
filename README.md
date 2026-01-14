@@ -17,6 +17,7 @@ Computer Use Agent enables AI to control your computer like a human would. Descr
 - **Browser automation** — Web navigation, downloads, forms, phone verification via Browser-Use
 - **Desktop GUI automation** — Control any application with multi-tier accuracy (accessibility APIs → OCR → vision AI)
 - **System commands** — Safe shell execution with validation and confirmation prompts
+- **Code automation** — Write, refactor, and debug code via Cline AI integration
 - **Voice input** — Optional speech-to-text via Deepgram (100+ languages)
 - **Phone verification** — Optional Twilio SMS integration for account signups
 
@@ -30,14 +31,14 @@ Manager Agent (LLM-powered task decomposition)
     ├─ Creates execution plan
     └─ Delegates to specialists
     ↓
-┌──────────────┬──────────────┬──────────────┐
-│ Browser Agent│  GUI Agent   │ System Agent │
-│  (web tasks) │(desktop apps)│  (terminal)  │
-└──────┬───────┴──────┬───────┴──────┬───────┘
-       │              │              │
-       └──────────────┴──────────────┘
-                      ↓
-              Aggregated Results
+┌──────────────┬──────────────┬──────────────┬──────────────┐
+│ Browser Agent│  GUI Agent   │ System Agent │ Coding Agent │
+│  (web tasks) │(desktop apps)│  (terminal)  │ (code tasks) │
+└──────┬───────┴──────┬───────┴──────┬───────┴──────┬───────┘
+       │              │              │              │
+       └──────────────┴──────────────┴──────────────┘
+                              ↓
+                      Aggregated Results
 ```
 
 1. **Manager Agent** receives your request and breaks it into subtasks
@@ -46,6 +47,57 @@ Manager Agent (LLM-powered task decomposition)
 4. **Multi-tier accuracy** ensures reliable element detection across platforms
 
 For detailed architecture, see [docs/ARCHITECTURE_OVERVIEW.md](docs/ARCHITECTURE_OVERVIEW.md) and [docs/CREWAI_ARCHITECTURE.md](docs/CREWAI_ARCHITECTURE.md).
+
+## Agents
+
+| Agent       | Role                                  | Description                                                                |
+| ----------- | ------------------------------------- | -------------------------------------------------------------------------- |
+| **Manager** | Task Orchestration Manager            | Analyzes requests, decomposes into subtasks, delegates to specialists      |
+| **Browser** | Web Automation Specialist             | Web navigation, downloads, forms, phone verification via Browser-Use       |
+| **GUI**     | Desktop Application Automation Expert | Native app control with multi-tier accuracy (accessibility → OCR → vision) |
+| **System**  | System Command & Terminal Expert      | Shell commands, file operations, process management                        |
+| **Coding**  | Code Automation Specialist            | Code writing, refactoring, bug fixes via Cline AI                          |
+
+## Tools
+
+### GUI Tools
+
+| Tool                      | Description                                        |
+| ------------------------- | -------------------------------------------------- |
+| `open_application`        | Launch and focus desktop applications              |
+| `get_accessible_elements` | Get interactive UI elements via accessibility APIs |
+| `click_element`           | Click elements using multi-tier detection          |
+| `type_text`               | Keyboard input, shortcuts, and text entry          |
+| `read_screen_text`        | Extract text from screen via OCR                   |
+| `scroll`                  | Scroll content in applications                     |
+| `get_window_image`        | Capture specific window as image                   |
+| `check_app_running`       | Check if an application is running                 |
+| `list_running_apps`       | List all running applications                      |
+| `request_human_input`     | Escalate to human for CAPTCHAs, 2FA, or decisions  |
+
+### Web Tools
+
+| Tool             | Description                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------ |
+| `web_automation` | Full browser automation via Browser-Use (navigation, forms, downloads, verification) |
+
+### System Tools
+
+| Tool                    | Description                                  |
+| ----------------------- | -------------------------------------------- |
+| `execute_shell_command` | Safe shell command execution with validation |
+
+### Coding Tools
+
+| Tool                | Description                                       |
+| ------------------- | ------------------------------------------------- |
+| `coding_automation` | Autonomous code writing/modification via Cline AI |
+
+### Capability Tools
+
+| Tool               | Description                                    |
+| ------------------ | ---------------------------------------------- |
+| `find_application` | LLM-based app selection for a given capability |
 
 ## Requirements
 
@@ -210,11 +262,20 @@ Move all PDF files from Downloads to Documents
 List all Python files in current directory
 ```
 
+### Coding Tasks
+
+```
+Create a snake game in Python using pygame
+Write unit tests for the user authentication module
+Refactor the database queries to use async/await
+```
+
 ### Multi-step Workflows
 
 ```
 Download census data from census.gov and create chart in Excel
 Research fashion trends online and create summary in TextEdit
+Scrape product prices from Amazon and generate a comparison report
 ```
 
 ## Safety Model
@@ -336,6 +397,7 @@ Built on these excellent open-source projects:
 
 - [CrewAI](https://www.crewai.com/) — Multi-agent orchestration framework
 - [Browser-Use](https://browser-use.com/) — Web automation engine
+- [Cline](https://github.com/cline/cline) — Autonomous AI coding agent
 - [LangChain](https://www.langchain.com/) — LLM integration framework
 - [EasyOCR](https://github.com/JaidedAI/EasyOCR) — OCR with 80+ language support
 - [OpenCV](https://opencv.org/) — Computer vision
