@@ -24,23 +24,58 @@ Computer Use Agent enables AI to control your computer like a human would. Descr
 ## How It Works
 
 ```mermaid
-flowchart TD
-    A[User Request] --> B
+flowchart LR
+    %% Styling
+    classDef input fill:#e1f5fe,stroke:#01579b,stroke-width:2px,rx:10;
+    classDef manager fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,rx:10;
+    classDef agent fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,rx:10;
+    classDef tool fill:#f3e5f5,stroke:#7b1fa2,stroke-width:1px,stroke-dasharray:3 3,rx:5;
+    classDef output fill:#e1f5fe,stroke:#01579b,stroke-width:2px,rx:10;
 
-    subgraph orchestration [Manager Agent]
-        B[Analyze Intent] --> C[Create Execution Plan] --> D[Delegate to Specialists]
+    %% Main Flow
+    User([User Request]):::input --> Manager
+
+    subgraph Manager ["Manager Agent"]
+        direction TB
+        M1[Analyze]:::manager --> M2[Plan]:::manager --> M3[Delegate]:::manager
     end
 
-    D --> E & F & G & H
+    M3 --> BA & GA & SA & CA
 
-    subgraph specialists [Specialist Agents]
-        E[Browser Agent]
-        F[GUI Agent]
-        G[System Agent]
-        H[Coding Agent]
+    %% Agents & Tools
+    subgraph Browser ["Browser Agent"]
+        direction TB
+        BA[Web Specialist]:::agent
+        BT1[web_automation]:::tool
+        BA --- BT1
     end
 
-    E & F & G & H --> I[Aggregated Results]
+    subgraph GUI ["GUI Agent"]
+        direction TB
+        GA[Desktop Specialist]:::agent
+        GT1[open_app]:::tool
+        GT2[click_element]:::tool
+        GT3[type_text]:::tool
+        GT4[read_screen]:::tool
+        GA --- GT1 & GT2 & GT3 & GT4
+    end
+
+    subgraph System ["System Agent"]
+        direction TB
+        SA[System Specialist]:::agent
+        ST1[shell_command]:::tool
+        SA --- ST1
+    end
+
+    subgraph Coding ["Coding Agent"]
+        direction TB
+        CA[Code Specialist]:::agent
+        CT1[coding_automation]:::tool
+        CA --- CT1
+    end
+
+    %% Output
+    BA & GA & SA & CA --> Result([Aggregated Results]):::output
 ```
 
 1. **Manager Agent** receives your request and breaks it into subtasks
