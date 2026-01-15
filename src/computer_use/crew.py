@@ -113,6 +113,7 @@ class ComputerUseCrew:
         self.crew: Optional[Crew] = None
         self._cached_agents: Optional[Dict[str, Agent]] = None
         self._last_token_update: float = 0
+        self._llm_handlers_registered: bool = False
 
     def _load_yaml_config(self, filename: str) -> Dict[str, Any]:
         config_path = Path(__file__).parent / "config" / filename
@@ -484,6 +485,11 @@ CRITICAL REMINDERS:
 
     def _setup_llm_event_handlers(self) -> None:
         """Subscribe to CrewAI LLM events for real-time status updates."""
+        if self._llm_handlers_registered:
+            return
+
+        self._llm_handlers_registered = True
+
         try:
 
             @crewai_event_bus.on(LLMCallStartedEvent)
@@ -571,30 +577,10 @@ CRITICAL REMINDERS:
                     completion = getattr(tu, "completion_tokens", 0)
                 dashboard.update_token_usage(prompt, completion)
 
-            tool_count = dashboard._task.total_tools if dashboard._task else 0
-            external_work_done = dashboard.has_external_work_executed()
-
-            if tool_count == 0 and not external_work_done:
-                print_failure(
-                    "Warning: Agent claimed success without calling any tools"
-                )
-                result_str = str(result)
-                if len(result_str) > 100:
-                    result_str = (
-                        "⚠️ HALLUCINATION DETECTED: Agent claimed to complete task "
-                        "without executing any commands. The reported results are fabricated. "
-                        "Please retry the task."
-                    )
-                return TaskExecutionResult(
-                    task=task,
-                    result=result_str,
-                    overall_success=False,
-                    error="Agent hallucinated without calling tools",
-                )
-
+            result_str = str(result)
             print_success("Execution completed")
             return TaskExecutionResult(
-                task=task, result=str(result), overall_success=True
+                task=task, result=result_str, overall_success=True
             )
         except Exception as exc:
             if self._cancellation_requested:

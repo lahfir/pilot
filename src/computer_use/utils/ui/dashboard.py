@@ -126,6 +126,7 @@ class DashboardManager:
         self._status: Optional[Status] = None
         self._current_status_text: str = ""
         self._status_timer: Optional[threading.Timer] = None
+        self._status_lock = threading.Lock()
 
     def _flush(self) -> None:
         """Force flush output to terminal immediately."""
@@ -134,17 +135,25 @@ class DashboardManager:
 
     def _print(self, text: Text) -> None:
         """Print with immediate flush, pausing status spinner."""
-        if self._status:
-            self._status.stop()
-            self._status = None
+        with self._status_lock:
+            if self._status:
+                try:
+                    self._status.stop()
+                except Exception:
+                    pass
+                self._status = None
         self.console.print(text)
         self._flush()
 
     def _print_raw(self, content: str) -> None:
         """Print raw string with immediate flush, pausing status spinner."""
-        if self._status:
-            self._status.stop()
-            self._status = None
+        with self._status_lock:
+            if self._status:
+                try:
+                    self._status.stop()
+                except Exception:
+                    pass
+                self._status = None
         self.console.print(content)
         self._flush()
 
@@ -168,8 +177,6 @@ class DashboardManager:
         self._stop_status_timer()
         self._stop_live_status()
         self._is_running = False
-        sys.stdout.write("\r\x1b[2K")
-        sys.stdout.flush()
 
         self._task = TaskState(
             task_id=str(uuid.uuid4()),
@@ -199,8 +206,6 @@ class DashboardManager:
         self._stop_status_timer()
         self._stop_live_status()
         self._current_status_message = ""
-        sys.stdout.write("\r\x1b[2K")
-        sys.stdout.flush()
 
         if self._task and self._task.active_agent_id and not cancelled:
             final_agent = self._task.agents.get(self._task.active_agent_id)
@@ -482,6 +487,8 @@ class DashboardManager:
         └─ Agent Name ─────────────── COMPLETE ─┘
         │ Duration: 8s │ Tools: 3/3              │
         """
+        self.console.print()
+
         duration = agent.duration
         if duration < 60:
             duration_str = f"{int(duration)}s"
@@ -522,6 +529,7 @@ class DashboardManager:
         header.append(status_part, style=f"bold {THEME['agent_active']}")
 
         self._print(header)
+        self.console.print()
 
     def _print_thought_full(self, thought: str) -> None:
         """Print FULL thinking/reasoning using ThinkingRenderer."""
@@ -646,32 +654,32 @@ class DashboardManager:
     def _stop_live_status(self) -> None:
         """Stop and clear any active status spinner."""
         self._stop_status_timer()
-        if self._status:
-            try:
-                self._status.stop()
-            except Exception:
-                pass
-            self._status = None
-        self._current_status_message = ""
-        sys.stdout.write("\r\x1b[2K")
-        sys.stdout.flush()
+        with self._status_lock:
+            if self._status:
+                try:
+                    self._status.stop()
+                except Exception:
+                    pass
+                self._status = None
+            self._current_status_message = ""
 
     def _start_status_timer(self) -> None:
         """Start timer to refresh status bar every second."""
         self._stop_status_timer()
-        if not self._is_running or not self._status:
+        if not self._is_running:
             return
 
         def refresh() -> None:
             if not self._is_running:
                 return
-            if self._status and self._task:
-                try:
-                    self._status.update(self._build_status_line())
-                    if self._is_running:
-                        self._start_status_timer()
-                except Exception:
-                    pass
+            with self._status_lock:
+                if self._status and self._task:
+                    try:
+                        self._status.update(self._build_status_line())
+                    except Exception:
+                        pass
+            if self._is_running:
+                self._start_status_timer()
 
         self._status_timer = threading.Timer(1.0, refresh)
         self._status_timer.daemon = True
@@ -684,26 +692,30 @@ class DashboardManager:
             self._status_timer = None
 
     def _show_status(self, message: str = "") -> None:
-        """Show animated status with Rich spinner inline using fresh console."""
+        """Show animated status with Rich spinner inline using dedicated console."""
         if not self._is_running or not self._task:
             return
 
         self._current_status_message = message
         status_text = self._build_status_line(message)
-        if self._status:
-            self._status.update(status_text)
-        else:
-            self.console.print()
-            fresh_console = Console(force_terminal=True)
-            self._status = Status(
-                status_text,
-                spinner="dots",
-                spinner_style=THEME["agent_active"],
-                console=fresh_console,
-                refresh_per_second=4,
-            )
-            self._status.start()
-            self._start_status_timer()
+
+        with self._status_lock:
+            if self._status:
+                try:
+                    self._status.update(status_text)
+                except Exception:
+                    pass
+            else:
+                status_console = Console(force_terminal=True)
+                self._status = Status(
+                    status_text,
+                    spinner="dots",
+                    spinner_style=THEME["agent_active"],
+                    console=status_console,
+                    refresh_per_second=4,
+                )
+                self._status.start()
+                self._start_status_timer()
 
     def _build_status_line(self, message: str = "") -> str:
         """

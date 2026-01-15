@@ -25,52 +25,113 @@ Computer Use Agent enables AI to control your computer like a human would. Descr
 
 ```mermaid
 flowchart TB
-    A([User Request]) --> B[Manager Agent]
-    B --> M1[Analyze] --> M2[Plan] --> M3[Delegate]
-    M3 --> Agents
 
-    subgraph Agents [Specialist Agents]
-        direction LR
+%% =========================
+%% GitHub-friendly styling
+%% =========================
+classDef io fill:#FFF7ED,stroke:#C2410C,stroke-width:1.5px,color:#111827;
+classDef orchestrator fill:#F0FDF4,stroke:#16A34A,stroke-width:1.5px,color:#052E16;
+classDef step fill:#EEF2FF,stroke:#4338CA,stroke-width:1.5px,color:#111827;
+classDef tool fill:#F8FAFC,stroke:#94A3B8,stroke-width:1px,color:#0F172A;
+classDef terminator fill:#111827,stroke:#111827,color:#F9FAFB;
+linkStyle default stroke:#64748B,stroke-width:1.25px;
 
-        subgraph Browser [Browser Agent]
-            B1[paste_text]
-            B2[type_to_focused]
-            B3[get_phone_number]
-            B4[get_verify_code]
-            B5[request_human_help]
-            B6[generate_image]
-            B7[delegate_to_gui]
-        end
+%% =========================
+%% Orchestration
+%% =========================
+U([User Request]):::io --> MGR[Manager Agent]:::orchestrator
+MGR --> AN[Analyze]:::step --> PL[Plan]:::step --> DE[Delegate]:::step
+DE --> DISPATCH[Dispatch to specialists]:::orchestrator
+DISPATCH --> R([Results]):::terminator
 
-        subgraph GUI [GUI Agent]
-            direction LR
-            subgraph GUI_Row1 [" "]
-                G1[open_application]
-                G2[get_accessible_elements]
-                G3[click_element]
-                G4[type_text]
-                G5[read_screen_text]
-                G6[scroll]
-            end
-            subgraph GUI_Row2 [" "]
-                G7[get_window_image]
-                G8[check_app_running]
-                G9[list_running_apps]
-                G10[request_human_input]
-                G11[find_application]
-            end
-        end
+%% =========================
+%% Specialists (stacked)
+%% =========================
+DISPATCH --> BROW_START
+DISPATCH --> GUI_START
+DISPATCH --> SYS_START
+DISPATCH --> CODE_START
 
-        subgraph System [System Agent]
-            S1[execute_shell_command]
-        end
+subgraph SA[Specialist Agents]
+direction TB
 
-        subgraph Coding [Coding Agent]
-            C1[coding_automation]
-        end
+  %% ---------- Browser ----------
+  subgraph BROW[Browser Agent]
+  direction TB
+    BROW_START(( )):::orchestrator
+
+    subgraph BROW_A[Input & Typing]
+    direction LR
+      B1[paste_text]:::tool
+      B2[type_to_focused]:::tool
     end
 
-    Agents --> Z([Results])
+    subgraph BROW_B[Auth]
+    direction LR
+      B3[get_phone_number]:::tool
+      B4[get_verify_code]:::tool
+    end
+
+    subgraph BROW_C[Escalation & Handoff]
+    direction LR
+      B5[request_human_help]:::tool
+      B7[delegate_to_gui]:::tool
+    end
+
+    subgraph BROW_D[Media]
+    direction LR
+      B6[generate_image]:::tool
+    end
+  end
+
+  %% ---------- GUI ----------
+  subgraph GUI[GUI Agent]
+  direction TB
+    GUI_START(( )):::orchestrator
+
+    subgraph GUI_A[Core UI Controls]
+    direction LR
+      G1[open_application]:::tool
+      G3[click_element]:::tool
+      G4[type_text]:::tool
+    end
+
+    subgraph GUI_B[Read & Navigate]
+    direction LR
+      G2[get_accessible_elements]:::tool
+      G5[read_screen_text]:::tool
+      G6[scroll]:::tool
+    end
+
+    subgraph GUI_C[Window & Process]
+    direction LR
+      G7[get_window_image]:::tool
+      G8[check_app_running]:::tool
+      G9[list_running_apps]:::tool
+    end
+
+    subgraph GUI_D[Discovery & Human]
+    direction LR
+      G11[find_application]:::tool
+      G10[request_human_input]:::tool
+    end
+  end
+
+  %% ---------- System ----------
+  subgraph SYS[System Agent]
+  direction TB
+    SYS_START(( )):::orchestrator
+    S1[execute_shell_command]:::tool
+  end
+
+  %% ---------- Coding ----------
+  subgraph CODE[Coding Agent]
+  direction TB
+    CODE_START(( )):::orchestrator
+    C1[coding_automation]:::tool
+  end
+
+end
 ```
 
 1. **Manager Agent** receives your request and breaks it into subtasks
