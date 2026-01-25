@@ -289,7 +289,7 @@ class WindowsAccessibility:
             if not label and not window_text:
                 return None
 
-            element_id = str(uuid.uuid4())[:8]
+            element_id = f"e_{str(uuid.uuid4())[:7]}"
 
             element_info = {
                 "element_id": element_id,

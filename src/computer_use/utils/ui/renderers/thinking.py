@@ -1,20 +1,24 @@
 """
-Thinking renderer: displays agent reasoning/thoughts.
+Thinking renderer: military HUD-style agent reasoning display.
 """
 
 from typing import Optional
 from rich.console import RenderableType
 from rich.text import Text
-from rich.panel import Panel
-from rich import box
 
 from .base import BaseRenderer
 from ..state import TaskState
-from ..theme import THEME, ICONS
 
 
 class ThinkingRenderer(BaseRenderer):
-    """Renders agent thinking/reasoning blocks."""
+    """Renders agent thinking/reasoning in military HUD style."""
+
+    def __init__(self, console, verbosity):
+        super().__init__(console, verbosity)
+        self._c_border = "#3d444d"
+        self._c_dim = "#8b949e"
+        self._c_muted = "#484f58"
+        self._c_thinking = "#aaaaff"
 
     def render(self, state: TaskState) -> Optional[RenderableType]:
         """Render current thinking from active agent."""
@@ -28,37 +32,30 @@ class ThinkingRenderer(BaseRenderer):
         return self.render_thought(agent.current_thought)
 
     def render_thought(self, thought: str, max_width: int = 80) -> RenderableType:
-        """
-        Render a thinking block with distinctive styling.
+        """Render a HUD-style thinking block."""
+        wrapped = self._wrap_text(thought, max_width - 8)
 
-        Format:
-          ┊ Thinking ────────────────────────────────────────────────────────┊
-          │ The agent's reasoning text goes here, wrapped nicely...         │
-          └─────────────────────────────────────────────────────────────────┘
-        """
-        # Wrap long thoughts
-        wrapped = self._wrap_text(thought, max_width - 6)
-
-        content = Text()
-        for i, line in enumerate(wrapped.split("\n")):
-            if i > 0:
-                content.append("\n")
-            content.append(f"  {line}", style=f"italic {THEME['thinking']}")
-
-        return Panel(
-            content,
-            title=f"[{THEME['thinking']}]{ICONS['thinking']} Thinking[/]",
-            title_align="left",
-            border_style=THEME["thinking"],
-            box=box.ROUNDED,
-            padding=(0, 1),
+        lines = []
+        lines.append(
+            Text.from_markup(f"[{self._c_border}]├─[/] [{self._c_muted}]ANALYZING[/]")
         )
 
+        for line in wrapped.split("\n"):
+            text = Text()
+            text.append("│ ", style=self._c_border)
+            text.append(line, style=f"italic {self._c_thinking}")
+            lines.append(text)
+
+        from rich.console import Group
+
+        return Group(*lines)
+
     def render_inline(self, thought: str) -> Text:
-        """Render full inline thought (no truncation for full reasoning)."""
+        """Render HUD-style inline thought."""
         line = Text()
-        line.append(f"  {ICONS['thinking']} ", style=THEME["thinking"])
-        line.append(thought, style=f"italic {THEME['thinking']}")
+        line.append("├─ ", style=self._c_border)
+        line.append("◐ ", style=self._c_thinking)
+        line.append(thought, style=f"italic {self._c_thinking}")
         return line
 
     def _wrap_text(self, text: str, width: int) -> str:

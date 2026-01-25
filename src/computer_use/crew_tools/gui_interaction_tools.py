@@ -8,6 +8,7 @@ from typing import Optional
 
 from .instrumented_tool import InstrumentedBaseTool
 from ..schemas.actions import ActionResult
+from ..services.app_state import get_app_state
 from ..utils.ui import action_spinner, dashboard, print_action_result
 from ..utils.ocr_targeting import (
     score_ocr_candidate,
@@ -108,6 +109,7 @@ class ClickElementTool(InstrumentedBaseTool):
         if cancelled := check_cancellation():
             return cancelled
 
+        current_app = get_app_state().get_effective_app(current_app)
         target = target or "element"
         dashboard.set_action("Clicking", target)
 
@@ -117,6 +119,14 @@ class ClickElementTool(InstrumentedBaseTool):
             element_id = element.get("element_id")
 
         if element_id and accessibility_tool and accessibility_tool.available:
+            if not element_id.startswith("e_"):
+                return ActionResult(
+                    success=False,
+                    action_taken=f"Invalid element_id '{element_id}'",
+                    method_used="accessibility",
+                    confidence=0.0,
+                    error=f"Invalid element_id '{element_id}'. Use the element_id from get_accessible_elements (starts with 'e_').",
+                )
             if hasattr(accessibility_tool, "click_by_id"):
                 with action_spinner("Clicking", target):
                     success, message = accessibility_tool.click_by_id(element_id)
@@ -312,26 +322,40 @@ class TypeInput(BaseModel):
     explanation: Optional[str] = Field(
         default=None, description="Why this text is being typed"
     )
+    require_app: Optional[str] = Field(
+        default=None,
+        description=(
+            "For keyboard shortcuts: app that MUST be focused before sending. "
+            "If specified and app is not focused, action will be BLOCKED. "
+            "Example: require_app='Finder' for cmd+shift+g."
+        ),
+    )
 
 
 class TypeTextTool(InstrumentedBaseTool):
-    """Type text with smart paste detection and hotkey support."""
+    """Type text with smart paste detection, hotkey support, and app focus validation."""
 
     name: str = "type_text"
     description: str = """Type text, numbers, or keyboard shortcuts.
-    Smart paste for paths, URLs, long text. Supports hotkeys (cmd+c, ctrl+v)."""
+    Smart paste for paths, URLs, long text. Supports hotkeys (cmd+c, ctrl+v).
+    For hotkeys: use require_app to ensure correct app is focused before sending."""
     args_schema: type[BaseModel] = TypeInput
 
     def _run(
-        self, text: str, use_clipboard: bool = False, explanation: Optional[str] = None
+        self,
+        text: str,
+        use_clipboard: bool = False,
+        explanation: Optional[str] = None,
+        require_app: Optional[str] = None,
     ) -> ActionResult:
         """
-        Type text with smart paste detection.
+        Type text with smart paste detection and optional app focus validation.
 
         Args:
             text: Text to type
             use_clipboard: Force paste
             explanation: Why this text is being typed (for logging)
+            require_app: App that must be focused for hotkeys (BLOCKS if not focused)
 
         Returns:
             ActionResult with typing details
@@ -345,14 +369,39 @@ class TypeTextTool(InstrumentedBaseTool):
                 error="No text provided",
             )
 
+        is_hotkey = "+" in text and len(text.split("+")) <= 4
+
+        if is_hotkey and require_app:
+            from ..services.state_observer import StateObserver
+
+            observer = StateObserver(self._tool_registry)
+            is_focused, message = observer.verify_precondition("app_focused", app_name=require_app)
+
+            if not is_focused:
+                state = observer.capture_state()
+                return ActionResult(
+                    success=False,
+                    action_taken=f"BLOCKED: Hotkey '{text}' requires {require_app} to be focused",
+                    method_used="precondition_check",
+                    confidence=0.0,
+                    error=(
+                        f"Precondition failed: {message}. "
+                        f"ACTION REQUIRED: Call open_application('{require_app}') first to focus it."
+                    ),
+                    data={
+                        "blocked_reason": "app_not_focused",
+                        "required_app": require_app,
+                        "current_frontmost": state.active_app,
+                    },
+                )
+
         display_text = text[:20] + "..." if len(text) > 20 else text
         dashboard.set_action("Typing", display_text)
 
         input_tool = self._tool_registry.get_tool("input")
 
         try:
-            # Hotkey detection
-            if "+" in text and len(text.split("+")) <= 4:
+            if is_hotkey:
                 keys = [k.strip().lower() for k in text.split("+")]
                 key_map = {
                     "cmd": "command",

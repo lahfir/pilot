@@ -23,6 +23,7 @@ from .crew_tools import (
     ExecuteShellCommandTool,
     FindApplicationTool,
     GetAccessibleElementsTool,
+    GetSystemStateTool,
     GetWindowImageTool,
     ListRunningAppsTool,
     OpenApplicationTool,
@@ -34,6 +35,7 @@ from .crew_tools import (
     WebAutomationTool,
 )
 from .schemas import TaskExecutionResult
+from .services.app_state import get_app_state
 from .tools.platform_registry import PlatformToolRegistry
 from .utils.coordinate_validator import CoordinateValidator
 from .utils.ui import (
@@ -101,7 +103,9 @@ class ComputerUseCrew:
         self.platform_context = self._get_platform_context()
 
         self.tool_registry = self._initialize_tool_registry()
+        self._initialize_app_state()
         self.gui_tools = self._initialize_gui_tools()
+        self.observation_tools = self._initialize_observation_tools()
 
         self.browser_agent = self._initialize_browser_agent()
         self.coding_agent = self._initialize_coding_agent()
@@ -131,6 +135,12 @@ class ComputerUseCrew:
             coordinate_validator=coordinate_validator,
             llm_client=self.browser_llm,
         )
+
+    def _initialize_app_state(self) -> None:
+        """Initialize the centralized app state manager with accessibility tool."""
+        accessibility_tool = self.tool_registry.get_tool("accessibility")
+        if accessibility_tool:
+            get_app_state().set_accessibility_tool(accessibility_tool)
 
     def _initialize_browser_agent(self) -> BrowserAgent:
         gui_delegate = CrewGuiDelegate(
@@ -167,6 +177,14 @@ class ComputerUseCrew:
         for tool in tools.values():
             tool._tool_registry = self.tool_registry
         tools["find_application"]._llm = LLMConfig.get_orchestration_llm()
+        return tools
+
+    def _initialize_observation_tools(self) -> Dict[str, Any]:
+        tools = {
+            "get_system_state": GetSystemStateTool(),
+        }
+        for tool in tools.values():
+            tool._tool_registry = self.tool_registry
         return tools
 
     def _initialize_web_tool(self) -> WebAutomationTool:
@@ -224,6 +242,7 @@ class ComputerUseCrew:
             "web_automation": self.web_automation_tool,
             "coding_automation": self.coding_automation_tool,
             **self.gui_tools,
+            **self.observation_tools,
             "execute_shell_command": self.execute_command_tool,
         }
         return tool_map
@@ -393,7 +412,6 @@ class ComputerUseCrew:
         tool_names: List[str],
         llm: Any,
         tool_map: Dict[str, Any],
-        is_manager: bool = False,
     ) -> Agent:
         """Create a CrewAI agent from configuration."""
         config = self.agents_config[config_key]
@@ -413,10 +431,7 @@ class ComputerUseCrew:
             "step_callback": self._create_step_callback(agent_role),
         }
 
-        if is_manager:
-            agent_params["tools"] = []
-        else:
-            agent_params["tools"] = tools
+        agent_params["tools"] = tools
 
         return Agent(**agent_params)
 
@@ -424,14 +439,14 @@ class ComputerUseCrew:
         """Create all CrewAI agents for the hierarchical crew."""
         tool_map = self._build_tool_map()
 
-        manager_agent = self._create_agent(
-            "manager", [], self.llm, tool_map, is_manager=True
-        )
-
         browser_tools = self.agents_config["browser_agent"].get("tools", [])
         gui_tools = self.agents_config["gui_agent"].get("tools", [])
         system_tools = self.agents_config["system_agent"].get("tools", [])
         coding_tools = self.agents_config["coding_agent"].get("tools", [])
+
+        manager_agent = self._create_agent(
+            "manager", [], self.llm, tool_map
+        )
 
         return {
             "manager": manager_agent,
@@ -471,16 +486,16 @@ class ComputerUseCrew:
         return Task(
             description=f"""USER REQUEST: {task_description}
 
-Understand what the user wants to achieve, then delegate to the appropriate specialist(s).
+Understand what the user wants to achieve, then delegate to the appropriate specialist.
 
-CRITICAL REMINDERS:
-- Pass EXACT file paths/URLs between agents (never paraphrase or simplify paths)
+CRITICAL:
+- Pass EXACT file paths/URLs between agents (never paraphrase)
 - Browser tasks = ONE delegation (session continuity)
-- Verify outcomes, not just actions""",
+- Verify outcomes with evidence from tool outputs""",
             expected_output="""Confirmation that the user's goal was achieved, with:
 - What was accomplished
 - Any outputs produced (files, data, results)
-- Evidence of completion""",
+- Evidence of completion from tool outputs""",
         )
 
     def _setup_llm_event_handlers(self) -> None:
@@ -498,6 +513,7 @@ CRITICAL REMINDERS:
                 model_name = (
                     str(model).split("/")[-1] if "/" in str(model) else str(model)
                 )
+                dashboard.log_llm_start(model_name)
                 agent = dashboard.get_current_agent_name() or "Agent"
                 if agent == "Manager":
                     dashboard._show_status(f"Thinking • {model_name}")
@@ -506,6 +522,26 @@ CRITICAL REMINDERS:
 
             @crewai_event_bus.on(LLMCallCompletedEvent)
             def on_llm_complete(source: Any, event: LLMCallCompletedEvent) -> None:
+                prompt_tokens = 0
+                completion_tokens = 0
+                usage = getattr(event, "usage", None) or getattr(event, "token_usage", None)
+                if usage:
+                    if isinstance(usage, dict):
+                        prompt_tokens = usage.get("prompt_tokens")
+                        if prompt_tokens is None:
+                            prompt_tokens = usage.get("input_tokens", 0)
+                        completion_tokens = usage.get("completion_tokens")
+                        if completion_tokens is None:
+                            completion_tokens = usage.get("output_tokens", 0)
+                    else:
+                        prompt_tokens = getattr(usage, "prompt_tokens", None)
+                        if prompt_tokens is None:
+                            prompt_tokens = getattr(usage, "input_tokens", 0)
+                        completion_tokens = getattr(usage, "completion_tokens", None)
+                        if completion_tokens is None:
+                            completion_tokens = getattr(usage, "output_tokens", 0)
+
+                dashboard.log_llm_complete(prompt_tokens, completion_tokens)
                 agent = dashboard.get_current_agent_name() or "Agent"
 
                 response = getattr(event, "response", None)
@@ -635,3 +671,5 @@ CRITICAL REMINDERS:
                 overall_success=False,
                 error=str(exc),
             )
+        finally:
+            get_app_state().clear_target_app()

@@ -114,10 +114,14 @@ class DashboardManager:
         # Track what's been printed (avoid duplicates)
         self._printed_agents: Set[str] = set()
         self._printed_tools: Set[str] = set()
+        self._started_tools: Set[str] = set()
+        self._nested_tools: Set[str] = set()
         self._last_thought_hash: Optional[int] = None
         self._header_printed = False
         self._current_agent_name: Optional[str] = None
         self._current_status_message: str = ""
+        self._pending_thought: Optional[str] = None
+        self._pending_thought_agent_id: Optional[str] = None
 
         # Tool history for explorer
         self._tool_history: List[Dict[str, Any]] = []
@@ -185,10 +189,14 @@ class DashboardManager:
         )
         self._printed_agents.clear()
         self._printed_tools.clear()
+        self._started_tools.clear()
+        self._nested_tools.clear()
         self._last_thought_hash = None
         self._header_printed = False
         self._current_agent_name = None
         self._current_status_message = ""
+        self._pending_thought = None
+        self._pending_thought_agent_id = None
         self._tool_history.clear()
 
     def start_dashboard(self) -> None:
@@ -210,6 +218,13 @@ class DashboardManager:
         if self._task and self._task.active_agent_id and not cancelled:
             final_agent = self._task.agents.get(self._task.active_agent_id)
             if final_agent and final_agent.tools:
+                if (
+                    self._pending_thought
+                    and self._pending_thought_agent_id == final_agent.agent_id
+                ):
+                    self._print_thought_full(self._pending_thought)
+                    self._pending_thought = None
+                    self._pending_thought_agent_id = None
                 self._print_agent_summary(final_agent)
 
         if print_log and self._task and not cancelled:
@@ -230,6 +245,86 @@ class DashboardManager:
         """Get the name of the currently active agent."""
         return self._current_agent_name or ""
 
+    def log_llm_start(self, model: str) -> Optional[str]:
+        """
+        Log the start of an LLM call for timing tracking.
+
+        Args:
+            model: Name of the LLM model being called.
+
+        Returns:
+            call_id for the LLM call, or None if no active agent.
+        """
+        if not self._task or not self._task.active_agent_id:
+            return None
+
+        agent = self._task.agents.get(self._task.active_agent_id)
+        if not agent:
+            return None
+
+        llm_call = agent.start_llm_call(model)
+        self._task.set_phase("thinking", model)
+        return llm_call.call_id
+
+    def log_llm_complete(
+        self, prompt_tokens: int = 0, completion_tokens: int = 0
+    ) -> None:
+        """
+        Log the completion of an LLM call.
+
+        Args:
+            prompt_tokens: Number of input tokens used.
+            completion_tokens: Number of output tokens generated.
+        """
+        if not self._task or not self._task.active_agent_id:
+            return
+
+        agent = self._task.agents.get(self._task.active_agent_id)
+        if agent:
+            agent.complete_llm_call(prompt_tokens, completion_tokens)
+        self._task.set_phase("executing")
+
+    def get_current_llm_elapsed(self) -> Optional[float]:
+        """
+        Get elapsed time of the currently active LLM call.
+
+        Returns:
+            Elapsed time in seconds, or None if no active LLM call.
+        """
+        if not self._task or not self._task.active_agent_id:
+            return None
+
+        agent = self._task.agents.get(self._task.active_agent_id)
+        if not agent:
+            return None
+
+        llm_call = agent.get_active_llm_call()
+        if llm_call:
+            return llm_call.elapsed
+        return None
+
+    def is_llm_active(self) -> bool:
+        """Check if an LLM call is currently in progress."""
+        if not self._task or not self._task.active_agent_id:
+            return False
+
+        agent = self._task.agents.get(self._task.active_agent_id)
+        if not agent:
+            return False
+
+        return agent.get_active_llm_call() is not None
+
+    def set_phase(self, phase: str, operation: Optional[str] = None) -> None:
+        """
+        Set the current execution phase.
+
+        Args:
+            phase: One of "idle", "thinking", "executing", "waiting"
+            operation: Optional description of current operation
+        """
+        if self._task:
+            self._task.set_phase(phase, operation)
+
     def set_agent(self, agent_name: str) -> None:
         """Set the active agent. Only prints header once per agent."""
         if not self._task:
@@ -249,12 +344,21 @@ class DashboardManager:
         if self._current_agent_name and self._task.active_agent_id:
             prev_agent = self._task.agents.get(self._task.active_agent_id)
             if prev_agent:
+                if (
+                    self._pending_thought
+                    and self._pending_thought_agent_id == prev_agent.agent_id
+                ):
+                    self._print_thought_full(self._pending_thought)
+                    self._pending_thought = None
+                    self._pending_thought_agent_id = None
                 if was_manager and agent_name != "Manager":
                     self._print_delegation(agent_name)
                 self._print_agent_summary(prev_agent)
 
         self._current_agent_name = agent_name
         self._last_thought_hash = None
+        self._pending_thought = None
+        self._pending_thought_agent_id = None
         agent = self._task.set_active_agent(agent_name)
 
         if agent.agent_id not in self._printed_agents:
@@ -272,7 +376,9 @@ class DashboardManager:
 
         thought = thought.strip()
 
-        # Deduplicate by hash of first 100 chars
+        if self._is_system_prompt_leak(thought):
+            return
+
         thought_hash = hash(thought[:100])
         if thought_hash == self._last_thought_hash:
             return
@@ -282,9 +388,29 @@ class DashboardManager:
         if agent:
             agent.current_thought = thought
             agent.status = "thinking"
-            self._print_thought_full(thought)
+            self._pending_thought = thought
+            self._pending_thought_agent_id = agent.agent_id
             short_thought = thought[:60] + "..." if len(thought) > 60 else thought
             self._show_status(short_thought)
+
+    def _nest_tool_line(self, line: Text) -> Text:
+        """Nest a tool-rendered line under a thought group."""
+        nested = Text()
+        nested.append("│   ", style="#3d444d")
+        nested.append_text(line)
+        return nested
+
+    def _is_system_prompt_leak(self, text: str) -> bool:
+        """Check if text is a system prompt leak that should be filtered."""
+        leak_patterns = [
+            "Tool Name:",
+            "Tool Arguments:",
+            "Tool Description:",
+            "IMPORTANT: Use the following format",
+            "you should always think about what to do",
+            "You ONLY have access to the following tools",
+        ]
+        return any(pattern in text for pattern in leak_patterns)
 
     def set_action(self, action: str, target: Optional[str] = None) -> None:
         """Set current action description."""
@@ -454,20 +580,43 @@ class DashboardManager:
     # ─────────────────────────────────────────────────────────────────────
 
     def _print_task_header(self) -> None:
-        """Print the task header."""
+        """Print HUD-style task header."""
         if self._header_printed or not self._task:
             return
         self._header_printed = True
 
+        c_border = "#3d444d"
+        c_muted = "#484f58"
+        c_text = "#c9d1d9"
+        c_highlight = "#58a6ff"
+        w = self.console.width
+
         self.console.print()
-        self._print_raw(f"[{THEME['border']}]{'═' * 70}[/]")
+        self._print_raw(f"[{c_border}]╭{'─' * (w - 2)}╮[/]")
 
-        task_line = Text()
-        task_line.append("  TASK: ", style=f"bold {THEME['muted']}")
-        task_line.append(self._task.description, style=f"bold {THEME['text']}")
-        self._print(task_line)
+        label = "MISSION"
+        desc = (
+            self._task.description[: w - 20]
+            if len(self._task.description) > w - 20
+            else self._task.description
+        )
+        inner = w - 4
+        content = f"[{c_muted}]{label}:[/] [{c_text}]{desc}[/]"
+        pad = inner - len(label) - len(desc) - 2
+        self._print_raw(
+            f"[{c_border}]│[/] {content}{' ' * max(1, pad)} [{c_border}]│[/]"
+        )
 
-        self._print_raw(f"[{THEME['border']}]{'═' * 70}[/]")
+        self._print_raw(f"[{c_border}]├{'─' * (w - 2)}┤[/]")
+
+        status_content = f"[{c_highlight}]●[/] [{c_muted}]EXECUTING[/]"
+        status_pad = inner - 12
+        self._print_raw(
+            f"[{c_border}]│[/] {status_content}{' ' * status_pad} [{c_border}]│[/]"
+        )
+
+        self._print_raw(f"[{c_border}]╰{'─' * (w - 2)}╯[/]")
+        self.console.print()
         self.console.print()
         self._flush()
 
@@ -480,13 +629,12 @@ class DashboardManager:
         self._print(line)
 
     def _print_agent_summary(self, agent: AgentState) -> None:
-        """
-        Print agent completion summary with duration and tool count.
+        """Print HUD-style agent completion summary."""
+        c_border = "#3d444d"
+        c_success = "#3fb950"
+        c_dim = "#8b949e"
+        c_text = "#c9d1d9"
 
-        Format:
-        └─ Agent Name ─────────────── COMPLETE ─┘
-        │ Duration: 8s │ Tools: 3/3              │
-        """
         self.console.print()
 
         duration = agent.duration
@@ -495,40 +643,49 @@ class DashboardManager:
         else:
             mins = int(duration // 60)
             secs = int(duration % 60)
-            duration_str = f"{mins}m {secs}s"
+            duration_str = f"{mins}m{secs:02d}s"
 
         total_tools = len(agent.tools)
         success_tools = sum(1 for t in agent.tools if t.status == "success")
 
-        name_part = f"└─ {agent.name} "
-        stats = f" Duration: {duration_str} │ Tools: {success_tools}/{total_tools} "
-        padding_len = max(1, 56 - len(agent.name) - len(stats))
-        padding = "─" * padding_len
-        end_part = " COMPLETE ─┘"
-
         summary = Text()
-        summary.append(name_part, style=f"bold {THEME['tool_success']}")
-        summary.append(padding, style=THEME["border"])
-        summary.append(stats, style=THEME["muted"])
-        summary.append(end_part, style=f"bold {THEME['tool_success']}")
+        summary.append("╰─ ", style=c_border)
+        summary.append("● ", style=c_success)
+        summary.append(agent.name.upper(), style=f"bold {c_text}")
+        summary.append(" ─ ", style=c_border)
+        summary.append("COMPLETE", style=f"bold {c_success}")
+        summary.append("  │  ", style=c_border)
+        summary.append(f"T+{duration_str}", style=c_dim)
+        summary.append("  │  ", style=c_border)
+        summary.append(f"OPS:{success_tools}/{total_tools}", style=c_dim)
 
         self._print(summary)
         self.console.print()
-
-    def _print_agent_header(self, agent: AgentState) -> None:
-        """Print agent header when it becomes active."""
         self.console.print()
 
-        name_part = f"┌─ {agent.name} "
-        padding = "─" * max(1, 56 - len(agent.name))
-        status_part = f" {ICONS['agent_active']} ACTIVE ─┐"
+    def _print_agent_header(self, agent: AgentState) -> None:
+        """Print HUD-style agent header when it becomes active."""
+        c_border = "#3d444d"
+        c_active = "#58a6ff"
+        c_text = "#c9d1d9"
 
-        header = Text()
-        header.append(name_part, style=f"bold {THEME['agent_active']}")
-        header.append(padding, style=THEME["border"])
-        header.append(status_part, style=f"bold {THEME['agent_active']}")
+        w = self.console.width
+        name = agent.name.upper()
+        status = "ACTIVE"
 
-        self._print(header)
+        self.console.print()
+        self.console.print()
+        self._print_raw(f"[{c_border}]╭{'─' * (w - 2)}╮[/]")
+
+        inner = w - 4
+        left = f"[{c_active}]●[/] [{c_text}]{name}[/]"
+        right = f"[{c_active}]{status}[/]"
+        left_len = len(name) + 2
+        right_len = len(status)
+        pad = inner - left_len - right_len
+        self._print_raw(f"[{c_border}]│[/] {left}{' ' * pad}{right} [{c_border}]│[/]")
+
+        self._print_raw(f"[{c_border}]╰{'─' * (w - 2)}╯[/]")
         self.console.print()
 
     def _print_thought_full(self, thought: str) -> None:
@@ -537,31 +694,47 @@ class DashboardManager:
         if not thought:
             return
 
+        self.console.print()
         thought_line = self._thinking_renderer.render_inline(thought)
         self._print(thought_line)
 
     def _print_tool_start(self, tool: ToolState) -> None:
         """Print tool start using the ToolRenderer, then show waiting status."""
-        if tool.tool_id in self._printed_tools:
+        if tool.tool_id in self._started_tools:
             return
 
-        self._printed_tools.add(tool.tool_id)
+        self._started_tools.add(tool.tool_id)
 
-        action_desc = self._get_action_description(tool.name, tool.input_data)
-        if action_desc:
-            action_line = Text()
-            action_line.append(
-                f"  {ICONS['bullet']} ", style=f"bold {THEME['tool_pending']}"
-            )
-            action_line.append(action_desc, style=f"italic {THEME['text']}")
-            self._print(action_line)
+        is_nested = False
+        if (
+            self._pending_thought
+            and self._pending_thought_agent_id
+            and self._task
+            and self._task.active_agent_id
+        ):
+            active_agent = self._task.agents.get(self._task.active_agent_id)
+            if active_agent and active_agent.agent_id == self._pending_thought_agent_id:
+                self._print_thought_full(self._pending_thought)
+                self._pending_thought = None
+                self._pending_thought_agent_id = None
+                self._nested_tools.add(tool.tool_id)
+                is_nested = True
 
-        tool_header = self._tool_renderer._render_tool_header(tool)
-        self._print(tool_header)
+        if not is_nested:
+            action_desc = self._get_action_description(tool.name, tool.input_data)
+            if action_desc:
+                action_line = Text()
+                action_line.append(
+                    f"  {ICONS['bullet']} ", style=f"bold {THEME['tool_pending']}"
+                )
+                action_line.append(action_desc, style=f"italic {THEME['text']}")
+                self._print(action_line)
 
-        if tool.input_data:
-            input_line = self._tool_renderer._render_input(tool.input_data)
-            self._print(input_line)
+        pending_line = Text()
+        pending_line.append("├─ ", style="#3d444d")
+        pending_line.append("⟳ ", style=THEME["tool_pending"])
+        pending_line.append(tool.name, style=f"bold {THEME['text']}")
+        self._print(self._nest_tool_line(pending_line) if is_nested else pending_line)
 
         self._show_status(f"Running {tool.name}...")
 
@@ -627,21 +800,34 @@ class DashboardManager:
               ← output
         """
         self._stop_live_status()
-        header = self._tool_renderer._render_tool_header(tool)
-        self._print(header)
+        is_nested = tool.tool_id in self._nested_tools
+        if tool.tool_id not in self._printed_tools:
+            header = self._tool_renderer._render_tool_header(tool)
+            self._print(self._nest_tool_line(header) if is_nested else header)
+            if tool.input_data:
+                input_line = self._tool_renderer._render_input(tool.input_data)
+                self._print(
+                    self._nest_tool_line(input_line) if is_nested else input_line
+                )
+            self._printed_tools.add(tool.tool_id)
 
         if tool.status == "success":
-            output_line = self._tool_renderer._render_output(tool.output_data)
-            self._print(output_line)
+            output_line = self._tool_renderer._render_output(
+                tool.output_data, tool.duration
+            )
+            self._print(self._nest_tool_line(output_line) if is_nested else output_line)
             self.console.print()
             self._show_status("Processing results...")
         else:
             error_line = self._tool_renderer._render_error(
-                tool.error or "Unknown error"
+                tool.error or "Unknown error", tool.duration
             )
-            self._print(error_line)
+            self._print(self._nest_tool_line(error_line) if is_nested else error_line)
             self.console.print()
             self._show_status("Handling error...")
+        self._started_tools.discard(tool.tool_id)
+        if is_nested:
+            self._nested_tools.discard(tool.tool_id)
 
     # ─────────────────────────────────────────────────────────────────────
     # Live status with Rich spinner (inline, not sticky)
@@ -663,8 +849,19 @@ class DashboardManager:
                 self._status = None
             self._current_status_message = ""
 
+    def _get_refresh_interval(self) -> float:
+        """
+        Get adaptive refresh interval based on current phase.
+
+        Returns:
+            0.25s (4Hz) during active operations, 1.0s (1Hz) when idle.
+        """
+        if self._task and self._task.current_phase in ("thinking", "executing"):
+            return 0.25
+        return 1.0
+
     def _start_status_timer(self) -> None:
-        """Start timer to refresh status bar every second."""
+        """Start timer to refresh status bar with adaptive rate."""
         self._stop_status_timer()
         if not self._is_running:
             return
@@ -681,7 +878,8 @@ class DashboardManager:
             if self._is_running:
                 self._start_status_timer()
 
-        self._status_timer = threading.Timer(1.0, refresh)
+        interval = self._get_refresh_interval()
+        self._status_timer = threading.Timer(interval, refresh)
         self._status_timer.daemon = True
         self._status_timer.start()
 
@@ -719,10 +917,17 @@ class DashboardManager:
 
     def _build_status_line(self, message: str = "") -> str:
         """
-        Build clean status line matching TASK header style.
+        Build clean status line with phase, agent, timing, and tokens.
 
-        Format: Agent Name  │  status  │  elapsed  │  tokens  •  esc to interrupt
+        Format: ├─ ◐ THINKING │ AGENT │ T+Xs │ Nk↑ Nk↓ │ ESC cancel
         """
+        c_border = "#3d444d"
+        c_active = "#58a6ff"
+        c_dim = "#8b949e"
+        c_muted = "#484f58"
+        c_thinking = "#aaaaff"
+        c_executing = "#ffaa00"
+
         if not self._task:
             return ""
 
@@ -730,27 +935,40 @@ class DashboardManager:
         if elapsed < 60:
             time_str = f"{int(elapsed)}s"
         else:
-            time_str = f"{int(elapsed // 60)}m {int(elapsed % 60)}s"
+            time_str = f"{int(elapsed // 60)}m{int(elapsed % 60):02d}s"
 
         tokens_in = self._task.token_input
         tokens_out = self._task.token_output
+        if tokens_in >= 1000:
+            tokens_in_str = f"{tokens_in / 1000:.1f}k"
+        else:
+            tokens_in_str = str(tokens_in)
+        if tokens_out >= 1000:
+            tokens_out_str = f"{tokens_out / 1000:.1f}k"
+        else:
+            tokens_out_str = str(tokens_out)
 
-        agent_name = self._current_agent_name or "Agent"
-        msg = message or self._current_status_message or ""
+        agent_name = (self._current_agent_name or "Agent").upper()
 
-        parts = [f"  [{THEME['agent_active']}]{agent_name}[/]"]
+        phase = self._task.current_phase
 
-        if msg:
-            parts.append(f"[{THEME['muted']}]{msg}[/]")
+        phase_config = {
+            "thinking": ("THINKING", c_thinking, "◐"),
+            "executing": ("RUNNING", c_executing, "⚙"),
+            "waiting": ("IDLE", c_muted, "○"),
+            "idle": ("IDLE", c_muted, "○"),
+        }
+        label, color, icon = phase_config.get(phase, ("IDLE", c_muted, "○"))
 
-        parts.append(f"[{THEME['muted']}]{time_str}[/]")
-        parts.append(
-            f"[{THEME['muted']}]{tokens_in}[/][dim]↑[/] "
-            f"[{THEME['muted']}]{tokens_out}[/][dim]↓[/]"
+        sep = f"[{c_border}]│[/]"
+
+        return (
+            f"\n[{c_border}]├─[/] [{color}]{icon} {label}[/]  {sep}  "
+            f"[{c_active}]{agent_name}[/]  {sep}  "
+            f"[{c_dim}]T+{time_str}[/]  {sep}  "
+            f"[{c_dim}]{tokens_in_str}↑ {tokens_out_str}↓[/]  {sep}  "
+            f"[{c_muted}]ESC[/] [{c_dim}]cancel[/]"
         )
-        parts.append("[dim]esc to cancel[/]")
-
-        return "  │  ".join(parts)
 
     def _print_status_bar(self) -> None:
         """Print inline status bar (matches TASK header style)."""
@@ -851,7 +1069,7 @@ class DashboardManager:
     # ─────────────────────────────────────────────────────────────────────
 
     def print_session_log(self) -> None:
-        """Print the complete session summary."""
+        """Print the complete session summary with timing breakdown."""
         if not self._task:
             return
 
@@ -859,7 +1077,6 @@ class DashboardManager:
         self._print_raw(f"[bold {THEME['text']}]  SESSION SUMMARY[/]")
         self._print_raw(f"[{THEME['border']}]{'═' * 70}[/]")
 
-        # Stats
         duration = self._task.duration
         if duration < 60:
             duration_str = f"{int(duration)}s"
@@ -876,7 +1093,63 @@ class DashboardManager:
             f"Agents: {len(self._task.agents)}"
         )
         self._print_raw(f"[{THEME['muted']}]{stats}[/]")
+
+        llm_time = self._task.total_llm_time
+        tool_time = self._task.total_tool_time
+        total_tracked = llm_time + tool_time
+        other_time = max(0, duration - total_tracked)
+
+        if total_tracked > 0:
+            llm_pct = (llm_time / duration * 100) if duration > 0 else 0
+            tool_pct = (tool_time / duration * 100) if duration > 0 else 0
+            other_pct = (other_time / duration * 100) if duration > 0 else 0
+
+            def fmt_time(t: float) -> str:
+                if t < 1:
+                    return f"{t:.1f}s"
+                elif t < 60:
+                    return f"{int(t)}s"
+                return f"{int(t // 60)}m {int(t % 60)}s"
+
+            timing_stats = (
+                f"  Time Breakdown: "
+                f"LLM {fmt_time(llm_time)} ({llm_pct:.0f}%) │ "
+                f"Tools {fmt_time(tool_time)} ({tool_pct:.0f}%) │ "
+                f"Other {fmt_time(other_time)} ({other_pct:.0f}%) │ "
+                f"LLM Calls: {self._task.total_llm_calls}"
+            )
+            self._print_raw(f"[{THEME['muted']}]{timing_stats}[/]")
+
         self._print_raw(f"[{THEME['border']}]{'═' * 70}[/]")
+
+        if self._task.agents:
+            self._print_raw(f"[bold {THEME['text']}]  AGENT BREAKDOWN[/]")
+            self._print_raw(f"[{THEME['border']}]{'─' * 70}[/]")
+
+            for agent in self._task.agents.values():
+                agent_llm = agent.total_llm_time
+                agent_tool = agent.total_tool_time
+                agent_calls = agent.llm_call_count
+                tool_count = len(
+                    [t for t in agent.tools if t.status in ("success", "error")]
+                )
+
+                def fmt_time(t: float) -> str:
+                    if t < 1:
+                        return f"{t:.1f}s"
+                    elif t < 60:
+                        return f"{int(t)}s"
+                    return f"{int(t // 60)}m {int(t % 60)}s"
+
+                agent_line = (
+                    f"  {agent.name:<14} │ "
+                    f"{fmt_time(agent.duration):>6} │ "
+                    f"LLM: {fmt_time(agent_llm):>5} ({agent_calls} calls) │ "
+                    f"Tools: {fmt_time(agent_tool):>5} ({tool_count} calls)"
+                )
+                self._print_raw(f"[{THEME['muted']}]{agent_line}[/]")
+
+            self._print_raw(f"[{THEME['border']}]{'═' * 70}[/]")
 
     # ─────────────────────────────────────────────────────────────────────
     # Tool explorer

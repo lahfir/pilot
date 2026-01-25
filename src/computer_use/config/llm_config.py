@@ -137,7 +137,12 @@ class LLMConfig:
 
         llm_timeout = int(os.getenv("LLM_TIMEOUT", "120"))
 
-        llm_kwargs = {"model": model_name, "api_key": api_key, "timeout": llm_timeout}
+        llm_kwargs = {
+            "model": model_name,
+            "api_key": api_key,
+            "timeout": llm_timeout,
+            "num_retries": 3,
+        }
 
         if reasoning_effort:
             llm_kwargs["reasoning_effort"] = reasoning_effort
@@ -287,7 +292,13 @@ class LLMConfig:
             from browser_use.llm.google.chat import ChatGoogle
 
             model_name = model or "gemini-2.0-flash-exp"
-            llm = ChatGoogle(model=model_name, api_key=os.getenv("GOOGLE_API_KEY"))
+            llm = ChatGoogle(
+                model=model_name,
+                api_key=os.getenv("GOOGLE_API_KEY"),
+                max_retries=5,
+                retryable_status_codes=[403, 500, 502, 503, 504],
+                retry_delay=1.0,
+            )
 
         else:
             raise ValueError(f"Unsupported Browser-Use provider: {provider}")

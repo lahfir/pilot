@@ -32,13 +32,13 @@ class TimingConfig:
     typing_delay: float = 0.1
     """Delay before typing to ensure field is focused"""
 
-    app_launch_max_attempts: int = 5
-    """Max attempts to verify app launched"""
+    app_launch_max_attempts: int = 15
+    """Max attempts to verify app launched (15 × 0.2s = 3s total)"""
 
-    app_launch_frontmost_attempts: int = 3
-    """Max attempts to verify app is frontmost"""
+    app_launch_frontmost_attempts: int = 15
+    """Attempts before accepting non-frontmost (same as max - always require frontmost)"""
 
-    app_launch_retry_interval: float = 0.1
+    app_launch_retry_interval: float = 0.2
     """Seconds between app launch verification attempts"""
 
     accessibility_retry_count: int = 3

@@ -23,6 +23,7 @@ from .web_tools import WebAutomationTool
 from .system_tools import ExecuteShellCommandTool
 from .capability_tools import FindApplicationTool
 from .coding_tools import CodingAgentTool
+from .observation_tools import GetSystemStateTool, VerifyAppFocusedTool
 
 __all__ = [
     "InstrumentedBaseTool",
@@ -41,4 +42,6 @@ __all__ = [
     "ExecuteShellCommandTool",
     "FindApplicationTool",
     "CodingAgentTool",
+    "GetSystemStateTool",
+    "VerifyAppFocusedTool",
 ]

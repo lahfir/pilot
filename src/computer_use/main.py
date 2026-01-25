@@ -71,12 +71,9 @@ from .utils.ui import (  # noqa: E402
     add_to_task_history,
     select_from_task_history,
     print_banner,
-    print_platform_info,
+    print_hud_system_status,
     print_ready,
-    print_startup_step,
-    print_status_overview,
     print_task_result,
-    startup_spinner,
     THEME,
 )
 from rich.text import Text  # noqa: E402
@@ -110,26 +107,25 @@ async def main(
 
     print_banner()
 
-    with startup_spinner("Checking permissions..."):
+    from rich.status import Status
+
+    with Status(
+        "[#8b949e]Initializing...[/]", console=console, spinner="dots"
+    ) as status:
+        status.update("[#8b949e]Checking permissions...[/]")
         permissions_ok = check_and_request_permissions()
+        if not permissions_ok:
+            console.print(f"  [{THEME['error']}]Cannot proceed without permissions[/]")
+            sys.exit(1)
 
-    if not permissions_ok:
-        print_startup_step("Permissions denied", success=False)
-        console.print(f"  [{THEME['error']}]Cannot proceed without permissions[/]")
-        sys.exit(1)
-
-    print_startup_step("Permissions granted")
-
-    with startup_spinner("Detecting platform..."):
+        status.update("[#8b949e]Detecting platform...[/]")
         capabilities = detect_platform()
 
-    print_platform_info(capabilities)
+        from .config.llm_config import LLMConfig
+        from .services.twilio_service import TwilioService
+        from .services.webhook_server import WebhookServer
 
-    from .config.llm_config import LLMConfig
-    from .services.twilio_service import TwilioService
-    from .services.webhook_server import WebhookServer
-
-    with startup_spinner("Initializing services..."):
+        status.update("[#8b949e]Starting services...[/]")
         twilio_service = TwilioService()
         twilio_service.set_llm_client(LLMConfig.get_llm())
 
@@ -138,7 +134,7 @@ async def main(
             webhook_server = WebhookServer(twilio_service)
             webhook_server.start()
 
-    with startup_spinner("Loading tools..."):
+        status.update("[#8b949e]Loading tools...[/]")
         crew = ComputerUseCrew(
             capabilities,
             SafetyChecker(),
@@ -148,15 +144,10 @@ async def main(
         )
 
     tool_count = len(crew.tool_registry.list_available_tools())
-    print_startup_step(f"{tool_count} tools loaded")
+    webhook_port = webhook_server.port if webhook_server else None
+    browser_display = browser_profile if use_browser_profile else "Default"
 
-    system_status = {
-        "Tools": str(tool_count),
-        "Webhook": f":{webhook_server.port}" if webhook_server else "off",
-        "Browser": browser_profile if use_browser_profile else "default",
-    }
-    print_status_overview("System", system_status)
-
+    print_hud_system_status(capabilities, tool_count, webhook_port, browser_display)
     print_ready()
 
     _restore_original_streams()

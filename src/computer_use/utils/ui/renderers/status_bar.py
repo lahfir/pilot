@@ -1,5 +1,5 @@
 """
-Status bar renderer: sticky footer with metrics.
+Status bar renderer: military-grade HUD footer with metrics.
 """
 
 from typing import Optional
@@ -8,75 +8,86 @@ from rich.text import Text
 
 from .base import BaseRenderer
 from ..state import TaskState
-from ..theme import THEME, ICONS
+from ..theme import THEME
 
 
 class StatusBarRenderer(BaseRenderer):
-    """Renders the status bar with current metrics."""
+    """Renders the HUD-style status bar with current metrics."""
+
+    def __init__(self, console, verbosity):
+        super().__init__(console, verbosity)
+        self._c_border = "#3d444d"
+        self._c_muted = "#484f58"
+        self._c_dim = "#8b949e"
+        self._c_text = "#c9d1d9"
+        self._c_active = "#58a6ff"
+        self._c_success = "#3fb950"
+        self._c_error = "#f85149"
 
     def render(self, state: TaskState) -> Optional[RenderableType]:
-        """Render the status bar."""
+        """Render the HUD status bar."""
         return self._build_status_line(state)
 
     def _build_status_line(self, state: TaskState) -> Text:
-        """Build the status bar text."""
+        """Build the HUD-style status bar."""
         line = Text()
 
-        # Active agent
+        line.append("╠", style=self._c_border)
+        line.append("═", style=self._c_border)
+
         if state.active_agent_id:
             agent = state.agents.get(state.active_agent_id)
             if agent:
-                line.append(f" {ICONS['agent_active']} ", style=THEME["agent_active"])
-                line.append(agent.name, style=f"bold {THEME['text']}")
-                line.append(f" {ICONS['separator']} ", style=THEME["muted"])
-
-                # Agent status
+                line.append(" ● ", style=self._c_active)
+                line.append(agent.name.upper(), style=f"bold {self._c_text}")
+                line.append(" ─ ", style=self._c_border)
                 status_style = self._get_status_style(agent.status)
                 line.append(agent.status.upper(), style=status_style)
         else:
-            line.append(f" {ICONS['agent_idle']} ", style=THEME["muted"])
-            line.append("Ready", style=THEME["muted"])
+            line.append(" ◯ ", style=self._c_muted)
+            line.append("STANDBY", style=self._c_muted)
 
-        line.append(f" {ICONS['separator']} ", style=THEME["muted"])
+        line.append(" ═╪═ ", style=self._c_border)
 
-        # Duration
         duration_str = self._format_duration(state.duration)
-        line.append("⏱ ", style=THEME["muted"])
-        line.append(duration_str, style=THEME["text"])
+        line.append("T+", style=self._c_muted)
+        line.append(duration_str, style=self._c_text)
 
-        line.append(f" {ICONS['separator']} ", style=THEME["muted"])
+        line.append(" ═╪═ ", style=self._c_border)
 
-        # Tool stats
         success = state.total_tools - state.failed_tools
-        line.append("Tools: ", style=THEME["muted"])
+        line.append("OPS:", style=self._c_muted)
         if state.failed_tools > 0:
-            line.append(f"{success}", style=THEME["tool_success"])
-            line.append(f"/{state.total_tools} ", style=THEME["text"])
-            line.append(f"({state.failed_tools}{ICONS['error']})", style=THEME["error"])
+            line.append(f"{success}", style=self._c_success)
+            line.append(f"/{state.total_tools}", style=self._c_text)
+            line.append(f" ✗{state.failed_tools}", style=self._c_error)
         else:
-            line.append(f"{success}/{state.total_tools}", style=THEME["text"])
+            line.append(f"{success}/{state.total_tools}", style=self._c_text)
 
-        line.append(f" {ICONS['separator']} ", style=THEME["muted"])
+        line.append(" ═╪═ ", style=self._c_border)
 
-        # Token usage
         total_tokens = state.token_input + state.token_output
         if total_tokens > 0:
-            token_str = self._format_tokens(total_tokens)
-            line.append("◇ ", style=THEME["muted"])
-            line.append(token_str, style=THEME["text"])
+            in_str = self._format_tokens(state.token_input)
+            out_str = self._format_tokens(state.token_output)
+            line.append(f"{in_str}↑ {out_str}↓", style=self._c_dim)
+
+        line.append(" ═╪═ ", style=self._c_border)
+        line.append("ESC", style=self._c_muted)
+        line.append(" cancel", style=self._c_dim)
 
         return line
 
     def _get_status_style(self, status: str) -> str:
         """Get style for status text."""
         styles = {
-            "idle": THEME["muted"],
+            "idle": self._c_muted,
             "thinking": f"bold {THEME['thinking']}",
-            "executing": f"bold {THEME['agent_active']}",
-            "complete": f"bold {THEME['tool_success']}",
-            "error": f"bold {THEME['error']}",
+            "executing": f"bold {self._c_active}",
+            "complete": f"bold {self._c_success}",
+            "error": f"bold {self._c_error}",
         }
-        return styles.get(status, THEME["muted"])
+        return styles.get(status, self._c_muted)
 
     def _format_duration(self, seconds: float) -> str:
         """Format duration for display."""
@@ -84,7 +95,7 @@ class StatusBarRenderer(BaseRenderer):
             return f"{int(seconds)}s"
         mins = int(seconds // 60)
         secs = int(seconds % 60)
-        return f"{mins}m {secs}s"
+        return f"{mins}m{secs:02d}s"
 
     def _format_tokens(self, tokens: int) -> str:
         """Format token count."""
@@ -96,24 +107,27 @@ class StatusBarRenderer(BaseRenderer):
         """Render as a plain string for terminal status line."""
         parts = []
 
-        # Agent
         if state.active_agent_id:
             agent = state.agents.get(state.active_agent_id)
             if agent:
-                parts.append(f"{agent.name} | {agent.status}")
+                parts.append(f"● {agent.name} ─ {agent.status.upper()}")
         else:
-            parts.append("Ready")
+            parts.append("◯ STANDBY")
 
-        # Duration
-        parts.append(f"⏱ {self._format_duration(state.duration)}")
+        parts.append(f"T+{self._format_duration(state.duration)}")
 
-        # Tools
         success = state.total_tools - state.failed_tools
-        parts.append(f"Tools: {success}/{state.total_tools}")
+        if state.failed_tools > 0:
+            parts.append(f"OPS:{success}/{state.total_tools} ✗{state.failed_tools}")
+        else:
+            parts.append(f"OPS:{success}/{state.total_tools}")
 
-        # Tokens
         total_tokens = state.token_input + state.token_output
         if total_tokens > 0:
-            parts.append(f"◇ {self._format_tokens(total_tokens)}")
+            in_str = self._format_tokens(state.token_input)
+            out_str = self._format_tokens(state.token_output)
+            parts.append(f"{in_str}↑ {out_str}↓")
 
-        return " │ ".join(parts)
+        parts.append("ESC cancel")
+
+        return " ═╪═ ".join(parts)

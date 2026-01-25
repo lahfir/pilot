@@ -1,20 +1,28 @@
 """
-Tool renderer: displays tool calls with inputs/outputs.
+Tool renderer: military HUD-style tool execution display.
 """
 
-from typing import Optional
+from typing import Any, Optional
 from rich.console import RenderableType, Group
 from rich.text import Text
-from rich.spinner import Spinner
 
 from .base import BaseRenderer
 from ..state import TaskState, ToolState
-from ..theme import THEME, ICONS
 from ..formatters import format_dict_inline
 
 
 class ToolRenderer(BaseRenderer):
-    """Renders tool execution with inputs, outputs, and status."""
+    """Renders tool execution in military HUD style."""
+
+    def __init__(self, console, verbosity):
+        super().__init__(console, verbosity)
+        self._c_border = "#3d444d"
+        self._c_dim = "#8b949e"
+        self._c_muted = "#484f58"
+        self._c_text = "#c9d1d9"
+        self._c_success = "#3fb950"
+        self._c_error = "#f85149"
+        self._c_pending = "#d29922"
 
     def render(self, state: TaskState) -> Optional[RenderableType]:
         """Render all tools from all agents."""
@@ -25,19 +33,16 @@ class ToolRenderer(BaseRenderer):
         return Group(*tools) if tools else None
 
     def render_tool(self, tool: ToolState) -> RenderableType:
-        """Render a single tool execution block."""
+        """Render a single tool execution block in HUD style."""
         lines = []
 
-        # Header line: [status] tool_name                          duration
         header = self._render_tool_header(tool)
         lines.append(header)
 
-        # Input line
         if tool.input_data:
             input_line = self._render_input(tool.input_data)
             lines.append(input_line)
 
-        # Output or error line
         if tool.status == "success" and tool.output_data:
             output_line = self._render_output(tool.output_data)
             lines.append(output_line)
@@ -45,55 +50,49 @@ class ToolRenderer(BaseRenderer):
             error_line = self._render_error(tool.error)
             lines.append(error_line)
         elif tool.status == "pending":
-            # Show spinner for pending tools
-            spinner_line = Text("      ")
-            spinner_line.append_text(
-                Text("Processing...", style=f"italic {THEME['muted']}")
-            )
+            spinner_line = Text()
+            spinner_line.append("│   ", style=self._c_border)
+            spinner_line.append("⟳ EXECUTING...", style=f"italic {self._c_pending}")
             lines.append(spinner_line)
 
         return Group(*lines)
 
     def _render_tool_header(self, tool: ToolState) -> Text:
-        """
-        Render the tool header with status icon and inline duration.
-
-        Format: ⟳ tool_name (5.00s)
-        """
+        """Render HUD-style tool header."""
         line = Text()
 
-        if tool.status == "pending":
-            line.append(f"  {ICONS['pending']} ", style=f"bold {THEME['tool_pending']}")
-        elif tool.status == "success":
-            line.append(f"  {ICONS['success']} ", style=f"bold {THEME['tool_success']}")
-        elif tool.status == "error":
-            line.append(f"  {ICONS['error']} ", style=f"bold {THEME['tool_error']}")
-        else:
-            line.append("  ○ ", style=THEME["muted"])
+        line.append("├─ ", style=self._c_border)
 
-        name_style = THEME["tool_error"] if tool.status == "error" else THEME["text"]
+        if tool.status == "pending":
+            line.append("◐ ", style=self._c_pending)
+        elif tool.status == "success":
+            line.append("● ", style=self._c_success)
+        elif tool.status == "error":
+            line.append("✗ ", style=self._c_error)
+        else:
+            line.append("◯ ", style=self._c_muted)
+
+        name_style = self._c_error if tool.status == "error" else self._c_text
         line.append(tool.name, style=f"bold {name_style}")
 
         if tool.duration > 0:
             duration_str = self._format_duration(tool.duration)
-            line.append(f" ({duration_str})", style=THEME["muted"])
+            line.append(f" T+{duration_str}", style=self._c_dim)
 
         return line
 
     def _render_input(self, input_data: dict) -> Text:
-        """Render tool input parameters - full display, no truncation."""
+        """Render HUD-style tool input."""
         line = Text()
-        line.append(f"      {ICONS['input']} ", style=THEME["input"])
+        line.append("│   ", style=self._c_border)
+        line.append("▸ ", style=self._c_muted)
 
         cleaned_data = self._clean_input_data(input_data)
-        line.append(format_dict_inline(cleaned_data), style=THEME["text"])
+        line.append(format_dict_inline(cleaned_data), style=self._c_dim)
         return line
 
     def _clean_input_data(self, input_data: dict) -> dict:
-        """
-        Clean up input data for display.
-        Extracts actual values from JSON arrays/objects if malformed.
-        """
+        """Clean up input data for display."""
         import json
 
         cleaned = {}
@@ -116,40 +115,37 @@ class ToolRenderer(BaseRenderer):
             cleaned[key] = value
         return cleaned
 
-    def _render_output(self, output_data) -> Text:
-        """
-        Render tool output as clean indented block.
-
-        Formats long outputs with proper line breaks and indentation.
-        """
+    def _render_output(self, output_data: Any, duration: float | None = None) -> Text:
+        """Render HUD-style tool output."""
         line = Text()
-        line.append(f"      {ICONS['output']} ", style=THEME["output"])
+        line.append("│   ", style=self._c_border)
+        line.append("◀ ", style=self._c_success)
 
         if isinstance(output_data, str):
             formatted = self._format_output_string(output_data)
-            line.append(formatted, style=THEME["text"])
+            line.append(formatted, style=self._c_text)
         elif isinstance(output_data, dict):
             formatted = self._format_output_dict(output_data)
-            line.append(formatted, style=THEME["text"])
+            line.append(formatted, style=self._c_text)
         else:
-            line.append(str(output_data), style=THEME["text"])
+            line.append(str(output_data), style=self._c_text)
+
+        if duration and duration > 0:
+            duration_str = self._format_duration(duration)
+            line.append(f" T+{duration_str}", style=self._c_dim)
 
         return line
 
     def _format_output_string(self, output: str) -> str:
-        """
-        Format string output with proper line breaks and indentation.
-
-        Handles multi-line outputs by indenting continuation lines.
-        """
+        """Format string output with HUD-style line breaks."""
         if not output:
-            return "success"
+            return "OK"
 
         output = output.strip()
         lines = [line for line in output.split("\n") if line.strip()]
 
         if not lines:
-            return "success"
+            return "OK"
 
         if len(lines) == 1 and len(lines[0]) <= 80:
             return lines[0]
@@ -157,28 +153,24 @@ class ToolRenderer(BaseRenderer):
         if len(lines) == 1:
             return lines[0][:77] + "..."
 
-        indent = "\n          │ "
+        indent = "\n│       "
         formatted = lines[0]
 
         for line in lines[1:15]:
             formatted += f"{indent}{line.strip()}"
 
         if len(lines) > 15:
-            formatted += f"{indent}... ({len(lines) - 15} more lines)"
+            formatted += f"{indent}... (+{len(lines) - 15} lines)"
 
         return formatted
 
     def _format_output_dict(self, output: dict) -> str:
-        """
-        Format dictionary output as clean key-value pairs.
-
-        Groups and summarizes complex nested data.
-        """
+        """Format dictionary output in HUD style."""
         if not output:
-            return "success"
+            return "OK"
 
         parts = []
-        indent = "         "
+        indent = "│       "
 
         for key, value in list(output.items())[:5]:
             if isinstance(value, list):
@@ -191,7 +183,7 @@ class ToolRenderer(BaseRenderer):
                 parts.append(f"{key}: {value}")
 
         if len(output) > 5:
-            parts.append(f"... +{len(output) - 5} more")
+            parts.append(f"+{len(output) - 5} more")
 
         if len(parts) == 1:
             return parts[0]
@@ -202,17 +194,21 @@ class ToolRenderer(BaseRenderer):
 
         return result
 
-    def _render_error(self, error: str) -> Text:
-        """Render tool error - full display."""
+    def _render_error(self, error: str, duration: float | None = None) -> Text:
+        """Render HUD-style tool error."""
         line = Text()
-        line.append(f"      {ICONS['error']} ", style=f"bold {THEME['error']}")
-        line.append(error, style=THEME["error"])
+        line.append("│   ", style=self._c_border)
+        line.append("✗ ", style=self._c_error)
+        line.append(error, style=self._c_error)
+        if duration and duration > 0:
+            duration_str = self._format_duration(duration)
+            line.append(f" T+{duration_str}", style=self._c_dim)
         return line
 
     def _format_duration(self, seconds: float) -> str:
-        """Format duration for display."""
+        """Format duration in HUD style."""
         if seconds < 0.01:
-            return "<0.01s"
+            return "0.01s"
         elif seconds < 1:
             return f"{seconds:.2f}s"
         elif seconds < 60:
@@ -220,18 +216,14 @@ class ToolRenderer(BaseRenderer):
         else:
             mins = int(seconds // 60)
             secs = int(seconds % 60)
-            return f"{mins}m {secs}s"
+            return f"{mins}m{secs:02d}s"
 
     def render_tool_with_spinner(self, tool: ToolState) -> RenderableType:
-        """Render a pending tool with an animated spinner."""
+        """Render a pending tool with HUD status."""
         if tool.status != "pending":
             return self.render_tool(tool)
 
-        spinner = Spinner("dots", text=f" {tool.name}", style=THEME["tool_pending"])
-        lines = [
-            Text("  ").append_text(Text.from_markup(f"[{THEME['tool_pending']}]")),
-            spinner,
-        ]
+        lines = [self._render_tool_header(tool)]
 
         if tool.input_data:
             lines.append(self._render_input(tool.input_data))

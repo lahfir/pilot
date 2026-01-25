@@ -25,6 +25,14 @@ THEME: Dict[str, str] = {
     "border": "#30363d",
     "header": "#ffffff",
     "panel_bg": "#0d1117",
+    # Phase Colors
+    "phase_thinking": "#aaaaff",  # Purple for LLM reasoning
+    "phase_executing": "#ffaa00",  # Orange for tool execution
+    "phase_waiting": "#7d8590",  # Muted for waiting
+    # Timing Colors
+    "timing_fast": "#00ff88",  # Green for <1s
+    "timing_normal": "#7d8590",  # Gray for 1-5s
+    "timing_slow": "#d29922",  # Yellow for >5s
 }
 
 ICONS: Dict[str, str] = {
@@ -49,6 +57,10 @@ ICONS: Dict[str, str] = {
     "bullet": "•",
     "arrow": "❯",
     "separator": "│",
+    # Phase Icons
+    "phase_thinking": "◐",
+    "phase_executing": "⚙",
+    "phase_waiting": "◯",
 }
 
 SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]

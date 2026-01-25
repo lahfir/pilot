@@ -17,6 +17,9 @@ __all__ = [
     "WebhookServer",
     "AudioCapture",
     "VoiceInputService",
+    "StateObserver",
+    "SystemState",
+    "ObservationScope",
 ]
 
 
@@ -36,4 +39,16 @@ def __getattr__(name):
         raise ImportError(
             "WebhookServer requires Flask. Install with: pip install flask"
         )
+    elif name == "StateObserver":
+        from .state_observer import StateObserver
+
+        return StateObserver
+    elif name == "SystemState":
+        from .state_observer import SystemState
+
+        return SystemState
+    elif name == "ObservationScope":
+        from .state_observer import ObservationScope
+
+        return ObservationScope
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

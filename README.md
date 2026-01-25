@@ -9,19 +9,304 @@ Cross-platform AI agent system for autonomous desktop and web automation.
 
 ## Overview
 
-Computer Use Agent enables AI to control your computer like a human would. Describe what you want in natural language, and the system figures out how to do it — across browsers, desktop apps, and the terminal.
+Computer Use Agent enables AI to control your computer like a human would. Describe what you want in natural language, and the system figures out how to do it — across browsers, desktop apps, and the terminal. Uses multi-agent orchestration with specialist agents for web automation, GUI control, system commands, and code generation.
 
-**Key capabilities:**
+## Quick Start
 
-- **Multi-agent orchestration** — Manager agent decomposes tasks and delegates to specialists
-- **Browser automation** — Web navigation, downloads, forms, phone verification via Browser-Use
-- **Desktop GUI automation** — Control any application with multi-tier accuracy (accessibility APIs → OCR → vision AI)
-- **System commands** — Safe shell execution with validation and confirmation prompts
-- **Code automation** — Write, refactor, and debug code via Cline AI integration
-- **Voice input** — Optional speech-to-text via Deepgram (100+ languages)
-- **Phone verification** — Optional Twilio SMS integration for account signups
+Get running in 3 commands:
 
-## How It Works
+```bash
+# Clone and install
+git clone https://github.com/lahfir/computer-use.git && cd computer-use
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync --extra macos  # or windows/linux
+
+# Configure (create .env file)
+echo "LLM_PROVIDER=google
+LLM_MODEL=gemini-2.0-flash-exp
+GOOGLE_API_KEY=your_key_here" > .env
+
+# Run
+uv run python -m computer_use.main
+```
+
+**macOS users:** Grant accessibility permissions in System Settings → Privacy & Security → Accessibility (add Terminal to the list).
+
+## Installation
+
+### macOS
+
+```bash
+git clone https://github.com/lahfir/computer-use.git && cd computer-use
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync --extra macos
+```
+
+**Permissions:** System Settings → Privacy & Security → Accessibility → Add Terminal (or your IDE)
+
+### Windows
+
+```bash
+git clone https://github.com/lahfir/computer-use.git && cd computer-use
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+uv sync --extra windows
+```
+
+**Permissions:** Run terminal as Administrator for full UI Automation access
+
+### Linux
+
+```bash
+git clone https://github.com/lahfir/computer-use.git && cd computer-use
+curl -LsSf https://astral.sh/uv/install.sh | sh
+sudo apt-get install -y python3-pyatspi python3-xlib
+uv sync --extra linux
+```
+
+**Note:** Requires X11 (Wayland support is limited)
+
+### One-shot Installer
+
+```bash
+git clone https://github.com/lahfir/computer-use.git && cd computer-use
+./install.sh
+```
+
+The installer detects your platform, installs dependencies, and configures permissions.
+
+## CLI Reference
+
+### Command
+
+```bash
+uv run python -m computer_use.main [OPTIONS]
+```
+
+### Options
+
+| Flag                      | Description                                                                      |
+| ------------------------- | -------------------------------------------------------------------------------- |
+| `-v`, `--verbose`         | Enable detailed logging output                                                   |
+| `-q`, `--quiet`           | Minimal output, no dashboard (useful for scripts)                               |
+| `--voice-input`           | Start with voice input mode enabled (toggle with F5)                             |
+| `--use-browser-profile`   | Use existing Chrome user profile for authenticated sessions                      |
+| `--browser-profile NAME` | Chrome profile directory name (default: "Default", requires `--use-browser-profile`) |
+
+**Note:** `--verbose` and `--quiet` are mutually exclusive.
+
+### Usage Examples
+
+```bash
+# Basic usage
+uv run python -m computer_use.main
+
+# With voice input enabled
+uv run python -m computer_use.main --voice-input
+
+# Verbose mode for debugging
+uv run python -m computer_use.main --verbose
+
+# Quiet mode (minimal output)
+uv run python -m computer_use.main --quiet
+
+# Use Chrome profile for authenticated sessions
+uv run python -m computer_use.main --use-browser-profile --browser-profile "Profile 1"
+```
+
+## Commands & Shortcuts
+
+### Keyboard Shortcuts
+
+| Key                      | Action                                          |
+| ------------------------ | ----------------------------------------------- |
+| **F5**                   | Toggle between voice and text input modes      |
+| **ESC**                  | Cancel current task immediately                 |
+| **Ctrl+C**               | Quit the application                            |
+| **Ctrl+J** / **Alt+Enter** | Insert newline in text input (multiline tasks) |
+
+### Interactive Commands
+
+While in the interactive prompt, you can use:
+
+| Command              | Aliases          | Action                                    |
+| -------------------- | ---------------- | ----------------------------------------- |
+| `quit`               | `exit`, `q`      | Exit the application                      |
+| `history`            | `h`, `recent`    | Show last 10 tasks for quick re-selection |
+
+## Example Session
+
+Here's what a typical session looks like:
+
+```bash
+$ uv run python -m computer_use.main
+
+══════════════════════════════════════════════════════════════════
+  Computer Use Agent
+══════════════════════════════════════════════════════════════════
+  Platform: macOS (ARM64) │ LLM: gemini-2.0-flash-exp
+  Voice: disabled │ Twilio: not configured
+══════════════════════════════════════════════════════════════════
+
+What would you like me to do?
+➤ Open Calculator and compute 25 × 36
+
+┌─ Manager Agent ──────────────────────────────── ● ACTIVE ─┐
+  ┊ Analyzing task: Need to open Calculator app and perform calculation
+  → Delegating to GUI Agent: Open Calculator and compute 25 × 36
+└─ Manager Agent ───────────────────────── COMPLETE ─┘
+
+┌─ GUI Agent ──────────────────────────────── ● ACTIVE ─┐
+  • Opening Calculator application
+  ⟳ open_application
+      → app_name: Calculator
+  ✓ open_application (0.85s)
+      ← Application opened successfully
+  • Typing calculation: 25 * 36 =
+  ⟳ type_text
+      → text: 25 * 36 =
+  ✓ type_text (0.12s)
+      ← Text typed successfully
+└─ GUI Agent ───────────────────────── COMPLETE ─┘
+│ Duration: 2s │ Tools: 2/2              │
+
+✅ Result: Calculator opened and calculation completed. Result: 900
+
+══════════════════════════════════════════════════════════════════
+  SESSION SUMMARY
+══════════════════════════════════════════════════════════════════
+  Duration: 3s │ Tools: 2/2 │ Tokens: 45↑ 12↓ │ Agents: 2
+  Time Breakdown: LLM 1s (33%) │ Tools 1s (33%) │ Other 1s (33%) │ LLM Calls: 2
+══════════════════════════════════════════════════════════════════
+
+What would you like me to do?
+➤ _
+```
+
+## Configuration
+
+Create a `.env` file in the project root:
+
+```bash
+# Required: LLM provider and model
+LLM_PROVIDER=google
+LLM_MODEL=gemini-2.0-flash-exp
+GOOGLE_API_KEY=your_key_here
+
+# Vision LLM (for screenshot analysis)
+VISION_LLM_PROVIDER=google
+VISION_LLM_MODEL=gemini-2.0-flash-exp
+
+# Browser LLM (for web automation)
+BROWSER_LLM_PROVIDER=google
+BROWSER_LLM_MODEL=gemini-2.0-flash-exp
+```
+
+### Supported LLM Providers
+
+| Provider  | Models                           | Environment Variable |
+| --------- | -------------------------------- | -------------------- |
+| Google    | gemini-2.0-flash-exp, gemini-pro | `GOOGLE_API_KEY`     |
+| OpenAI    | gpt-4o, gpt-4-turbo              | `OPENAI_API_KEY`     |
+| Anthropic | claude-3-5-sonnet, claude-3-opus | `ANTHROPIC_API_KEY`  |
+
+### Optional: Phone Verification (Twilio)
+
+```bash
+TWILIO_ACCOUNT_SID=your_sid
+TWILIO_AUTH_TOKEN=your_token
+TWILIO_PHONE_NUMBER=+1234567890
+WEBHOOK_PORT=5000  # Optional, defaults to 5000
+```
+
+Enables SMS verification for account signups during web automation.
+
+### Optional: Voice Input (Deepgram)
+
+```bash
+DEEPGRAM_API_KEY=your_deepgram_key
+VOICE_INPUT_LANGUAGE=multi  # or 'en', 'es', 'fr', etc.
+```
+
+Enables voice-to-text input (100+ languages supported). Toggle with F5 key.
+
+## Agents
+
+The system uses a hierarchical multi-agent architecture:
+
+| Agent       | Role                                  | Description                                                                |
+| ----------- | ------------------------------------- | -------------------------------------------------------------------------- |
+| **Manager** | Task Orchestration Manager            | Analyzes requests, decomposes into subtasks, delegates to specialists      |
+| **Browser** | Web Automation Specialist             | Web navigation, downloads, forms, phone verification via Browser-Use       |
+| **GUI**     | Desktop Application Automation Expert | Native app control with multi-tier accuracy (accessibility → OCR → vision) |
+| **System**  | System Command & Terminal Expert      | Shell commands, file operations, process management                        |
+| **Coding**  | Code Automation Specialist            | Code writing, refactoring, bug fixes via Cline AI                          |
+
+## Tools
+
+### GUI Tools
+
+| Tool                      | Description                                        |
+| ------------------------- | -------------------------------------------------- |
+| `open_application`        | Launch and focus desktop applications              |
+| `get_accessible_elements` | Get interactive UI elements via accessibility APIs |
+| `click_element`           | Click elements using multi-tier detection          |
+| `type_text`               | Keyboard input, shortcuts, and text entry          |
+| `read_screen_text`        | Extract text from screen via OCR                   |
+| `scroll`                  | Scroll content in applications                     |
+| `get_window_image`        | Capture specific window as image                   |
+| `check_app_running`       | Check if an application is running                 |
+| `list_running_apps`       | List all running applications                      |
+| `request_human_input`     | Escalate to human for CAPTCHAs, 2FA, or decisions  |
+| `find_application`        | LLM-based app selection for a given capability     |
+| `take_screenshot`         | Capture screenshots (full screen, region, or app window) |
+
+### Web Tools (Browser Agent)
+
+**Browser-Use Core Actions:**
+
+| Tool              | Description                     |
+| ----------------- | ------------------------------- |
+| `go_to_url`       | Navigate to a URL               |
+| `click_element`   | Click on page elements          |
+| `input_text`      | Type text into form fields      |
+| `scroll_down/up`  | Scroll the page                 |
+| `extract_content` | Extract text/data from pages    |
+| `upload_file`     | Upload files to web forms       |
+| `screenshot`      | Capture page screenshots        |
+| `wait`            | Wait for elements or conditions |
+
+**Custom Browser Tools:**
+
+| Tool                 | Description                                            |
+| -------------------- | ------------------------------------------------------ |
+| `paste_text`         | Instant text paste via JavaScript (faster than typing) |
+| `type_to_focused`     | Type into canvas editors (Google Docs, Notion, Figma)  |
+| `get_phone_number`   | Get Twilio number for SMS verification                 |
+| `get_verify_code`    | Wait for and retrieve SMS verification code            |
+| `request_human_help` | Request human help for CAPTCHAs, 2FA, QR codes         |
+| `generate_image`     | Generate AI images using Gemini for ads/marketing      |
+| `delegate_to_gui`    | Delegate OS-native dialogs to GUI agent                |
+
+### System Tools
+
+| Tool                    | Description                                  |
+| ----------------------- | -------------------------------------------- |
+| `execute_shell_command` | Safe shell command execution with validation |
+
+### Coding Tools
+
+| Tool                | Description                                       |
+| ------------------- | ------------------------------------------------- |
+| `coding_automation` | Autonomous code writing/modification via Cline AI |
+
+### Observation Tools
+
+| Tool                 | Description                                    |
+| -------------------- | ---------------------------------------------- |
+| `get_system_state`   | Observe current system state (OPAV pattern)    |
+| `verify_app_focused` | Verify that a specific application is focused  |
+
+## Architecture
 
 ```mermaid
 flowchart TB
@@ -141,220 +426,79 @@ end
 
 For detailed architecture, see [docs/ARCHITECTURE_OVERVIEW.md](docs/ARCHITECTURE_OVERVIEW.md) and [docs/CREWAI_ARCHITECTURE.md](docs/CREWAI_ARCHITECTURE.md).
 
-## Agents
+## Programmatic Usage
 
-| Agent       | Role                                  | Description                                                                |
-| ----------- | ------------------------------------- | -------------------------------------------------------------------------- |
-| **Manager** | Task Orchestration Manager            | Analyzes requests, decomposes into subtasks, delegates to specialists      |
-| **Browser** | Web Automation Specialist             | Web navigation, downloads, forms, phone verification via Browser-Use       |
-| **GUI**     | Desktop Application Automation Expert | Native app control with multi-tier accuracy (accessibility → OCR → vision) |
-| **System**  | System Command & Terminal Expert      | Shell commands, file operations, process management                        |
-| **Coding**  | Code Automation Specialist            | Code writing, refactoring, bug fixes via Cline AI                          |
-
-## Tools
-
-### GUI Tools
-
-| Tool                      | Description                                        |
-| ------------------------- | -------------------------------------------------- |
-| `open_application`        | Launch and focus desktop applications              |
-| `get_accessible_elements` | Get interactive UI elements via accessibility APIs |
-| `click_element`           | Click elements using multi-tier detection          |
-| `type_text`               | Keyboard input, shortcuts, and text entry          |
-| `read_screen_text`        | Extract text from screen via OCR                   |
-| `scroll`                  | Scroll content in applications                     |
-| `get_window_image`        | Capture specific window as image                   |
-| `check_app_running`       | Check if an application is running                 |
-| `list_running_apps`       | List all running applications                      |
-| `request_human_input`     | Escalate to human for CAPTCHAs, 2FA, or decisions  |
-
-### Web Tools (Browser Agent)
-
-**Browser-Use Core Actions:**
-
-| Tool              | Description                     |
-| ----------------- | ------------------------------- |
-| `go_to_url`       | Navigate to a URL               |
-| `click_element`   | Click on page elements          |
-| `input_text`      | Type text into form fields      |
-| `scroll_down/up`  | Scroll the page                 |
-| `extract_content` | Extract text/data from pages    |
-| `upload_file`     | Upload files to web forms       |
-| `screenshot`      | Capture page screenshots        |
-| `wait`            | Wait for elements or conditions |
-
-**Custom Browser Tools:**
-
-| Tool                 | Description                                            |
-| -------------------- | ------------------------------------------------------ |
-| `paste_text`         | Instant text paste via JavaScript (faster than typing) |
-| `type_to_focused`    | Type into canvas editors (Google Docs, Notion, Figma)  |
-| `get_phone_number`   | Get Twilio number for SMS verification                 |
-| `get_verify_code`    | Wait for and retrieve SMS verification code            |
-| `request_human_help` | Request human help for CAPTCHAs, 2FA, QR codes         |
-| `generate_image`     | Generate AI images using Gemini for ads/marketing      |
-| `delegate_to_gui`    | Delegate OS-native dialogs to GUI agent                |
-
-### System Tools
-
-| Tool                    | Description                                  |
-| ----------------------- | -------------------------------------------- |
-| `execute_shell_command` | Safe shell command execution with validation |
-
-### Coding Tools
-
-| Tool                | Description                                       |
-| ------------------- | ------------------------------------------------- |
-| `coding_automation` | Autonomous code writing/modification via Cline AI |
-
-### Capability Tools
-
-| Tool               | Description                                    |
-| ------------------ | ---------------------------------------------- |
-| `find_application` | LLM-based app selection for a given capability |
-
-## Requirements
-
-### Python
-
-| Version | Status   |
-| ------- | -------- |
-| 3.11+   | Required |
-
-### Platform Support
-
-| Platform | Version                   | Accessibility API            | Status       |
-| -------- | ------------------------- | ---------------------------- | ------------ |
-| macOS    | 10.14+ (Mojave)           | NSAccessibility via atomacos | Full support |
-| Windows  | 10+                       | UI Automation via pywinauto  | Full support |
-| Linux    | Ubuntu 20.04+, Debian 11+ | AT-SPI via pyatspi           | Full support |
-
-## Installation
-
-### Recommended (uv)
-
-```bash
-git clone https://github.com/<ORG>/<REPO>.git
-cd computer-use
-
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-uv sync --extra macos      # macOS
-uv sync --extra windows    # Windows
-uv sync --extra linux      # Linux
-```
-
-### One-shot installer
-
-```bash
-git clone https://github.com/<ORG>/<REPO>.git
-cd computer-use
-./install.sh
-```
-
-The installer detects your platform, installs dependencies, and configures permissions.
-
-### Platform-specific notes
-
-**macOS:** Grant accessibility permissions in System Settings → Privacy & Security → Accessibility. Add Terminal (or your IDE) to the list.
-
-**Windows:** Run as Administrator for full UI Automation access.
-
-**Linux:** Install AT-SPI dependencies:
-
-```bash
-sudo apt-get install -y python3-pyatspi python3-xlib
-```
-
-## Configuration
-
-Create a `.env` file in the project root:
-
-```bash
-# Required: LLM provider and model
-LLM_PROVIDER=google
-LLM_MODEL=gemini-2.0-flash-exp
-GOOGLE_API_KEY=your_key_here
-
-# Vision LLM (for screenshot analysis)
-VISION_LLM_PROVIDER=google
-VISION_LLM_MODEL=gemini-2.0-flash-exp
-
-# Browser LLM (for web automation)
-BROWSER_LLM_PROVIDER=google
-BROWSER_LLM_MODEL=gemini-2.0-flash-exp
-```
-
-### Supported LLM Providers
-
-| Provider  | Models                           | Environment Variable |
-| --------- | -------------------------------- | -------------------- |
-| Google    | gemini-2.0-flash-exp, gemini-pro | `GOOGLE_API_KEY`     |
-| OpenAI    | gpt-4o, gpt-4-turbo              | `OPENAI_API_KEY`     |
-| Anthropic | claude-3-5-sonnet, claude-3-opus | `ANTHROPIC_API_KEY`  |
-
-### Optional: Phone Verification (Twilio)
-
-```bash
-TWILIO_ACCOUNT_SID=your_sid
-TWILIO_AUTH_TOKEN=your_token
-TWILIO_PHONE_NUMBER=+1234567890
-```
-
-### Optional: Voice Input (Deepgram)
-
-```bash
-DEEPGRAM_API_KEY=your_deepgram_key
-VOICE_INPUT_LANGUAGE=multi  # or 'en', 'es', 'fr', etc.
-```
-
-## Quickstart
-
-### CLI Usage
-
-```bash
-uv run python -m computer_use.main
-```
-
-Enter tasks in natural language:
-
-```
-💬 Enter your task:
-➤ Download Tesla stock data and create a chart in Excel
-```
-
-With voice input:
-
-```bash
-uv run python -m computer_use.main --voice-input
-```
-
-Press **F5** to toggle between text and voice modes.
-
-### Library Usage
+Use the `ComputerUseCrew` class for programmatic control:
 
 ```python
+import asyncio
 from computer_use.crew import ComputerUseCrew
 from computer_use.utils.platform_detector import detect_platform
 from computer_use.utils.safety_checker import SafetyChecker
 
-capabilities = detect_platform()
-safety_checker = SafetyChecker()
-crew = ComputerUseCrew(capabilities, safety_checker)
+async def main():
+    # Initialize crew
+    crew = ComputerUseCrew(
+        capabilities=detect_platform(),
+        safety_checker=SafetyChecker(),
+    )
+    
+    # Execute a task
+    result = await crew.execute_task("Open Safari and search for Python tutorials")
+    
+    # Check result
+    print(f"Success: {result.overall_success}")
+    print(f"Result: {result.result}")
+    if result.error:
+        print(f"Error: {result.error}")
 
-result = await crew.execute_task("Open Calculator and compute 25 × 36")
+asyncio.run(main())
+```
 
-if result.overall_success:
-    print("Done!")
-else:
-    print(f"Failed: {result.error}")
+### With Conversation History
+
+```python
+conversation_history = []
+
+# First task
+result1 = await crew.execute_task(
+    "Download a PDF from example.com",
+    conversation_history=conversation_history
+)
+
+# Second task (can reference previous results)
+result2 = await crew.execute_task(
+    "Open that PDF in Preview",
+    conversation_history=conversation_history
+)
+```
+
+### With Browser Profile (Authenticated Sessions)
+
+```python
+crew = ComputerUseCrew(
+    capabilities=detect_platform(),
+    safety_checker=SafetyChecker(),
+    use_browser_profile=True,
+    browser_profile_directory="Profile 1",  # Chrome profile name
+)
+```
+
+### TaskExecutionResult Schema
+
+```python
+class TaskExecutionResult:
+    task: str                    # Original task description
+    result: str | None           # Execution result text (None if failed)
+    overall_success: bool        # Whether execution succeeded
+    error: str | None           # Error message if failed
 ```
 
 ## Examples
 
 ### Browser Tasks
 
-```
+```text
 Download HD image of Cristiano Ronaldo
 Search for Tesla stock price and save to file
 Sign up for account on website with phone verification
@@ -362,7 +506,7 @@ Sign up for account on website with phone verification
 
 ### Desktop GUI Tasks
 
-```
+```text
 Open Calculator and compute 1234 × 5678
 Create new document in TextEdit with content "Hello World"
 Open System Settings and change theme to dark mode
@@ -370,7 +514,7 @@ Open System Settings and change theme to dark mode
 
 ### System Tasks
 
-```
+```text
 Create folder named "reports" in Documents
 Move all PDF files from Downloads to Documents
 List all Python files in current directory
@@ -378,7 +522,7 @@ List all Python files in current directory
 
 ### Coding Tasks
 
-```
+```text
 Create a snake game in Python using pygame
 Write unit tests for the user authentication module
 Refactor the database queries to use async/await
@@ -386,7 +530,7 @@ Refactor the database queries to use async/await
 
 ### Multi-step Workflows
 
-```
+```text
 Download census data from census.gov and create chart in Excel
 Research fashion trends online and create summary in TextEdit
 Scrape product prices from Amazon and generate a comparison report
@@ -459,12 +603,28 @@ The system defaults to EasyOCR. Alternative engines:
 | "No microphone detected"     | Check system permissions and hardware               |
 | Language detection failing   | Set `VOICE_INPUT_LANGUAGE=multi` for auto-detection |
 
+## Requirements
+
+### Python
+
+| Version | Status   |
+| ------- | -------- |
+| 3.11+   | Required |
+
+### Platform Support
+
+| Platform | Version                   | Accessibility API            | Status       |
+| -------- | ------------------------- | ---------------------------- | ------------ |
+| macOS    | 10.14+ (Mojave)           | NSAccessibility via atomacos | Full support |
+| Windows  | 10+                       | UI Automation via pywinauto  | Full support |
+| Linux    | Ubuntu 20.04+, Debian 11+ | AT-SPI via pyatspi           | Full support |
+
 ## Development
 
 ### Setup
 
 ```bash
-git clone https://github.com/<ORG>/<REPO>.git
+git clone https://github.com/lahfir/computer-use.git
 cd computer-use
 uv sync --dev --extra macos  # or windows/linux
 ```

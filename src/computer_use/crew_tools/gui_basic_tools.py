@@ -5,12 +5,14 @@ Simple tools: screenshot, open_application, read_screen, scroll.
 
 import atexit
 import os
+import time
 from pydantic import BaseModel, Field
 from typing import Optional, Set
 
 from .instrumented_tool import InstrumentedBaseTool
 from ..schemas.actions import ActionResult
 from ..config.timing_config import get_timing_config
+from ..services.app_state import get_app_state
 from ..utils.ui import ActionType, action_spinner, dashboard, print_action_result
 
 
@@ -87,10 +89,7 @@ class TakeScreenshotTool(InstrumentedBaseTool):
     """Capture screenshot of screen or region."""
 
     name: str = "take_screenshot"
-    description: str = (
-        "Capture screenshot of entire screen, specific region, or target a specific application window. "
-        "Use app_name parameter to capture ONLY that app's window (e.g., app_name='Calculator')"
-    )
+    description: str = "Capture screenshot of screen or app window."
     args_schema: type[BaseModel] = TakeScreenshotInput
 
     def _run(
@@ -216,84 +215,86 @@ class OpenApplicationTool(InstrumentedBaseTool):
                 try:
                     process_tool.focus_app(app_name)
                 except Exception:
-                    pass  # If focus fails, continue checking
+                    pass
 
-                if process_tool and hasattr(process_tool, "is_process_running"):
-                    if process_tool.is_process_running(app_name):
-                        if accessibility_tool and hasattr(
-                            accessibility_tool, "is_app_frontmost"
-                        ):
-                            is_front = accessibility_tool.is_app_frontmost(app_name)
-                            if (
-                                is_front
-                                or attempt >= timing.app_launch_frontmost_attempts
-                            ):
-                                if hasattr(accessibility_tool, "set_active_app"):
-                                    accessibility_tool.set_active_app(app_name)
+                time.sleep(wait_interval)
 
-                                return ActionResult(
-                                    success=True,
-                                    action_taken=f"Opened and focused {app_name} (frontmost={is_front}, attempt {attempt + 1})",
-                                    method_used="process_verification+focus",
-                                    confidence=1.0,
-                                    data={
-                                        "wait_time": (attempt + 1) * wait_interval
-                                        + 1.0,
-                                        "is_frontmost": is_front,
-                                    },
-                                )
-                        else:
-                            return ActionResult(
-                                success=True,
-                                action_taken=f"Opened {app_name} (process verified, attempt {attempt + 1})",
-                                method_used="process_verification",
-                                confidence=1.0,
-                                data={"wait_time": (attempt + 1) * wait_interval},
-                            )
+                if accessibility_tool and hasattr(
+                    accessibility_tool, "is_app_frontmost"
+                ):
+                    is_front = accessibility_tool.is_app_frontmost(app_name)
+                    if is_front:
+                        if hasattr(accessibility_tool, "set_active_app"):
+                            accessibility_tool.set_active_app(app_name)
 
-                if accessibility_tool and hasattr(accessibility_tool, "is_app_running"):
-                    if accessibility_tool.is_app_running(app_name):
+                        get_app_state().set_target_app(app_name)
+
                         return ActionResult(
                             success=True,
-                            action_taken=f"Opened {app_name} (accessibility verified, attempt {attempt + 1})",
-                            method_used="accessibility_verification",
+                            action_taken=f"Opened and focused {app_name} (frontmost verified, attempt {attempt + 1})",
+                            method_used="accessibility_frontmost",
                             confidence=1.0,
-                            data={"wait_time": (attempt + 1) * wait_interval},
+                            data={
+                                "wait_time": (attempt + 1) * wait_interval,
+                                "is_frontmost": True,
+                            },
                         )
 
-                screenshot_tool = self._tool_registry.get_tool("screenshot")
-                if screenshot_tool:
-                    try:
-                        _, metadata = screenshot_tool.capture_active_window(app_name)
-                        if metadata.get("captured"):
-                            return ActionResult(
-                                success=True,
-                                action_taken=f"Opened {app_name} (window captured, attempt {attempt + 1})",
-                                method_used="window_capture_verification",
-                                confidence=1.0,
-                                data={"wait_time": (attempt + 1) * wait_interval},
-                            )
-                    except Exception:
-                        pass
+            is_running = False
+            if process_tool and hasattr(process_tool, "is_process_running"):
+                is_running = process_tool.is_process_running(app_name)
+
+            if is_running:
+                try:
+                    process_tool.focus_app(app_name)
+                except Exception:
+                    pass
+
+                if accessibility_tool and hasattr(accessibility_tool, "set_active_app"):
+                    accessibility_tool.set_active_app(app_name)
+                get_app_state().set_target_app(app_name)
+
+                return ActionResult(
+                    success=True,
+                    action_taken=f"Opened {app_name} (running, focus attempted)",
+                    method_used="process_running",
+                    confidence=0.8,
+                    data={
+                        "wait_time": max_attempts * wait_interval,
+                        "is_frontmost": False,
+                        "is_running": True,
+                        "note": "App is running. Terminal may have stolen focus. Use get_accessible_elements to verify.",
+                    },
+                )
 
             running_apps = []
             try:
-                if process_tool and hasattr(process_tool, "list_running_processes"):
-                    processes = process_tool.list_running_processes()
-                    running_apps = [p["name"] for p in processes[:10]]
+                if accessibility_tool and hasattr(
+                    accessibility_tool, "get_running_app_names"
+                ):
+                    running_apps = accessibility_tool.get_running_app_names()[:15]
             except Exception:
                 pass
 
-            suggestion = ""
+            current_frontmost = None
+            try:
+                if accessibility_tool and hasattr(
+                    accessibility_tool, "get_frontmost_app"
+                ):
+                    current_frontmost = accessibility_tool.get_frontmost_app()
+            except Exception:
+                pass
+
+            suggestion = f" Current frontmost: {current_frontmost or 'unknown'}."
             if running_apps:
-                suggestion = f" Available apps: {running_apps}. Use find_application() or list_running_apps() to find the correct name."
+                suggestion += f" Running GUI apps: {running_apps}."
 
             return ActionResult(
                 success=False,
-                action_taken=f"Launched {app_name} but couldn't verify it's running after 5s",
-                method_used="process",
+                action_taken=f"Launched {app_name} but it didn't become frontmost",
+                method_used="accessibility",
                 confidence=0.3,
-                error=f"'{app_name}' not detected. TIP: Call find_application('{app_name}') first to get the CORRECT app name.{suggestion}",
+                error=f"'{app_name}' launched but not frontmost after {max_attempts * wait_interval:.1f}s.{suggestion}",
             )
 
         except Exception as e:
@@ -322,10 +323,7 @@ class ReadScreenTextTool(InstrumentedBaseTool):
     """Extract text from screen using OCR."""
 
     name: str = "read_screen_text"
-    description: str = (
-        "Extract visible text from screen, specific region, or application window using OCR. "
-        "Can target entire screen, custom region, or specific application."
-    )
+    description: str = "Extract text from screen or app window via OCR."
     args_schema: type[BaseModel] = ReadScreenInput
 
     def _run(
@@ -473,11 +471,7 @@ class ListRunningAppsTool(InstrumentedBaseTool):
     """List all currently running applications."""
 
     name: str = "list_running_apps"
-    description: str = (
-        "Get list of all currently running applications. "
-        "Use this BEFORE trying to open an app to check if it's already running. "
-        "Returns list of app names that are currently active."
-    )
+    description: str = "List all currently running applications."
     args_schema: type[BaseModel] = ListRunningAppsInput
 
     def _run(self) -> ActionResult:
@@ -556,11 +550,7 @@ class CheckAppRunningTool(InstrumentedBaseTool):
     """Check if a specific application is currently running."""
 
     name: str = "check_app_running"
-    description: str = (
-        "Check if a specific application is currently running. "
-        "Use this to verify an app's state before trying to open or interact with it. "
-        "Returns true if app is running, false otherwise."
-    )
+    description: str = "Check if an app is running."
     args_schema: type[BaseModel] = CheckAppRunningInput
 
     def _run(self, app_name: str) -> ActionResult:
@@ -608,7 +598,10 @@ class CheckAppRunningTool(InstrumentedBaseTool):
 class GetAccessibleElementsInput(BaseModel):
     """Input for getting all accessible elements."""
 
-    app_name: str = Field(description="Application name to get elements from")
+    app_name: Optional[str] = Field(
+        default=None,
+        description="Application name to get elements from. If not provided, uses current target app.",
+    )
     filter_text: Optional[str] = Field(
         default=None,
         description="Optional text to filter elements by (case-insensitive search in label/title)",
@@ -643,45 +636,48 @@ def _get_element_priority(element: dict) -> tuple:
     return (is_input, center[1] if center else 9999, center[0] if center else 9999)
 
 
-def _format_elements_compact(elements: list, limit: int = 75) -> str:
-    """Format elements in compact, categorized format for efficient LLM parsing."""
+def _format_elements_brief(elements: list) -> str:
+    """Format elements as a brief role count summary."""
+    from typing import Dict
+
+    by_role: Dict[str, int] = {}
+    for e in elements:
+        role = e.get("role", "Other")
+        by_role[role] = by_role.get(role, 0) + 1
+
+    parts = [f"{role}:{count}" for role, count in sorted(by_role.items())]
+    return " | ".join(parts)
+
+
+def _format_elements_compact(elements: list, limit: int = 30) -> str:
+    """Format elements in ultra-compact format to minimize tokens."""
     from typing import Dict, List
 
     by_role: Dict[str, List[dict]] = {}
     for e in elements[:limit]:
         role = e.get("role", "Other")
-        by_role.setdefault(role, []).append(e)
+        label = (e.get("label", "") or "").strip()
+        if label and "[" not in label[:5]:
+            by_role.setdefault(role, []).append(e)
 
     lines = []
-    priority_order = [
-        "TextField",
-        "TextArea",
-        "SearchField",
-        "Edit",
-        "Entry",
-        "Button",
-        "MenuItem",
-        "MenuBarItem",
-        "CheckBox",
-        "RadioButton",
-    ]
+    priority_roles = ["TextField", "TextArea", "Button", "MenuItem", "CheckBox"]
 
-    for role in priority_order:
+    for role in priority_roles:
         if role in by_role:
-            items = by_role.pop(role)
-            formatted = " | ".join(
-                f"[{e['element_id']}]{(e.get('label', '') or '')[:25]}"
-                for e in items[:15]
+            items = by_role.pop(role)[:5]
+            formatted = ",".join(
+                f"{e['element_id']}:{(e.get('label', '') or '')[:12]}" for e in items
             )
-            lines.append(f"{role}({len(items)}): {formatted}")
+            lines.append(f"{role}:{formatted}")
 
-    for role, items in sorted(by_role.items()):
-        formatted = " | ".join(
-            f"[{e['element_id']}]{(e.get('label', '') or '')[:25]}" for e in items[:10]
+    for role, items in sorted(by_role.items())[:3]:
+        formatted = ",".join(
+            f"{e['element_id']}:{(e.get('label', '') or '')[:12]}" for e in items[:3]
         )
-        lines.append(f"{role}({len(items)}): {formatted}")
+        lines.append(f"{role}:{formatted}")
 
-    return "\n".join(lines)
+    return " | ".join(lines) if lines else "No labeled elements"
 
 
 class GetAccessibleElementsTool(InstrumentedBaseTool):
@@ -692,16 +688,13 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
 
     name: str = "get_accessible_elements"
     description: str = (
-        "Get interactive UI elements from an application using native accessibility APIs. "
-        "Use filter_role to find specific element types (TextField, TextArea, Button, etc). "
-        "Use filter_text to find elements by label. Elements cached for 30s - reuse element_ids. "
-        "Returns elements with unique IDs for click_element."
+        "Get UI elements from app. Returns element IDs for click_element."
     )
     args_schema: type[BaseModel] = GetAccessibleElementsInput
 
     def _run(
         self,
-        app_name: str,
+        app_name: Optional[str] = None,
         filter_text: Optional[str] = None,
         filter_role: Optional[str] = None,
     ) -> ActionResult:
@@ -709,7 +702,7 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
         Get all accessible elements from app using comprehensive UI element detection.
 
         Args:
-            app_name: Application name
+            app_name: Application name (optional, uses current target if not provided)
             filter_text: Optional text to filter elements by label/title
             filter_role: Optional role/type to filter elements by (TextField, Button, etc.)
 
@@ -718,6 +711,17 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
         """
         if cancelled := check_cancellation():
             return cancelled
+
+        effective_app = get_app_state().get_effective_app(app_name)
+        if not effective_app:
+            return ActionResult(
+                success=False,
+                action_taken="No application specified",
+                method_used="accessibility",
+                confidence=0.0,
+                error="No app_name provided and no target app set. Call open_application first or specify app_name.",
+            )
+        app_name = effective_app
 
         if not hasattr(self, "_tool_registry") or self._tool_registry is None:
             return ActionResult(
@@ -932,20 +936,16 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
 
             _get_elements_state["last_hash"] = current_hash
 
+            brief_summary = _format_elements_brief(result_elements)
+
             return ActionResult(
                 success=True,
-                action_taken=(
-                    f"Found {len(result_elements)} UI elements in {app_name} (showing {len(display_elements)}):\n\n{elements_summary}"
-                    f"{ui_changed_msg}\n\n"
-                    f"To click: use click_element(element_id='<id>', current_app='{app_name}')"
-                ),
+                action_taken=f"Found {len(result_elements)} elements in {app_name}: {brief_summary}{ui_changed_msg}\n\n{elements_summary}",
                 method_used="accessibility",
                 confidence=1.0,
                 data={
                     "elements": result_elements,
-                    "summary": elements_summary,
                     "count": len(result_elements),
-                    "repeat_count": _get_elements_state["repeat_count"],
                 },
             )
 
@@ -983,12 +983,7 @@ class GetWindowImageTool(InstrumentedBaseTool):
     """
 
     name: str = "get_window_image"
-    description: str = (
-        "Get base64-encoded image of a window, region, or element for vision analysis. "
-        "COST-AWARE: Only use when OCR/accessibility are insufficient. "
-        "Returns base64 PNG image and file path. "
-        "Use for: ambiguous UI elements, spatial reasoning, multi-panel layouts."
-    )
+    description: str = "Capture window screenshot for vision analysis."
     args_schema: type[BaseModel] = GetWindowImageInput
 
     def _run(
@@ -1086,12 +1081,7 @@ class RequestHumanInputTool(InstrumentedBaseTool):
     """Request human input for ambiguous decisions or dialog choices."""
 
     name: str = "request_human_input"
-    description: str = (
-        "Request human input when encountering ambiguous situations like dialogs with multiple options "
-        "(Replace/Keep Both/Cancel), unclear user intent, or decisions that require user preference. "
-        "Use this when you detect a dialog popup asking for user decision. "
-        "DO NOT use this for simple yes/no confirmations - only for ambiguous multi-option scenarios."
-    )
+    description: str = "Ask user when facing ambiguous dialogs or decisions."
     args_schema: type[BaseModel] = RequestHumanInputInput
 
     def _run(self, question: str, context: str) -> ActionResult:

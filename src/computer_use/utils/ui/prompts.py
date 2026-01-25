@@ -168,93 +168,204 @@ class CommandApprovalResult(Enum):
     DENY = "3"
 
 
+PILOT_ASCII = [
+    "██████╗ ██╗██╗      ██████╗ ████████╗",
+    "██╔══██╗██║██║     ██╔═══██╗╚══██╔══╝",
+    "██████╔╝██║██║     ██║   ██║   ██║   ",
+    "██╔═══╝ ██║██║     ██║   ██║   ██║   ",
+    "██║     ██║███████╗╚██████╔╝   ██║   ",
+    "╚═╝     ╚═╝╚══════╝ ╚═════╝    ╚═╝   ",
+]
+
+
+def _render_ascii_gradient(lines: list[str], width: int) -> list[str]:
+    """
+    Render ASCII art with a grayscale gradient effect, centered to width.
+
+    Args:
+        lines: ASCII art lines
+        width: Terminal width
+
+    Returns:
+        Rich-formatted lines with gradient
+    """
+    shades = ["#6e7681", "#8b949e", "#c9d1d9", "#e6edf3", "#ffffff"]
+
+    result = []
+    art_width = max(len(line) for line in lines)
+    padding = max(0, (width - art_width) // 2)
+    pad_str = " " * padding
+
+    for row_idx, line in enumerate(lines):
+        styled_chars = []
+        shade_idx = min(row_idx, len(shades) - 1)
+        base_shade = shades[shade_idx]
+
+        for char in line:
+            if char in "█▓▒░╔╗╚╝║═╠╣╬":
+                styled_chars.append(f"[bold {base_shade}]{char}[/]")
+            elif char in "╭╮╰╯│─┌┐└┘├┤┬┴┼":
+                styled_chars.append(f"[{shades[2]}]{char}[/]")
+            else:
+                styled_chars.append(f"[{base_shade}]{char}[/]")
+
+        result.append(pad_str + "".join(styled_chars))
+
+    return result
+
+
 def print_banner(
     console: Console, verbosity: VerbosityLevel = VerbosityLevel.NORMAL
 ) -> None:
-    """Display startup banner with professional styling."""
+    """Display large military-grade ASCII banner."""
     if verbosity == VerbosityLevel.QUIET:
         return
 
+    c_dim = "#8b949e"
+    c_dark = "#30363d"
+
+    w = console.width
+
     console.print()
-    console.print(f"  [{THEME['border']}]╭{'─' * 52}╮[/]")
-    console.print(
-        f"  [{THEME['border']}]│[/]  [bold {THEME['agent_active']}]◆[/] "
-        f"[bold {THEME['text']}]Computer Use Agent[/]"
-        f"{' ' * 26}[{THEME['border']}]│[/]"
-    )
-    console.print(
-        f"  [{THEME['border']}]│[/]    "
-        f"[{THEME['muted']}]Autonomous Desktop & Web Automation[/]"
-        f"{' ' * 8}[{THEME['border']}]│[/]"
-    )
-    console.print(f"  [{THEME['border']}]╰{'─' * 52}╯[/]")
+    console.print(f"[{c_dark}]{'━' * w}[/]")
     console.print()
+
+    ascii_lines = _render_ascii_gradient(PILOT_ASCII, w)
+    for line in ascii_lines:
+        console.print(line)
+
+    console.print()
+
+    tagline = "AUTONOMOUS DESKTOP & WEB CONTROL"
+    tag_pad = (w - len(tagline)) // 2
+    console.print(f"{' ' * tag_pad}[{c_dim}]{tagline}[/]")
+
+    console.print()
+    console.print(f"[{c_dark}]{'━' * w}[/]")
 
 
 def print_startup_step(console: Console, message: str, success: bool = True) -> None:
-    """Print a startup step result with clear visual feedback."""
-    icon = ICONS["success"] if success else ICONS["error"]
-    style = THEME["tool_success"] if success else THEME["error"]
-    console.print(f"    [{style}]{icon}[/] [{THEME['text']}]{message}[/]")
+    """Print a startup step - now a no-op, handled by HUD."""
+    pass
 
 
 def print_platform_info(
     console: Console, capabilities, verbosity: VerbosityLevel = VerbosityLevel.NORMAL
 ) -> None:
-    """Display platform capabilities in a clean inline format."""
+    """Display platform info - now a no-op, handled by HUD."""
+    pass
+
+
+def print_status_overview(console: Console, title: str, items: dict) -> None:
+    """Display status overview - now a no-op, handled by HUD."""
+    pass
+
+
+def print_ready(console: Console) -> None:
+    """Print ready message - minimal since HUD shows everything."""
+    pass
+
+
+def _hud_box_line(
+    w: int, left: str, right: str, c_border: str, c_text: str, c_muted: str
+) -> str:
+    """Create a HUD box content line with left and right sections."""
+    _ = c_text, c_muted
+    content_width = w - 4
+    actual_left = sum(1 for c in left if c.isalnum() or c in ".: ●")
+    actual_right = sum(1 for c in right if c.isalnum() or c in ".: ●")
+    padding = content_width - actual_left - actual_right
+    if padding < 1:
+        padding = 1
+    return f"[{c_border}]│[/] {left}{' ' * padding}{right} [{c_border}]│[/]"
+
+
+def print_hud_system_status(
+    console: Console,
+    capabilities,
+    tool_count: int,
+    webhook_port: int | None,
+    browser_profile: str,
+    verbosity: VerbosityLevel = VerbosityLevel.NORMAL,
+) -> None:
+    """
+    Display comprehensive military-grade HUD system status with boot sequence.
+
+    Args:
+        console: Rich console
+        capabilities: Platform capabilities object
+        tool_count: Number of loaded tools
+        webhook_port: Webhook server port or None
+        browser_profile: Browser profile name
+        verbosity: Output verbosity level
+    """
     if verbosity == VerbosityLevel.QUIET:
         return
+
+    c_text = "#c9d1d9"
+    c_dim = "#8b949e"
+    c_muted = "#484f58"
+    c_border = "#3d444d"
+    c_success = "#58a6ff"
+    c_error = "#f85149"
 
     platform_str = f"{capabilities.os_type.title()} {capabilities.os_version}"
     display_str = (
         f"{capabilities.screen_resolution[0]}×{capabilities.screen_resolution[1]}"
     )
-    gpu_icon = ICONS["success"] if capabilities.gpu_available else "○"
-    gpu_style = THEME["tool_success"] if capabilities.gpu_available else THEME["muted"]
-    acc_icon = ICONS["success"] if capabilities.accessibility_api_available else "✗"
-    acc_style = (
-        THEME["tool_success"]
-        if capabilities.accessibility_api_available
-        else THEME["warning"]
-    )
+    acc_ok = capabilities.accessibility_api_available
+    webhook_str = f":{webhook_port}" if webhook_port else "OFF"
 
     console.print()
+    console.print(f"[{c_border}]╭─ [{c_dim}]SYSTEM STATUS[/] {'─' * 40}╮[/]")
+
+    console.print(f"[{c_border}]│[/]  [{c_dim}]▸ PLATFORM[/]")
     console.print(
-        f"    [{THEME['muted']}]Platform[/] [{THEME['text']}]{platform_str}[/]  │  "
-        f"[{THEME['muted']}]Display[/] [{THEME['text']}]{display_str}[/]  │  "
-        f"[{gpu_style}]{gpu_icon}[/] [{THEME['muted']}]GPU[/]  │  "
-        f"[{acc_style}]{acc_icon}[/] [{THEME['muted']}]Accessibility[/]"
+        f"[{c_border}]│[/]    [{c_muted}]OS[/]            [{c_text}]{platform_str}[/]"
     )
-
-
-def print_status_overview(console: Console, title: str, items: dict) -> None:
-    """Render a concise status overview with tool and service info."""
-    if not items:
-        return
-
-    console.print()
-    parts = []
-    for label, value in list(items.items())[:4]:
-        icon = "⚙" if label == "Tools" else "◉" if label == "Webhook" else "◆"
-        parts.append(
-            f"[{THEME['tool_pending']}]{icon}[/] "
-            f"[{THEME['muted']}]{label}[/] [{THEME['text']}]{value}[/]"
-        )
-    console.print(f"    {' │ '.join(parts)}")
-
-
-def print_ready(console: Console) -> None:
-    """Print ready message with keyboard hints in a clean format."""
-    console.print()
-    console.print(f"    [{THEME['border']}]{'─' * 48}[/]")
     console.print(
-        f"    [{THEME['tool_success']}]{ICONS['agent_active']}[/] "
-        f"[bold {THEME['text']}]Ready[/]  "
-        f"[{THEME['muted']}]│[/]  "
-        f"[{THEME['muted']}]F5[/] [{THEME['text']}]voice[/]  "
-        f"[{THEME['muted']}]ESC[/] [{THEME['text']}]cancel[/]  "
-        f"[{THEME['muted']}]Ctrl+C[/] [{THEME['text']}]quit[/]"
+        f"[{c_border}]│[/]    [{c_muted}]DISPLAY[/]       [{c_text}]{display_str}[/]"
     )
+    acc_status = f"[{c_success}]●[/] GRANTED" if acc_ok else f"[{c_error}]●[/] DENIED"
+    console.print(f"[{c_border}]│[/]    [{c_muted}]ACCESSIBILITY[/] {acc_status}")
+
+    console.print(f"[{c_border}]├{'─' * 55}┤[/]")
+    console.print(f"[{c_border}]│[/]  [{c_dim}]▸ AGENTS[/]")
+    console.print(
+        f"[{c_border}]│[/]    [{c_text}]BROWSER[/]  [{c_dim}]web automation[/]   [{c_muted}]web_auto[/]"
+    )
+    console.print(
+        f"[{c_border}]│[/]    [{c_text}]GUI[/]      [{c_dim}]desktop control[/]  [{c_muted}]click type read[/]"
+    )
+    console.print(
+        f"[{c_border}]│[/]    [{c_text}]SYSTEM[/]   [{c_dim}]shell commands[/]   [{c_muted}]exec_shell[/]"
+    )
+    console.print(
+        f"[{c_border}]│[/]    [{c_text}]CODE[/]     [{c_dim}]code generation[/]  [{c_muted}]code_auto[/]"
+    )
+
+    console.print(f"[{c_border}]├{'─' * 55}┤[/]")
+    console.print(f"[{c_border}]│[/]  [{c_dim}]▸ SERVICES[/]")
+    console.print(
+        f"[{c_border}]│[/]    [{c_muted}]TOOLS[/]    [{c_success}]●[/] [{c_text}]{tool_count}[/]"
+    )
+    wh_status = f"[{c_success}]●[/]" if webhook_port else f"[{c_muted}]○[/]"
+    console.print(
+        f"[{c_border}]│[/]    [{c_muted}]WEBHOOK[/]  {wh_status} [{c_text}]{webhook_str}[/]"
+    )
+    console.print(
+        f"[{c_border}]│[/]    [{c_muted}]BROWSER[/]  [{c_success}]●[/] [{c_text}]{browser_profile}[/]"
+    )
+
+    console.print(f"[{c_border}]├{'─' * 55}┤[/]")
+    console.print(
+        f"[{c_border}]│[/]  [{c_success}]●[/] [{c_text}]ONLINE[/]  "
+        f"[{c_muted}]F5[/] [{c_dim}]voice[/]  "
+        f"[{c_muted}]ESC[/] [{c_dim}]cancel[/]  "
+        f"[{c_muted}]^C[/] [{c_dim}]quit[/]  "
+        f"[{c_muted}]h[/] [{c_dim}]history[/]"
+    )
+    console.print(f"[{c_border}]╰{'─' * 55}╯[/]")
     console.print()
 
 
@@ -367,11 +478,18 @@ async def get_voice_input(console: Console) -> Optional[str]:
     return result if result else None
 
 
+def _print_hud_input_prompt(console: Console) -> None:
+    """Print military-grade HUD input prompt with question."""
+    c_text = "#c9d1d9"
+
+    console.print(f"[{c_text}]What would you like me to do?[/]")
+
+
 async def get_task_input(
     console: Console, start_with_voice: bool = False
 ) -> Optional[str]:
     """
-    Get task input from user via text or voice.
+    Get task input from user via text or voice with HUD-style prompt.
 
     Args:
         console: Rich console for output
@@ -383,7 +501,7 @@ async def get_task_input(
     use_voice = start_with_voice or _voice_mode_enabled["value"]
 
     if use_voice:
-        console.print(f"[{THEME['text']}]What would you like me to do?[/]")
+        _print_hud_input_prompt(console)
         result = await get_voice_input(console)
         if result:
             _voice_mode_enabled["value"] = False
@@ -391,13 +509,13 @@ async def get_task_input(
         console.print(f"  [{THEME['muted']}]Falling back to text input...[/]")
 
     try:
-        console.print(f"[{THEME['text']}]What would you like me to do?[/]")
+        _print_hud_input_prompt(console)
 
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None,
             lambda: _prompt_session.prompt(
-                FormattedText([(THEME["text"], "❯ ")]),
+                FormattedText([("#58a6ff", "▸ ")]),
                 multiline=True,
             ),
         )

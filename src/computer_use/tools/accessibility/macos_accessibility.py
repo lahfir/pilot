@@ -133,20 +133,23 @@ class MacOSAccessibility:
         self.get_app(app_name)
 
     def _is_valid_app_ref(self, app_ref: Any) -> bool:
-        """Check if app reference is valid (has role and windows)."""
+        """Check if app reference is valid (has PID, role, or windows)."""
         if not app_ref:
             return False
         try:
+            pid = getattr(app_ref, "AXPid", None) or getattr(app_ref, "pid", None)
+            if pid and pid > 0:
+                return True
             role = getattr(app_ref, "AXRole", None)
-            if not role or role == "":
-                return False
+            if role == "AXApplication":
+                return True
             windows = getattr(app_ref, "AXWindows", None)
             if windows is not None and len(windows) > 0:
                 return True
             children = getattr(app_ref, "AXChildren", None)
             if children is not None and len(children) > 0:
                 return True
-            return role == "AXApplication"
+            return bool(role)
         except Exception:
             return False
 
@@ -464,7 +467,8 @@ class MacOSAccessibility:
                 if placeholder:
                     label = str(placeholder)
 
-            element_id = f"{int(x)}{int(y)}{hash(role) & 0xFFFF:04x}"[-8:]
+            raw_id = f"{int(x)}{int(y)}{hash(role) & 0xFFFF:04x}"[-7:]
+            element_id = f"e_{raw_id}"
 
             info = {
                 "element_id": element_id,
@@ -763,9 +767,19 @@ class MacOSAccessibility:
         return apps
 
     def get_frontmost_app(self) -> Optional[str]:
-        """Get name of the frontmost application."""
+        """Get name of the frontmost application using NSWorkspace directly."""
         if not self.available:
             return None
+
+        try:
+            from AppKit import NSWorkspace
+            frontmost = NSWorkspace.sharedWorkspace().frontmostApplication()
+            if frontmost:
+                name = frontmost.localizedName()
+                if name:
+                    return name
+        except Exception:
+            pass
 
         try:
             app = self.atomacos.getFrontmostApp()

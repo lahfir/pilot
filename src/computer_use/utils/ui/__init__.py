@@ -36,6 +36,7 @@ from .prompts import (
     print_platform_info as _print_platform_info,
     print_status_overview as _print_status_overview,
     print_ready as _print_ready,
+    print_hud_system_status as _print_hud_system_status,
     startup_spinner as _startup_spinner,
     get_task_input as _get_task_input,
     get_voice_input as _get_voice_input,
@@ -92,6 +93,23 @@ def print_status_overview(title: str, items: dict):
 def print_ready():
     """Print ready message using singleton console."""
     _print_ready(console)
+
+
+def print_hud_system_status(
+    capabilities,
+    tool_count: int,
+    webhook_port: int | None,
+    browser_profile: str,
+):
+    """Display comprehensive HUD-style system status panel."""
+    _print_hud_system_status(
+        console,
+        capabilities,
+        tool_count,
+        webhook_port,
+        browser_profile,
+        dashboard.verbosity,
+    )
 
 
 def startup_spinner(message: str):
@@ -208,6 +226,7 @@ __all__ = [
     "print_platform_info",
     "print_status_overview",
     "print_ready",
+    "print_hud_system_status",
     "startup_spinner",
     "get_task_input",
     "get_voice_input",

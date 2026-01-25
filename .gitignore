@@ -61,5 +61,7 @@ examples/
 
 # Coding agent projects
 code/
+.agents/
+.codex/
 
 landing/
