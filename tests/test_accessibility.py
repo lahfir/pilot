@@ -69,7 +69,7 @@ class TestAccessibilityAPI:
                 error_str = str(e)
                 if "AXError" in error_str or "accessibility" in error_str.lower():
                     pytest.fail(
-                        f"\n\n{'='*80}\n"
+                        f"\n\n{'=' * 80}\n"
                         f"❌ ACCESSIBILITY PERMISSIONS NOT GRANTED!\n"
                         f"   Error: {e}\n\n"
                         f"   HOW TO FIX:\n"
@@ -79,7 +79,7 @@ class TestAccessibilityAPI:
                         f"   4. Make sure it's checked/enabled\n"
                         f"   5. Restart this test\n\n"
                         f"   THIS IS WHY ACCESSIBILITY API IS NOT WORKING!\n"
-                        f"{'='*80}\n"
+                        f"{'=' * 80}\n"
                     )
                 else:
                     # Some other error - just note it but don't fail
@@ -108,19 +108,19 @@ class TestAccessibilityAPI:
 
         acc = MacOSAccessibility()
 
-        print(f"📋 Accessibility Status:")
+        print("📋 Accessibility Status:")
         print(f"   - available: {acc.available}")
 
         if not acc.available:
-            print(f"\n❌ Accessibility NOT AVAILABLE!")
-            print(f"   Reasons this might happen:")
-            print(f"   1. atomacos not installed")
-            print(f"   2. Not running on macOS")
-            print(f"   3. Accessibility permissions not granted")
-            print(f"\n   THIS IS WHY ACCESSIBILITY API IS NOT WORKING!")
+            print("\n❌ Accessibility NOT AVAILABLE!")
+            print("   Reasons this might happen:")
+            print("   1. atomacos not installed")
+            print("   2. Not running on macOS")
+            print("   3. Accessibility permissions not granted")
+            print("\n   THIS IS WHY ACCESSIBILITY API IS NOT WORKING!")
             pytest.fail("Accessibility should be available but isn't")
         else:
-            print(f"✅ Accessibility is available and initialized!")
+            print("✅ Accessibility is available and initialized!")
 
         print("=" * 80)
 
@@ -154,7 +154,7 @@ class TestAccessibilityAPI:
             print(f"📋 Found {len(elements)} interactive elements")
 
             if elements:
-                print(f"\n   Sample elements (first 5):")
+                print("\n   Sample elements (first 5):")
                 for i, elem in enumerate(elements[:5], 1):
                     print(
                         f"   {i}. {elem.get('identifier', 'N/A')} - {elem.get('role', 'N/A')}"

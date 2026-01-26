@@ -375,7 +375,9 @@ class TypeTextTool(InstrumentedBaseTool):
             from ..services.state_observer import StateObserver
 
             observer = StateObserver(self._tool_registry)
-            is_focused, message = observer.verify_precondition("app_focused", app_name=require_app)
+            is_focused, message = observer.verify_precondition(
+                "app_focused", app_name=require_app
+            )
 
             if not is_focused:
                 state = observer.capture_state()

@@ -388,7 +388,11 @@ class ReadScreenTextTool(InstrumentedBaseTool):
                     error="No text detected in captured area - window may be blank or not focused",
                 )
 
-            text_preview = full_text[:200] if len(full_text) > 200 else full_text
+            from ..utils.ui.core.responsive import ResponsiveWidth
+
+            text_preview = ResponsiveWidth.truncate(
+                full_text, max_ratio=0.8, min_width=60
+            )
             source = f"{app_name} window" if app_name else "screen"
 
             return ActionResult(

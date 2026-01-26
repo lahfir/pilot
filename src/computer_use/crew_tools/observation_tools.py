@@ -5,7 +5,6 @@ Provides the Manager agent with system state observation capability
 to enable context-aware task delegation.
 """
 
-from typing import Optional
 from pydantic import BaseModel, Field
 
 from .instrumented_tool import InstrumentedBaseTool
@@ -71,7 +70,9 @@ class GetSystemStateTool(InstrumentedBaseTool):
         state = observer.capture_state(scope_enum)
 
         context_string = state.to_context_string()
-        running_apps_str = ", ".join(state.running_apps[:10]) if state.running_apps else "None"
+        running_apps_str = (
+            ", ".join(state.running_apps[:10]) if state.running_apps else "None"
+        )
         if len(state.running_apps) > 10:
             running_apps_str += f" (+{len(state.running_apps) - 10} more)"
 
@@ -93,7 +94,9 @@ class GetSystemStateTool(InstrumentedBaseTool):
 class VerifyAppFocusedInput(BaseModel):
     """Input schema for app focus verification."""
 
-    app_name: str = Field(description="Name of the application to verify (case-insensitive)")
+    app_name: str = Field(
+        description="Name of the application to verify (case-insensitive)"
+    )
 
 
 class VerifyAppFocusedTool(InstrumentedBaseTool):
@@ -131,7 +134,9 @@ class VerifyAppFocusedTool(InstrumentedBaseTool):
             )
 
         observer = StateObserver(self._tool_registry)
-        is_focused, message = observer.verify_precondition("app_focused", app_name=app_name)
+        is_focused, message = observer.verify_precondition(
+            "app_focused", app_name=app_name
+        )
 
         if is_focused:
             return ActionResult(

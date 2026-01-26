@@ -128,7 +128,7 @@ class TestIntegration:
         print(f"   Action: {result.action_taken}")
 
         if result.success:
-            print(f"   ✅ Read succeeded!")
+            print("   ✅ Read succeeded!")
             if result.data and "text" in result.data:
                 text = result.data["text"]
                 print(f"   Text length: {len(text)} chars")

@@ -9,7 +9,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, List, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..tools.platform_registry import PlatformToolRegistry
@@ -53,13 +53,15 @@ class SystemState:
         Returns:
             Multi-line string describing current system state.
         """
-        running = ", ".join(self.running_apps[:10]) if self.running_apps else "None detected"
+        running = (
+            ", ".join(self.running_apps[:10]) if self.running_apps else "None detected"
+        )
         if len(self.running_apps) > 10:
             running += f" (+{len(self.running_apps) - 10} more)"
 
-        return f"""CURRENT SYSTEM STATE (observed at {time.strftime('%H:%M:%S', time.localtime(self.timestamp))}):
-- Active Application: {self.active_app or 'Unknown'}
-- Window Title: {self.active_window_title or 'Unknown'}
+        return f"""CURRENT SYSTEM STATE (observed at {time.strftime("%H:%M:%S", time.localtime(self.timestamp))}):
+- Active Application: {self.active_app or "Unknown"}
+- Window Title: {self.active_window_title or "Unknown"}
 - Running Applications: {running}
 - Working Directory: {self.cwd}"""
 
@@ -88,7 +90,9 @@ class StateObserver:
         """Get the platform-appropriate accessibility tool."""
         return self._tool_registry.get_tool("accessibility")
 
-    def capture_state(self, scope: ObservationScope = ObservationScope.STANDARD) -> SystemState:
+    def capture_state(
+        self, scope: ObservationScope = ObservationScope.STANDARD
+    ) -> SystemState:
         """
         Capture current system state with specified detail level.
 
@@ -230,7 +234,10 @@ class StateObserver:
             if self.is_app_frontmost(app_name):
                 return True, f"{app_name} is frontmost"
             frontmost = self._get_frontmost_app(self._get_accessibility())
-            return False, f"{app_name} is NOT frontmost (current: {frontmost or 'Unknown'})"
+            return (
+                False,
+                f"{app_name} is NOT frontmost (current: {frontmost or 'Unknown'})",
+            )
 
         if precondition_type == "app_running":
             app_name = kwargs.get("app_name", "")

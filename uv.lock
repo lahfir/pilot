@@ -801,6 +801,12 @@ windows = [
     { name = "pywinauto" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "hypothesis" },
+    { name = "pyte" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "atomacos", marker = "extra == 'macos'", specifier = ">=0.5.0" },
@@ -842,6 +848,12 @@ requires-dist = [
     { name = "twilio", specifier = ">=9.0.0" },
 ]
 provides-extras = ["dev", "macos", "windows", "linux"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "hypothesis", specifier = ">=6.150.3" },
+    { name = "pyte", specifier = ">=0.8.2" },
+]
 
 [[package]]
 name = "comtypes"
@@ -1746,6 +1758,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/cc/3f/2c29224acb2e2df4d2046e4c73ee2662023c58ff5b113c4c1adac0886c43/humanfriendly-10.0.tar.gz", hash = "sha256:6b0b831ce8f15f7300721aa49829fc4e83921a9a301cc7f606be6686a2288ddc", size = 360702, upload-time = "2021-09-17T21:40:43.31Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f0/0f/310fb31e39e2d734ccaa2c0fb981ee41f7bd5056ce9bc29b2248bd569169/humanfriendly-10.0-py2.py3-none-any.whl", hash = "sha256:1697e1a8a8f550fd43c2865cd84542fc175a61dcb779b6fee18cf6b6ccba1477", size = 86794, upload-time = "2021-09-17T21:40:39.897Z" },
+]
+
+[[package]]
+name = "hypothesis"
+version = "6.150.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "sortedcontainers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/86/eb/1b0359b52d2136a7f4b8112e60148ef8b5ba480d450f409ed63e18d4c8d2/hypothesis-6.150.3.tar.gz", hash = "sha256:32c88d4b7df3a8483e69877561b520320bf7779b0709c11869e392025e9279d4", size = 475542, upload-time = "2026-01-23T07:53:09.716Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/69/6b/c94ca780814aa4e73b52a8d5e9092f0b83f4732a9ecb3d1f8333c93ac131/hypothesis-6.150.3-py3-none-any.whl", hash = "sha256:5577c0f8eff5ac54a8aff1ce32e30c5454167c29360fdabf1bfea0539b1689f9", size = 542960, upload-time = "2026-01-23T07:53:07.309Z" },
 ]
 
 [[package]]
@@ -7338,6 +7362,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ee/f0/cb456ac4f1a73723d5b866933b7986f02bacea27516629c00f8e7da94c2d/pyscreeze-1.0.1.tar.gz", hash = "sha256:cf1662710f1b46aa5ff229ee23f367da9e20af4a78e6e365bee973cad0ead4be", size = 27826, upload-time = "2024-08-20T23:03:07.291Z" }
 
 [[package]]
+name = "pyte"
+version = "0.8.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "wcwidth" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ab/ab/b599762933eba04de7dc5b31ae083112a6c9a9db15b01d3109ad797559d9/pyte-0.8.2.tar.gz", hash = "sha256:5af970e843fa96a97149d64e170c984721f20e52227a2f57f0a54207f08f083f", size = 92301, upload-time = "2023-11-12T09:33:43.217Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/59/d0/bb522283b90853afbf506cd5b71c650cf708829914efd0003d615cf426cd/pyte-0.8.2-py3-none-any.whl", hash = "sha256:85db42a35798a5aafa96ac4d8da78b090b2c933248819157fc0e6f78876a0135", size = 31627, upload-time = "2023-11-12T09:33:41.096Z" },
+]
+
+[[package]]
 name = "pytest"
 version = "9.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -8261,6 +8297,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a2/87/a6771e1546d97e7e041b6ae58d80074f81b7d5121207425c964ddf5cfdbd/sniffio-1.3.1.tar.gz", hash = "sha256:f4324edc670a0f49750a81b895f35c3adb843cca46f0530f79fc1babb23789dc", size = 20372, upload-time = "2024-02-25T23:20:04.057Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e9/44/75a9c9421471a6c4805dbf2356f7c181a29c1879239abab1ea2cc8f38b40/sniffio-1.3.1-py3-none-any.whl", hash = "sha256:2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2", size = 10235, upload-time = "2024-02-25T23:20:01.196Z" },
+]
+
+[[package]]
+name = "sortedcontainers"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/c4/ba2f8066cceb6f23394729afe52f3bf7adec04bf9ed2c820b39e19299111/sortedcontainers-2.4.0.tar.gz", hash = "sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88", size = 30594, upload-time = "2021-05-16T22:03:42.897Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/32/46/9cb0e58b2deb7f82b84065f37f3bffeb12413f947f9388e4cac22c4621ce/sortedcontainers-2.4.0-py2.py3-none-any.whl", hash = "sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0", size = 29575, upload-time = "2021-05-16T22:03:41.177Z" },
 ]
 
 [[package]]

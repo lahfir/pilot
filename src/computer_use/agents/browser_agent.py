@@ -348,7 +348,11 @@ class BrowserAgent:
 
                         result_text = f"Executed {action_name}"
                         if hasattr(action, "result"):
-                            result_text = str(action.result)[:200]
+                            from ..utils.ui.core.responsive import ResponsiveWidth
+
+                            result_text = ResponsiveWidth.truncate(
+                                str(action.result), max_ratio=0.8, min_width=60
+                            )
 
                         if tool_id:
                             dashboard.log_tool_complete(
@@ -521,8 +525,12 @@ class BrowserAgent:
 
         except Exception as e:
             error_msg = str(e)
+            from ..utils.ui.core.responsive import ResponsiveWidth
+
             dashboard.add_log_entry(
-                ActionType.ERROR, f"Browser exception: {error_msg[:80]}", status="error"
+                ActionType.ERROR,
+                f"Browser exception: {ResponsiveWidth.truncate(error_msg, max_ratio=0.6, min_width=40)}",
+                status="error",
             )
 
             if "Event loop is closed" in error_msg:

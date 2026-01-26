@@ -164,9 +164,12 @@ class SystemAgent:
                 else:
                     output = result.get("output", "").strip()
                     if output:
-                        console.print(
-                            f"  [green]Output:[/green] {output[:200]}{'...' if len(output) > 200 else ''}"
+                        from ..utils.ui.core.responsive import ResponsiveWidth
+
+                        out_preview = ResponsiveWidth.truncate(
+                            str(output), max_ratio=0.8, min_width=60
                         )
+                        console.print(f"  [green]Output:[/green] {out_preview}")
                         last_output = output
                     else:
                         print_success("Success (no output)")
@@ -292,7 +295,11 @@ TASK: {task}
                 prompt += f"{success_marker} Step {i}: {cmd['command']}\n"
 
                 if cmd.get("output"):
-                    output_preview = cmd["output"][:200].strip()
+                    from ..utils.ui.core.responsive import ResponsiveWidth
+
+                    output_preview = ResponsiveWidth.truncate(
+                        str(cmd.get("output", "")).strip(), max_ratio=0.8, min_width=60
+                    )
                     prompt += f"   Output: {output_preview}\n"
 
                 if not cmd.get("success"):
@@ -305,7 +312,9 @@ TASK: {task}
                 for cmd, output in successful_steps[-2:]:
                     prompt += f"   • {cmd}\n"
                     if output:
-                        prompt += f"     Result: {output[:100].strip()}\n"
+                        from ..utils.ui.core.responsive import ResponsiveWidth
+
+                        prompt += f"     Result: {ResponsiveWidth.truncate(str(output).strip(), max_ratio=0.7, min_width=40)}\n"
 
             if failed_commands:
                 prompt += "\n❌ FAILED COMMANDS - DO NOT REPEAT:\n"

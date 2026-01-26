@@ -368,8 +368,8 @@ class TestMultilingualSupport:
         print("📋 Language Detection Config:")
         print(f"   - Client Type: {type(service.client).__name__}")
         print(f"   - API Key Configured: {bool(service.api_key)}")
-        print(f"   - Model: nova-2 with multi-language support")
-        print(f"   - Detect Language: Enabled")
+        print("   - Model: nova-2 with multi-language support")
+        print("   - Detect Language: Enabled")
 
         assert service.client is not None, "Client should be initialized"
         assert service.api_key is not None, "API key should be set"

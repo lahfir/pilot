@@ -5,7 +5,6 @@ from .agent import AgentRenderer
 from .tool import ToolRenderer
 from .thinking import ThinkingRenderer
 from .status_bar import StatusBarRenderer
-from .session_log import SessionLogRenderer
 
 __all__ = [
     "BaseRenderer",
@@ -13,5 +12,4 @@ __all__ = [
     "ToolRenderer",
     "ThinkingRenderer",
     "StatusBarRenderer",
-    "SessionLogRenderer",
 ]

@@ -497,7 +497,9 @@ class MacOSAccessibility:
                 return str(title)
             value = getattr(node, "AXValue", None)
             if value:
-                return str(value)[:100]
+                from ...utils.ui.core.responsive import ResponsiveWidth
+
+                return ResponsiveWidth.truncate(str(value), max_ratio=0.8, min_width=60)
             desc = getattr(node, "AXDescription", None)
             if desc:
                 return str(desc)
@@ -773,6 +775,7 @@ class MacOSAccessibility:
 
         try:
             from AppKit import NSWorkspace
+
             frontmost = NSWorkspace.sharedWorkspace().frontmostApplication()
             if frontmost:
                 name = frontmost.localizedName()

@@ -3,10 +3,96 @@ Data formatting utilities for the UI.
 """
 
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 from rich.text import Text
 from rich.syntax import Syntax
 from .theme import THEME
+
+
+def format_duration(seconds: float) -> str:
+    """
+    Format a duration for display.
+
+    Args:
+        seconds: Duration in seconds
+
+    Returns:
+        Human-readable duration string
+    """
+    if seconds < 1:
+        return f"{int(seconds * 1000)}ms"
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    mins = int(seconds // 60)
+    secs = int(seconds % 60)
+    return f"{mins}m {secs}s"
+
+
+def format_duration_hud(seconds: float) -> str:
+    """
+    Format a duration in HUD style.
+
+    Args:
+        seconds: Duration in seconds
+
+    Returns:
+        HUD-style duration string
+    """
+    if seconds < 0.01:
+        return "0.01s"
+    if seconds < 1:
+        return f"{seconds:.2f}s"
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    mins = int(seconds // 60)
+    secs = int(seconds % 60)
+    return f"{mins}m{secs:02d}s"
+
+
+def format_duration_status(seconds: float) -> str:
+    """
+    Format a duration for compact status bars.
+
+    Args:
+        seconds: Duration in seconds
+
+    Returns:
+        Compact duration string
+    """
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    mins = int(seconds // 60)
+    secs = int(seconds % 60)
+    return f"{mins}m{secs:02d}s"
+
+
+def format_token_count(tokens: int) -> str:
+    """
+    Format a token count for display.
+
+    Args:
+        tokens: Token count
+
+    Returns:
+        Formatted token count string
+    """
+    if tokens >= 1000:
+        return f"{tokens / 1000:.1f}k"
+    return str(tokens)
+
+
+def format_token_pair(input_tokens: int, output_tokens: int) -> Tuple[str, str]:
+    """
+    Format input and output token counts.
+
+    Args:
+        input_tokens: Input tokens
+        output_tokens: Output tokens
+
+    Returns:
+        Tuple of (formatted_input, formatted_output)
+    """
+    return (format_token_count(input_tokens), format_token_count(output_tokens))
 
 
 def format_key_value(key: str, value: Any, max_len: int = 0) -> str:

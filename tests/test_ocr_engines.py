@@ -46,6 +46,7 @@ class TestOCREngines:
         try:
             import Vision
 
+            assert Vision is not None
             print("✅ Vision module imported successfully")
         except ImportError as e:
             pytest.fail(
@@ -57,6 +58,7 @@ class TestOCREngines:
         try:
             import Quartz
 
+            assert Quartz is not None
             print("✅ Quartz module imported successfully")
         except ImportError as e:
             pytest.fail(
@@ -68,6 +70,8 @@ class TestOCREngines:
         try:
             from Foundation import NSData, NSURL
 
+            assert NSData is not None
+            assert NSURL is not None
             print("✅ Foundation module imported successfully")
         except ImportError as e:
             pytest.fail(
@@ -80,11 +84,11 @@ class TestOCREngines:
             from computer_use.tools.vision.macos_vision_ocr import MacOSVisionOCR
 
             engine = MacOSVisionOCR()
-            print(f"✅ MacOSVisionOCR initialized")
+            print("✅ MacOSVisionOCR initialized")
             print(f"   - vision_available: {engine.vision_available}")
-            assert (
-                engine.vision_available
-            ), "Vision framework should be available but isn't"
+            assert engine.vision_available, (
+                "Vision framework should be available but isn't"
+            )
         except Exception as e:
             pytest.fail(f"❌ MacOSVisionOCR initialization failed: {e}")
 
@@ -118,20 +122,20 @@ class TestOCREngines:
         # Attempt OCR
         results = engine.recognize_text(test_image)
 
-        print(f"📝 OCR Results:")
+        print("📝 OCR Results:")
         print(f"   - Number of text items: {len(results)}")
 
         if results:
             for i, result in enumerate(results):
                 print(
-                    f"   - Item {i+1}: '{result.text}' (confidence: {result.confidence:.2f})"
+                    f"   - Item {i + 1}: '{result.text}' (confidence: {result.confidence:.2f})"
                 )
 
             # Check if we found "Hello World"
             text = " ".join([r.text for r in results])
-            assert (
-                "Hello" in text or "World" in text
-            ), f"Expected to find 'Hello World' but got: {text}"
+            assert "Hello" in text or "World" in text, (
+                f"Expected to find 'Hello World' but got: {text}"
+            )
             print("✅ Vision OCR successfully recognized text!")
         else:
             pytest.fail(
@@ -161,7 +165,7 @@ class TestOCREngines:
             print(f"   {i}. {engine_name}")
 
         # Get the selected engine
-        print(f"\n🎯 Selected engine by factory:")
+        print("\n🎯 Selected engine by factory:")
         selected_engine = create_ocr_engine()
 
         if selected_engine:
@@ -174,9 +178,9 @@ class TestOCREngines:
                     print(
                         f"   ⚠️  WARNING: Not using Vision! Using {engine_name} instead"
                     )
-                    print(f"   This is why you're seeing EasyOCR fallback!")
+                    print("   This is why you're seeing EasyOCR fallback!")
                 else:
-                    print(f"   ✅ Using Vision Framework as expected")
+                    print("   ✅ Using Vision Framework as expected")
         else:
             pytest.fail("❌ No OCR engine created!")
 
@@ -221,7 +225,7 @@ class TestOCREngines:
                 results_by_engine[engine_name] = None
 
         # Summary
-        print(f"\n📊 SUMMARY:")
+        print("\n📊 SUMMARY:")
         working_engines = [
             name for name, results in results_by_engine.items() if results
         ]
@@ -271,11 +275,11 @@ class TestOCREngines:
         if missing:
             packages = " ".join([pkg for _, pkg in missing])
             pytest.fail(
-                f"\n\n{'='*80}\n"
+                f"\n\n{'=' * 80}\n"
                 f"❌ MISSING DEPENDENCIES FOUND!\n"
                 f"   This is why Vision Framework is failing.\n"
                 f"   Install with: pip install {packages}\n"
-                f"{'='*80}\n"
+                f"{'=' * 80}\n"
             )
 
         print("=" * 80)

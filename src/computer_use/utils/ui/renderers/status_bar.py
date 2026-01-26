@@ -8,6 +8,7 @@ from rich.text import Text
 
 from .base import BaseRenderer
 from ..state import TaskState
+from ..formatters import format_duration_status, format_token_count
 from ..theme import THEME
 
 
@@ -16,13 +17,13 @@ class StatusBarRenderer(BaseRenderer):
 
     def __init__(self, console, verbosity):
         super().__init__(console, verbosity)
-        self._c_border = "#3d444d"
-        self._c_muted = "#484f58"
-        self._c_dim = "#8b949e"
-        self._c_text = "#c9d1d9"
-        self._c_active = "#58a6ff"
-        self._c_success = "#3fb950"
-        self._c_error = "#f85149"
+        self._c_border = THEME["hud_border"]
+        self._c_muted = THEME["hud_muted"]
+        self._c_dim = THEME["hud_dim"]
+        self._c_text = THEME["hud_text"]
+        self._c_active = THEME["hud_active"]
+        self._c_success = THEME["hud_success"]
+        self._c_error = THEME["hud_error"]
 
     def render(self, state: TaskState) -> Optional[RenderableType]:
         """Render the HUD status bar."""
@@ -49,7 +50,7 @@ class StatusBarRenderer(BaseRenderer):
 
         line.append(" ═╪═ ", style=self._c_border)
 
-        duration_str = self._format_duration(state.duration)
+        duration_str = format_duration_status(state.duration)
         line.append("T+", style=self._c_muted)
         line.append(duration_str, style=self._c_text)
 
@@ -68,8 +69,8 @@ class StatusBarRenderer(BaseRenderer):
 
         total_tokens = state.token_input + state.token_output
         if total_tokens > 0:
-            in_str = self._format_tokens(state.token_input)
-            out_str = self._format_tokens(state.token_output)
+            in_str = format_token_count(state.token_input)
+            out_str = format_token_count(state.token_output)
             line.append(f"{in_str}↑ {out_str}↓", style=self._c_dim)
 
         line.append(" ═╪═ ", style=self._c_border)
@@ -89,20 +90,6 @@ class StatusBarRenderer(BaseRenderer):
         }
         return styles.get(status, self._c_muted)
 
-    def _format_duration(self, seconds: float) -> str:
-        """Format duration for display."""
-        if seconds < 60:
-            return f"{int(seconds)}s"
-        mins = int(seconds // 60)
-        secs = int(seconds % 60)
-        return f"{mins}m{secs:02d}s"
-
-    def _format_tokens(self, tokens: int) -> str:
-        """Format token count."""
-        if tokens >= 1000:
-            return f"{tokens / 1000:.1f}k"
-        return str(tokens)
-
     def render_inline(self, state: TaskState) -> str:
         """Render as a plain string for terminal status line."""
         parts = []
@@ -114,7 +101,7 @@ class StatusBarRenderer(BaseRenderer):
         else:
             parts.append("◯ STANDBY")
 
-        parts.append(f"T+{self._format_duration(state.duration)}")
+        parts.append(f"T+{format_duration_status(state.duration)}")
 
         success = state.total_tools - state.failed_tools
         if state.failed_tools > 0:
@@ -124,8 +111,8 @@ class StatusBarRenderer(BaseRenderer):
 
         total_tokens = state.token_input + state.token_output
         if total_tokens > 0:
-            in_str = self._format_tokens(state.token_input)
-            out_str = self._format_tokens(state.token_output)
+            in_str = format_token_count(state.token_input)
+            out_str = format_token_count(state.token_output)
             parts.append(f"{in_str}↑ {out_str}↓")
 
         parts.append("ESC cancel")

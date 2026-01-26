@@ -59,15 +59,7 @@ from .formatters import (
     truncate_text,
 )
 
-from .animations import (
-    tool_spinner,
-    thinking_spinner,
-    action_status,
-    create_spinner,
-    create_task_progress,
-    create_tool_progress,
-    AnimatedStatus,
-)
+from .headset_loader import HeadsetLoader, headset_spinner, action_headset
 
 
 def print_banner():
@@ -248,12 +240,8 @@ __all__ = [
     "format_dict_inline",
     "format_json_block",
     "truncate_text",
-    # Animations
-    "tool_spinner",
-    "thinking_spinner",
-    "action_status",
-    "create_spinner",
-    "create_task_progress",
-    "create_tool_progress",
-    "AnimatedStatus",
+    # Headset Loader
+    "HeadsetLoader",
+    "headset_spinner",
+    "action_headset",
 ]

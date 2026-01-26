@@ -43,10 +43,12 @@ class CodingAgentTool(InstrumentedBaseTool):
             String result for CrewAI
         """
         from ..utils.ui import dashboard, ActionType
+        from ..utils.ui.core.responsive import ResponsiveWidth
 
         if dashboard.get_current_agent_name() == "Manager":
             dashboard.set_agent("Coding Agent")
-            dashboard.set_thinking(f"Coding task: {task[:80]}...")
+            excerpt = ResponsiveWidth.truncate(task, max_ratio=0.7, min_width=40)
+            dashboard.set_thinking(f"Coding task: {excerpt}")
 
         dashboard.add_log_entry(ActionType.EXECUTE, f"CodingAgentTool: {task}")
 
