@@ -109,7 +109,7 @@ async def main(
     print_banner()
 
     with HeadsetLoader.context(
-        message="Initializing...", size="medium", console=console
+        message="Initializing...", size="mini", console=console
     ) as loader:
         loader.set_message("Checking permissions...")
         permissions_ok = check_and_request_permissions()
