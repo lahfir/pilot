@@ -8,7 +8,9 @@ from rich.text import Text
 
 from .base import BaseRenderer
 from ..state import TaskState, ToolState
-from ..formatters import format_dict_inline
+from ..formatters import format_dict_inline, format_duration_hud
+from ..theme import THEME
+from ..core.responsive import ResponsiveWidth
 
 
 class ToolRenderer(BaseRenderer):
@@ -16,13 +18,13 @@ class ToolRenderer(BaseRenderer):
 
     def __init__(self, console, verbosity):
         super().__init__(console, verbosity)
-        self._c_border = "#3d444d"
-        self._c_dim = "#8b949e"
-        self._c_muted = "#484f58"
-        self._c_text = "#c9d1d9"
-        self._c_success = "#3fb950"
-        self._c_error = "#f85149"
-        self._c_pending = "#d29922"
+        self._c_border = THEME["hud_border"]
+        self._c_dim = THEME["hud_dim"]
+        self._c_muted = THEME["hud_muted"]
+        self._c_text = THEME["hud_text"]
+        self._c_success = THEME["hud_success"]
+        self._c_error = THEME["hud_error"]
+        self._c_pending = THEME["hud_pending"]
 
     def render(self, state: TaskState) -> Optional[RenderableType]:
         """Render all tools from all agents."""
@@ -76,7 +78,7 @@ class ToolRenderer(BaseRenderer):
         line.append(tool.name, style=f"bold {name_style}")
 
         if tool.duration > 0:
-            duration_str = self._format_duration(tool.duration)
+            duration_str = format_duration_hud(tool.duration)
             line.append(f" T+{duration_str}", style=self._c_dim)
 
         return line
@@ -131,7 +133,7 @@ class ToolRenderer(BaseRenderer):
             line.append(str(output_data), style=self._c_text)
 
         if duration and duration > 0:
-            duration_str = self._format_duration(duration)
+            duration_str = format_duration_hud(duration)
             line.append(f" T+{duration_str}", style=self._c_dim)
 
         return line
@@ -147,11 +149,14 @@ class ToolRenderer(BaseRenderer):
         if not lines:
             return "OK"
 
-        if len(lines) == 1 and len(lines[0]) <= 80:
+        width = ResponsiveWidth.get_content_width(padding=8)
+        if len(lines) == 1 and len(lines[0]) <= width:
             return lines[0]
 
         if len(lines) == 1:
-            return lines[0][:77] + "..."
+            if width <= 3:
+                return lines[0][:width]
+            return lines[0][: width - 3] + "..."
 
         indent = "\n│       "
         formatted = lines[0]
@@ -201,22 +206,9 @@ class ToolRenderer(BaseRenderer):
         line.append("✗ ", style=self._c_error)
         line.append(error, style=self._c_error)
         if duration and duration > 0:
-            duration_str = self._format_duration(duration)
+            duration_str = format_duration_hud(duration)
             line.append(f" T+{duration_str}", style=self._c_dim)
         return line
-
-    def _format_duration(self, seconds: float) -> str:
-        """Format duration in HUD style."""
-        if seconds < 0.01:
-            return "0.01s"
-        elif seconds < 1:
-            return f"{seconds:.2f}s"
-        elif seconds < 60:
-            return f"{seconds:.1f}s"
-        else:
-            mins = int(seconds // 60)
-            secs = int(seconds % 60)
-            return f"{mins}m{secs:02d}s"
 
     def render_tool_with_spinner(self, tool: ToolState) -> RenderableType:
         """Render a pending tool with HUD status."""

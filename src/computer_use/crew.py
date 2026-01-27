@@ -296,7 +296,7 @@ class ComputerUseCrew:
                             display_agent = AGENT_DISPLAY_NAMES.get(
                                 agent_name.strip(), agent_name
                             )
-                            task_desc = tool_input.get("task", "task")[:100]
+                            task_desc = str(tool_input.get("task", "task"))[:100]
                             dashboard.log_delegation(display_agent, task_desc)
 
                 if (
@@ -444,9 +444,7 @@ class ComputerUseCrew:
         system_tools = self.agents_config["system_agent"].get("tools", [])
         coding_tools = self.agents_config["coding_agent"].get("tools", [])
 
-        manager_agent = self._create_agent(
-            "manager", [], self.llm, tool_map
-        )
+        manager_agent = self._create_agent("manager", [], self.llm, tool_map)
 
         return {
             "manager": manager_agent,
@@ -524,7 +522,9 @@ CRITICAL:
             def on_llm_complete(source: Any, event: LLMCallCompletedEvent) -> None:
                 prompt_tokens = 0
                 completion_tokens = 0
-                usage = getattr(event, "usage", None) or getattr(event, "token_usage", None)
+                usage = getattr(event, "usage", None) or getattr(
+                    event, "token_usage", None
+                )
                 if usage:
                     if isinstance(usage, dict):
                         prompt_tokens = usage.get("prompt_tokens")

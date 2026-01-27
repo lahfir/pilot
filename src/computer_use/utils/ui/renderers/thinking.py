@@ -8,6 +8,8 @@ from rich.text import Text
 
 from .base import BaseRenderer
 from ..state import TaskState
+from ..theme import THEME
+from ..core.responsive import ResponsiveWidth
 
 
 class ThinkingRenderer(BaseRenderer):
@@ -15,10 +17,10 @@ class ThinkingRenderer(BaseRenderer):
 
     def __init__(self, console, verbosity):
         super().__init__(console, verbosity)
-        self._c_border = "#3d444d"
-        self._c_dim = "#8b949e"
-        self._c_muted = "#484f58"
-        self._c_thinking = "#aaaaff"
+        self._c_border = THEME["hud_border"]
+        self._c_dim = THEME["hud_dim"]
+        self._c_muted = THEME["hud_muted"]
+        self._c_thinking = THEME["thinking"]
 
     def render(self, state: TaskState) -> Optional[RenderableType]:
         """Render current thinking from active agent."""
@@ -31,8 +33,12 @@ class ThinkingRenderer(BaseRenderer):
 
         return self.render_thought(agent.current_thought)
 
-    def render_thought(self, thought: str, max_width: int = 80) -> RenderableType:
+    def render_thought(
+        self, thought: str, max_width: Optional[int] = None
+    ) -> RenderableType:
         """Render a HUD-style thinking block."""
+        if max_width is None:
+            max_width = ResponsiveWidth.get_content_width(padding=8)
         wrapped = self._wrap_text(thought, max_width - 8)
 
         lines = []

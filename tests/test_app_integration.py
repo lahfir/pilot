@@ -53,7 +53,7 @@ class TestCalculatorIntegration:
         print("\n1️⃣  Getting all UI elements from Calculator...")
         elements = accessibility.get_all_ui_elements("Calculator")
 
-        print(f"\n📊 Results:")
+        print("\n📊 Results:")
         total_elements = sum(len(v) for v in elements.values())
         print(f"   Total elements: {total_elements}")
 
@@ -147,9 +147,9 @@ class TestCalculatorIntegration:
         for btn in sorted(number_buttons, key=lambda x: x.get("title", "")):
             print(f"   • {btn.get('title')} at {btn.get('bounds')}")
 
-        assert (
-            len(number_buttons) >= 10
-        ), f"❌ Expected 10 number buttons, got {len(number_buttons)}"
+        assert len(number_buttons) >= 10, (
+            f"❌ Expected 10 number buttons, got {len(number_buttons)}"
+        )
 
         print("\n✅ SUCCESS: Found all number buttons")
         print("=" * 80)
@@ -200,7 +200,7 @@ class TestSystemSettingsIntegration:
         print("\n1️⃣  Getting all UI elements from System Settings...")
         elements = accessibility.get_all_ui_elements("System Settings")
 
-        print(f"\n📊 Results:")
+        print("\n📊 Results:")
         total_elements = sum(len(v) for v in elements.values())
         print(f"   Total elements: {total_elements}")
 
@@ -251,9 +251,9 @@ class TestSystemSettingsIntegration:
             for elem in interactive:
                 print(f"   • {elem.get('title', 'N/A')} (role: {elem.get('role')})")
 
-        assert (
-            len(interactive) > 0
-        ), "❌ No interactive elements found in System Settings!"
+        assert len(interactive) > 0, (
+            "❌ No interactive elements found in System Settings!"
+        )
 
         print(f"\n✅ SUCCESS: Found {len(interactive)} interactive elements")
         print("=" * 80)

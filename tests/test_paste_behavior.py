@@ -214,9 +214,9 @@ class TestPromptGuidelines:
 
         rules = get_text_input_rules()
 
-        assert (
-            "NEVER" in rules or "NOT" in rules
-        ), "Rules should explicitly discourage input() usage"
+        assert "NEVER" in rules or "NOT" in rules, (
+            "Rules should explicitly discourage input() usage"
+        )
 
 
 if __name__ == "__main__":

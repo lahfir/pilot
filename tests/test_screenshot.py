@@ -22,7 +22,7 @@ class TestScreenshotTool:
 
         tool = ScreenshotTool()
 
-        print(f"📋 Screenshot Tool Status:")
+        print("📋 Screenshot Tool Status:")
         print(f"   - OS Type: {tool.os_type}")
         print(f"   - Scaling Factor: {tool.scaling_factor}")
 
@@ -49,9 +49,9 @@ class TestScreenshotTool:
         print(f"   - Size: {screenshot.size}")
         print(f"   - Mode: {screenshot.mode}")
 
-        assert (
-            screenshot.size[0] > 0 and screenshot.size[1] > 0
-        ), "Screenshot should have valid dimensions"
+        assert screenshot.size[0] > 0 and screenshot.size[1] > 0, (
+            "Screenshot should have valid dimensions"
+        )
         print("✅ Fullscreen capture works!")
 
         print("=" * 80)
@@ -86,7 +86,7 @@ class TestScreenshotTool:
         try:
             screenshot, metadata = screenshot_tool.capture_active_window("Finder")
 
-            print(f"✅ Capture succeeded!")
+            print("✅ Capture succeeded!")
             print(f"   - Size: {screenshot.size}")
             print(f"   - Bounds: {metadata}")
 
@@ -95,7 +95,7 @@ class TestScreenshotTool:
 
             # Save for visual inspection
             screenshot.save("/tmp/test_finder_capture.png")
-            print(f"   - Saved to /tmp/test_finder_capture.png")
+            print("   - Saved to /tmp/test_finder_capture.png")
 
         except Exception as e:
             pytest.fail(f"❌ Window capture failed: {e}")
@@ -158,7 +158,7 @@ class TestScreenshotTool:
         finder_matches = [kw for kw in finder_keywords if kw in text]
         vscode_matches = [kw for kw in vscode_keywords if kw in text]
 
-        print(f"\n📊 Content Analysis:")
+        print("\n📊 Content Analysis:")
         print(f"   - Finder keywords found: {finder_matches}")
         print(f"   - VS Code keywords found: {vscode_matches}")
 
@@ -169,13 +169,13 @@ class TestScreenshotTool:
             )
         elif len(vscode_matches) > len(finder_matches):
             pytest.fail(
-                f"\n\n{'='*80}\n"
+                f"\n\n{'=' * 80}\n"
                 f"❌ BUG DETECTED: Screenshot contains VS CODE content!\n"
                 f"   This means the window capture is still broken.\n"
                 f"   It's capturing overlapping windows instead of the target window.\n"
                 f"   Finder keywords: {finder_matches}\n"
                 f"   VS Code keywords: {vscode_matches}\n"
-                f"{'='*80}\n"
+                f"{'=' * 80}\n"
             )
         else:
             print("⚠️  Could not determine window content (no keywords matched)")

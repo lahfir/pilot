@@ -136,7 +136,7 @@ def patch_gui_tools(gui_tools: Dict[str, Any]):
 
             def make_traced_run(name, orig):
                 def traced_run(*args, **kwargs):
-                    print(f"\n{'='*60}")
+                    print(f"\n{'=' * 60}")
                     print(f">>> TOOL START: {name}")
                     print(f"    Args: {args}")
                     print(f"    Kwargs: {kwargs}")
@@ -159,7 +159,7 @@ def patch_gui_tools(gui_tools: Dict[str, Any]):
                             print(f"    Data: {str(data)[:300]}")
                         if error:
                             print(f"    Error: {error}")
-                        print(f"{'='*60}")
+                        print(f"{'=' * 60}")
                         sys.stdout.flush()
 
                         profiler.log_tool(
@@ -172,7 +172,7 @@ def patch_gui_tools(gui_tools: Dict[str, Any]):
                     except Exception as e:
                         duration = time.time() - start
                         print(f"<<< TOOL ERROR: {name} [{duration:.2f}s] - {e}")
-                        print(f"{'='*60}")
+                        print(f"{'=' * 60}")
                         sys.stdout.flush()
                         profiler.log_tool(name, duration, str(kwargs), f"error={e}")
                         raise
@@ -207,12 +207,12 @@ def patch_llm_calls():
                 msg_count = 1
                 last_msg = str(messages)[:400]
 
-            print(f"\n{'*'*60}")
-            print(f">>> LLM CALL START (litellm.completion)")
+            print(f"\n{'*' * 60}")
+            print(">>> LLM CALL START (litellm.completion)")
             print(f"    Model: {model}")
             print(f"    Messages: {msg_count}")
             print(f"    Prompt length: {prompt_len} chars")
-            print(f"    Last message preview:")
+            print("    Last message preview:")
             for line in last_msg.split("\n")[:3]:
                 print(f"      {line[:120]}")
             sys.stdout.flush()
@@ -230,10 +230,10 @@ def patch_llm_calls():
 
             print(f"<<< LLM CALL END [{duration:.2f}s]")
             print(f"    Response length: {response_len} chars")
-            print(f"    Response preview:")
+            print("    Response preview:")
             for line in response_text[:600].split("\n")[:5]:
                 print(f"      {line[:120]}")
-            print(f"{'*'*60}")
+            print(f"{'*' * 60}")
             sys.stdout.flush()
 
             profiler.log_llm(duration, prompt_len, response_len)
@@ -256,15 +256,11 @@ def patch_llm_calls():
 
             if isinstance(messages, str):
                 prompt_len = len(messages)
-                last_msg = messages[:300]
             else:
                 prompt_len = sum(len(str(m.get("content", ""))) for m in messages)
-                last_msg = (
-                    str(messages[-1].get("content", ""))[:300] if messages else ""
-                )
 
-            print(f"\n{'#'*60}")
-            print(f">>> CREWAI LLM.call START")
+            print(f"\n{'#' * 60}")
+            print(">>> CREWAI LLM.call START")
             print(f"    Model: {model}")
             print(f"    Prompt length: {prompt_len} chars")
             sys.stdout.flush()
@@ -278,7 +274,7 @@ def patch_llm_calls():
 
             print(f"<<< CREWAI LLM.call END [{duration:.2f}s]")
             print(f"    Response length: {response_len} chars")
-            print(f"{'#'*60}")
+            print(f"{'#' * 60}")
             sys.stdout.flush()
 
             if not patched:

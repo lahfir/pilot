@@ -245,7 +245,7 @@ class TestSystemSettingsDarkMode:
                         print(f"   ⚠️  Skipping menu item: {title or label} at {bounds}")
 
         if wallpaper_elem:
-            print(f"\n   ✅ FOUND WALLPAPER SIDEBAR BUTTON!")
+            print("\n   ✅ FOUND WALLPAPER SIDEBAR BUTTON!")
             print(
                 f"      Title: {wallpaper_elem.get('title', wallpaper_elem.get('label', 'N/A'))}"
             )

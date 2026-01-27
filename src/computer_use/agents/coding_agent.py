@@ -349,17 +349,21 @@ class CodingAgent:
         """Print formatted Cline output using dashboard theme."""
         output_type = formatted["type"]
         content = formatted["content"]
+        from ..utils.ui.core.responsive import ResponsiveWidth
 
         if output_type == "code_start":
             console.print(f"      [{THEME['border']}]┌─ {content} ─[/]")
         elif output_type == "code_end":
             console.print(f"      [{THEME['border']}]└────────────[/]")
         elif output_type == "code":
+            excerpt = ResponsiveWidth.truncate(
+                str(content), max_ratio=0.85, min_width=60
+            )
             console.print(
-                f"      [{THEME['border']}]│[/] [{THEME['text']}]{content[:100]}[/]"
+                f"      [{THEME['border']}]│[/] [{THEME['text']}]{excerpt}[/]"
             )
         elif output_type == "command":
-            cmd = content[:60] + "..." if len(content) > 60 else content
+            cmd = ResponsiveWidth.truncate(str(content), max_ratio=0.7, min_width=40)
             console.print(
                 f"      [{THEME['tool_pending']}]{ICONS['pending']}[/] "
                 f"[bold]Running[/] [{THEME['muted']}]{cmd}[/]"
@@ -374,16 +378,31 @@ class CodingAgent:
                 f"[italic {THEME['thinking']}]{content}[/]"
             )
         elif output_type == "success":
+            excerpt = ResponsiveWidth.truncate(
+                str(content), max_ratio=0.7, min_width=40
+            )
             console.print(
-                f"      [{THEME['tool_success']}]{ICONS['success']}[/] {content[:80]}"
+                f"      [{THEME['tool_success']}]{ICONS['success']}[/] {excerpt}"
             )
         elif output_type == "error":
-            console.print(f"      [{THEME['error']}]{ICONS['error']}[/] {content[:80]}")
+            excerpt = ResponsiveWidth.truncate(
+                str(content), max_ratio=0.7, min_width=40
+            )
+            console.print(f"      [{THEME['error']}]{ICONS['error']}[/] {excerpt}")
         elif output_type == "complete":
+            excerpt = ResponsiveWidth.truncate(
+                str(content), max_ratio=0.7, min_width=40
+            )
             console.print(
-                f"      [{THEME['tool_success']}]{ICONS['agent_active']}[/] {content[:80]}"
+                f"      [{THEME['tool_success']}]{ICONS['agent_active']}[/] {excerpt}"
             )
         elif output_type == "info":
-            console.print(f"      [{THEME['muted']}]💭 {content[:80]}[/]")
+            excerpt = ResponsiveWidth.truncate(
+                str(content), max_ratio=0.7, min_width=40
+            )
+            console.print(f"      [{THEME['muted']}]💭 {excerpt}[/]")
         else:
-            console.print(f"      [{THEME['border']}]│[/] {content[:100]}")
+            excerpt = ResponsiveWidth.truncate(
+                str(content), max_ratio=0.85, min_width=60
+            )
+            console.print(f"      [{THEME['border']}]│[/] {excerpt}")

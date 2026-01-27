@@ -85,16 +85,16 @@ class TestImageTools:
 
         image_file = Path(saved_path)
         assert image_file.exists(), f"Image file should exist at {saved_path}"
-        assert (
-            image_file.parent == IMAGE_GEN_DIR
-        ), f"Image should be in {IMAGE_GEN_DIR}, got {image_file.parent}"
+        assert image_file.parent == IMAGE_GEN_DIR, (
+            f"Image should be in {IMAGE_GEN_DIR}, got {image_file.parent}"
+        )
         assert image_file.suffix == ".png", "Image should be a PNG file"
         assert image_file.stat().st_size > 0, "Image file should not be empty"
 
         valid_paths = get_generated_image_paths()
-        assert (
-            str(image_file) in valid_paths
-        ), f"Generated path {image_file} should be in whitelist"
+        assert str(image_file) in valid_paths, (
+            f"Generated path {image_file} should be in whitelist"
+        )
 
         print(f"\n✅ Image stored correctly at: {saved_path}")
         print(f"   Directory: {IMAGE_GEN_DIR}")

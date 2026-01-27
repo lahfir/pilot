@@ -74,6 +74,7 @@ from .utils.ui import (  # noqa: E402
     print_hud_system_status,
     print_ready,
     print_task_result,
+    HeadsetLoader,
     THEME,
 )
 from rich.text import Text  # noqa: E402
@@ -107,25 +108,23 @@ async def main(
 
     print_banner()
 
-    from rich.status import Status
-
-    with Status(
-        "[#8b949e]Initializing...[/]", console=console, spinner="dots"
-    ) as status:
-        status.update("[#8b949e]Checking permissions...[/]")
+    with HeadsetLoader.context(
+        message="Initializing...", size="mini", console=console
+    ) as loader:
+        loader.set_message("Checking permissions...")
         permissions_ok = check_and_request_permissions()
         if not permissions_ok:
             console.print(f"  [{THEME['error']}]Cannot proceed without permissions[/]")
             sys.exit(1)
 
-        status.update("[#8b949e]Detecting platform...[/]")
+        loader.set_message("Detecting platform...")
         capabilities = detect_platform()
 
         from .config.llm_config import LLMConfig
         from .services.twilio_service import TwilioService
         from .services.webhook_server import WebhookServer
 
-        status.update("[#8b949e]Starting services...[/]")
+        loader.set_message("Starting services...")
         twilio_service = TwilioService()
         twilio_service.set_llm_client(LLMConfig.get_llm())
 
@@ -134,7 +133,7 @@ async def main(
             webhook_server = WebhookServer(twilio_service)
             webhook_server.start()
 
-        status.update("[#8b949e]Loading tools...[/]")
+        loader.set_message("Loading tools...")
         crew = ComputerUseCrew(
             capabilities,
             SafetyChecker(),

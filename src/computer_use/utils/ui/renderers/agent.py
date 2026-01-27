@@ -8,6 +8,8 @@ from rich.text import Text
 
 from .base import BaseRenderer
 from ..state import TaskState, AgentState
+from ..theme import THEME
+from ..core.responsive import ResponsiveWidth
 
 
 class AgentRenderer(BaseRenderer):
@@ -15,14 +17,14 @@ class AgentRenderer(BaseRenderer):
 
     def __init__(self, console, verbosity):
         super().__init__(console, verbosity)
-        self._c_border = "#3d444d"
-        self._c_dim = "#8b949e"
-        self._c_muted = "#484f58"
-        self._c_text = "#c9d1d9"
-        self._c_active = "#58a6ff"
-        self._c_success = "#3fb950"
-        self._c_error = "#f85149"
-        self._c_thinking = "#aaaaff"
+        self._c_border = THEME["hud_border"]
+        self._c_dim = THEME["hud_dim"]
+        self._c_muted = THEME["hud_muted"]
+        self._c_text = THEME["hud_text"]
+        self._c_active = THEME["hud_active"]
+        self._c_success = THEME["hud_success"]
+        self._c_error = THEME["hud_error"]
+        self._c_thinking = THEME["thinking"]
 
     def render(self, state: TaskState) -> Optional[RenderableType]:
         """Render all agents in HUD style."""
@@ -89,14 +91,10 @@ class AgentRenderer(BaseRenderer):
             thought_text = Text()
             thought_text.append("│  ", style=self._c_border)
             thought_text.append("◐ ", style=self._c_thinking)
-            thought = (
-                agent.current_thought[:120]
-                if len(agent.current_thought) > 120
-                else agent.current_thought
+            thought = ResponsiveWidth.truncate(
+                agent.current_thought, max_ratio=0.9, min_width=60
             )
             thought_text.append(thought, style=f"italic {self._c_thinking}")
-            if len(agent.current_thought) > 120:
-                thought_text.append("...", style=self._c_muted)
             lines.append(thought_text)
 
         if agent.tools:

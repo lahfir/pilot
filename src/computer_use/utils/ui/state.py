@@ -111,12 +111,16 @@ class AgentState:
     @property
     def total_llm_time(self) -> float:
         """Total time spent in LLM calls."""
-        return sum(call.duration for call in self.llm_calls if call.status == "complete")
+        return sum(
+            call.duration for call in self.llm_calls if call.status == "complete"
+        )
 
     @property
     def total_tool_time(self) -> float:
         """Total time spent in tool executions."""
-        return sum(tool.duration for tool in self.tools if tool.status in ("success", "error"))
+        return sum(
+            tool.duration for tool in self.tools if tool.status in ("success", "error")
+        )
 
     @property
     def llm_call_count(self) -> int:
@@ -217,7 +221,11 @@ class TaskState:
         """Total number of LLM calls across all agents."""
         return sum(agent.llm_call_count for agent in self.agents.values())
 
-    def set_phase(self, phase: Literal["idle", "thinking", "executing", "waiting"], operation: Optional[str] = None):
+    def set_phase(
+        self,
+        phase: Literal["idle", "thinking", "executing", "waiting"],
+        operation: Optional[str] = None,
+    ):
         """Update the current phase and reset phase timer."""
         self.current_phase = phase
         self.phase_start_time = time.time()
