@@ -59,6 +59,59 @@ class ToolRenderer(BaseRenderer):
 
         return Group(*lines)
 
+    def render_complete_tool(self, tool: ToolState, nested: bool = False) -> Text:
+        """
+        Render a tool execution as a single Text block.
+
+        Args:
+            tool: Tool state to render
+            nested: Whether to nest output under a thought group
+
+        Returns:
+            A single Text block containing header, input, and output/error
+        """
+        header_prefix = "│   " if nested else ""
+        line_prefix = "│   │   " if nested else "│   "
+        continuation_prefix = "│   │       " if nested else "│       "
+
+        header = self._render_tool_header(tool)
+        if nested:
+            nested_header = Text()
+            nested_header.append(header_prefix, style=self._c_border)
+            nested_header.append_text(header)
+            header = nested_header
+
+        lines: list[Text] = [header]
+
+        if tool.input_data:
+            lines.append(self._render_input(tool.input_data, prefix=line_prefix))
+
+        if tool.status == "success":
+            lines.append(
+                self._render_output(
+                    tool.output_data,
+                    duration=tool.duration,
+                    prefix=line_prefix,
+                    continuation_prefix=continuation_prefix,
+                )
+            )
+        else:
+            lines.append(
+                self._render_error(
+                    tool.error or "Unknown error",
+                    duration=tool.duration,
+                    prefix=line_prefix,
+                    continuation_prefix=continuation_prefix,
+                )
+            )
+
+        block = Text()
+        for idx, line in enumerate(lines):
+            if idx > 0:
+                block.append("\n")
+            block.append_text(line)
+        return block
+
     def _render_tool_header(self, tool: ToolState) -> Text:
         """Render HUD-style tool header."""
         line = Text()
@@ -83,10 +136,19 @@ class ToolRenderer(BaseRenderer):
 
         return line
 
-    def _render_input(self, input_data: dict) -> Text:
-        """Render HUD-style tool input."""
+    def _render_input(self, input_data: dict, prefix: str = "│   ") -> Text:
+        """
+        Render HUD-style tool input.
+
+        Args:
+            input_data: Tool input dictionary
+            prefix: Line prefix for borders/nesting
+
+        Returns:
+            Rendered input line
+        """
         line = Text()
-        line.append("│   ", style=self._c_border)
+        line.append(prefix, style=self._c_border)
         line.append("▸ ", style=self._c_muted)
 
         cleaned_data = self._clean_input_data(input_data)
@@ -117,17 +179,38 @@ class ToolRenderer(BaseRenderer):
             cleaned[key] = value
         return cleaned
 
-    def _render_output(self, output_data: Any, duration: float | None = None) -> Text:
-        """Render HUD-style tool output."""
+    def _render_output(
+        self,
+        output_data: Any,
+        duration: float | None = None,
+        prefix: str = "│   ",
+        continuation_prefix: str = "│       ",
+    ) -> Text:
+        """
+        Render HUD-style tool output.
+
+        Args:
+            output_data: Tool output payload
+            duration: Optional tool duration for display
+            prefix: Line prefix for borders/nesting
+            continuation_prefix: Prefix for wrapped lines in multi-line output
+
+        Returns:
+            Rendered output line
+        """
         line = Text()
-        line.append("│   ", style=self._c_border)
+        line.append(prefix, style=self._c_border)
         line.append("◀ ", style=self._c_success)
 
         if isinstance(output_data, str):
-            formatted = self._format_output_string(output_data)
+            formatted = self._format_output_string(
+                output_data, continuation_prefix=continuation_prefix
+            )
             line.append(formatted, style=self._c_text)
         elif isinstance(output_data, dict):
-            formatted = self._format_output_dict(output_data)
+            formatted = self._format_output_dict(
+                output_data, continuation_prefix=continuation_prefix
+            )
             line.append(formatted, style=self._c_text)
         else:
             line.append(str(output_data), style=self._c_text)
@@ -138,8 +221,17 @@ class ToolRenderer(BaseRenderer):
 
         return line
 
-    def _format_output_string(self, output: str) -> str:
-        """Format string output with HUD-style line breaks."""
+    def _format_output_string(self, output: str, continuation_prefix: str) -> str:
+        """
+        Format string output with HUD-style line breaks.
+
+        Args:
+            output: Raw output string
+            continuation_prefix: Prefix for wrapped lines
+
+        Returns:
+            Formatted output string
+        """
         if not output:
             return "OK"
 
@@ -158,7 +250,7 @@ class ToolRenderer(BaseRenderer):
                 return lines[0][:width]
             return lines[0][: width - 3] + "..."
 
-        indent = "\n│       "
+        indent = f"\n{continuation_prefix}"
         formatted = lines[0]
 
         for line in lines[1:15]:
@@ -169,13 +261,22 @@ class ToolRenderer(BaseRenderer):
 
         return formatted
 
-    def _format_output_dict(self, output: dict) -> str:
-        """Format dictionary output in HUD style."""
+    def _format_output_dict(self, output: dict, continuation_prefix: str) -> str:
+        """
+        Format dictionary output in HUD style.
+
+        Args:
+            output: Output dictionary
+            continuation_prefix: Prefix for wrapped lines
+
+        Returns:
+            Formatted output string
+        """
         if not output:
             return "OK"
 
         parts = []
-        indent = "│       "
+        indent = continuation_prefix
 
         for key, value in list(output.items())[:5]:
             if isinstance(value, list):
@@ -199,12 +300,43 @@ class ToolRenderer(BaseRenderer):
 
         return result
 
-    def _render_error(self, error: str, duration: float | None = None) -> Text:
-        """Render HUD-style tool error."""
+    def _render_error(
+        self,
+        error: str,
+        duration: float | None = None,
+        prefix: str = "│   ",
+        continuation_prefix: str = "│       ",
+    ) -> Text:
+        """
+        Render HUD-style tool error.
+
+        Args:
+            error: Error message
+            duration: Optional tool duration for display
+            prefix: Line prefix for borders/nesting
+            continuation_prefix: Prefix for wrapped lines if error spans lines
+
+        Returns:
+            Rendered error line
+        """
         line = Text()
-        line.append("│   ", style=self._c_border)
+        line.append(prefix, style=self._c_border)
         line.append("✗ ", style=self._c_error)
-        line.append(error, style=self._c_error)
+        if "\n" not in error:
+            line.append(error, style=self._c_error)
+        else:
+            lines = [err_line for err_line in error.split("\n") if err_line.strip()]
+            if not lines:
+                line.append("Error", style=self._c_error)
+            else:
+                line.append(lines[0], style=self._c_error)
+                for extra in lines[1:8]:
+                    line.append(f"\n{continuation_prefix}{extra}", style=self._c_error)
+                if len(lines) > 8:
+                    line.append(
+                        f"\n{continuation_prefix}... (+{len(lines) - 8} lines)",
+                        style=self._c_error,
+                    )
         if duration and duration > 0:
             duration_str = format_duration_hud(duration)
             line.append(f" T+{duration_str}", style=self._c_dim)

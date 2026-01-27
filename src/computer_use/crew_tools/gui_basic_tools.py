@@ -641,47 +641,204 @@ def _get_element_priority(element: dict) -> tuple:
 
 
 def _format_elements_brief(elements: list) -> str:
-    """Format elements as a brief role count summary."""
+    """
+    Format elements as a compact role count summary.
+
+    Args:
+        elements: List of element dictionaries
+
+    Returns:
+        Compact summary such as: "Button:56 | MenuItem:12 | TextField:2 | +3 more"
+    """
     from typing import Dict
 
     by_role: Dict[str, int] = {}
     for e in elements:
-        role = e.get("role", "Other")
+        role = e.get("role", "Other") or "Other"
         by_role[role] = by_role.get(role, 0) + 1
 
-    parts = [f"{role}:{count}" for role, count in sorted(by_role.items())]
+    top = sorted(by_role.items(), key=lambda kv: (-kv[1], kv[0]))[:8]
+    parts = [f"{role}:{count}" for role, count in top]
+    if len(by_role) > len(top):
+        parts.append(f"+{len(by_role) - len(top)} more")
     return " | ".join(parts)
 
 
-def _format_elements_compact(elements: list, limit: int = 30) -> str:
-    """Format elements in ultra-compact format to minimize tokens."""
-    from typing import Dict, List
+def _is_meaningful_label(label: str) -> bool:
+    """
+    Determine whether an element label is meaningful for LLM selection.
 
-    by_role: Dict[str, List[dict]] = {}
-    for e in elements[:limit]:
-        role = e.get("role", "Other")
-        label = (e.get("label", "") or "").strip()
-        if label and "[" not in label[:5]:
-            by_role.setdefault(role, []).append(e)
+    Args:
+        label: Raw label string
 
-    lines = []
-    priority_roles = ["TextField", "TextArea", "Button", "MenuItem", "CheckBox"]
+    Returns:
+        True if label is non-empty and not a generic placeholder
+    """
+    if not label:
+        return False
+    cleaned = label.strip()
+    if not cleaned:
+        return False
+    if cleaned.lower() in {"button", "group", "toolbar", "menu"}:
+        return False
+    if cleaned.startswith("[") and cleaned.endswith("]"):
+        return False
+    return True
 
-    for role in priority_roles:
-        if role in by_role:
-            items = by_role.pop(role)[:5]
-            formatted = ",".join(
-                f"{e['element_id']}:{(e.get('label', '') or '')[:12]}" for e in items
-            )
-            lines.append(f"{role}:{formatted}")
 
-    for role, items in sorted(by_role.items())[:3]:
-        formatted = ",".join(
-            f"{e['element_id']}:{(e.get('label', '') or '')[:12]}" for e in items[:3]
+def _format_label_id(label: str, element_id: str, max_len: int = 22) -> str:
+    """
+    Format a label with element_id in a compact, readable form.
+
+    Args:
+        label: Element label
+        element_id: Element ID string
+        max_len: Maximum label length before truncation
+
+    Returns:
+        Formatted string like: "Save(e_1234567)"
+    """
+    lbl = (label or "").strip()
+    if len(lbl) > max_len:
+        lbl = lbl[: max_len - 1].rstrip() + "…"
+    return f"{lbl}({element_id})"
+
+
+def _select_smart_compact_elements(
+    elements: list, max_total: int = 20
+) -> tuple[list[dict], int]:
+    """
+    Select a small, high-signal subset of elements for LLM display.
+
+    Strategy:
+    - Include input fields first
+    - Then include labeled interactive elements by role priority
+    - Prefer unique labels and top-to-bottom layout ordering
+
+    Args:
+        elements: Full list of interactive elements
+        max_total: Maximum number of elements to select
+
+    Returns:
+        (selected_elements, hidden_count)
+    """
+    if max_total <= 0:
+        return ([], len(elements))
+
+    label_counts: dict[str, int] = {}
+    for e in elements:
+        label = (e.get("label") or "").strip()
+        if _is_meaningful_label(label):
+            label_counts[label] = label_counts.get(label, 0) + 1
+
+    def score(e: dict) -> tuple:
+        label = (e.get("label") or "").strip()
+        unique = 0 if label_counts.get(label, 0) == 1 else 1
+        length = len(label) if label else 999
+        center = e.get("center") or [9999, 9999]
+        return (unique, length, center[1], center[0])
+
+    inputs = [
+        e for e in elements if (e.get("role") or "").lower() in INPUT_PRIORITY_ROLES
+    ]
+    inputs.sort(key=_get_element_priority)
+
+    selected: list[dict] = []
+    seen_ids: set[str] = set()
+
+    for e in inputs:
+        if len(selected) >= max_total:
+            break
+        eid = e.get("element_id") or ""
+        if eid and eid not in seen_ids:
+            selected.append(e)
+            seen_ids.add(eid)
+
+    role_priority = [
+        ("Button", 10),
+        ("MenuItem", 8),
+        ("MenuBarItem", 4),
+        ("CheckBox", 4),
+        ("RadioButton", 4),
+        ("MenuButton", 2),
+        ("PopUpButton", 2),
+    ]
+
+    for role, per_role_cap in role_priority:
+        if len(selected) >= max_total:
+            break
+        remaining = max_total - len(selected)
+        take = min(remaining, per_role_cap)
+        candidates = [
+            e
+            for e in elements
+            if (e.get("role") or "") == role
+            and _is_meaningful_label((e.get("label") or "").strip())
+        ]
+        candidates.sort(key=score)
+        for e in candidates[:take]:
+            if len(selected) >= max_total:
+                break
+            eid = e.get("element_id") or ""
+            if eid and eid not in seen_ids:
+                selected.append(e)
+                seen_ids.add(eid)
+
+    hidden = max(0, len(elements) - len(selected))
+    return (selected, hidden)
+
+
+def _format_elements_smart_compact(selected: list[dict], hidden_count: int) -> str:
+    """
+    Format a smart-compact list of elements for minimal token usage.
+
+    Args:
+        selected: Selected elements to display
+        hidden_count: Count of additional elements not shown
+
+    Returns:
+        Multi-line formatted summary grouped by role
+    """
+    by_role: dict[str, list[str]] = {}
+    for e in selected:
+        role = e.get("role") or "Other"
+        label = (e.get("label") or "").strip()
+        eid = e.get("element_id") or ""
+        if not label or not eid:
+            continue
+        by_role.setdefault(role, []).append(_format_label_id(label, eid))
+
+    role_order = [
+        "TextField",
+        "TextArea",
+        "SearchField",
+        "ComboBox",
+        "SecureTextField",
+        "Button",
+        "MenuItem",
+        "MenuBarItem",
+        "CheckBox",
+        "RadioButton",
+        "MenuButton",
+        "PopUpButton",
+    ]
+
+    lines: list[str] = []
+    for role in role_order:
+        items = by_role.pop(role, [])
+        if items:
+            lines.append(f"{role}: " + ", ".join(items))
+
+    for role, items in sorted(by_role.items()):
+        if items:
+            lines.append(f"{role}: " + ", ".join(items))
+
+    if hidden_count > 0:
+        lines.append(
+            f"+{hidden_count} more elements hidden (use filter_text / filter_role)"
         )
-        lines.append(f"{role}:{formatted}")
 
-    return " | ".join(lines) if lines else "No labeled elements"
+    return "\n".join(lines) if lines else "No actionable labeled elements found"
 
 
 class GetAccessibleElementsTool(InstrumentedBaseTool):
@@ -797,32 +954,20 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
             window_height = (
                 window_bounds[3] if window_bounds else timing.default_window_height
             )
-
-            top_third = window_y_start + (window_height / 3)
-            bottom_third = window_y_start + (2 * window_height / 3)
+            _ = (window_y_start, window_height)
 
             normalized_elements = []
             for elem in elements:
                 bounds = list(elem.get("bounds", []))
                 center = list(elem.get("center", []))
 
-                spatial_hint = ""
-                if center and len(center) >= 2 and window_bounds:
-                    y_pos = center[1]
-                    if y_pos < top_third:
-                        spatial_hint = " [TOP]"
-                    elif y_pos < bottom_third:
-                        spatial_hint = " [MIDDLE]"
-                    else:
-                        spatial_hint = " [BOTTOM]"
-
                 label = elem.get("label", "") or elem.get("role", "")
                 title = elem.get("title", "") or elem.get("role", "")
 
                 normalized = {
                     "element_id": elem.get("element_id", ""),
-                    "label": label + spatial_hint,
-                    "title": title + spatial_hint,
+                    "label": label,
+                    "title": title,
                     "role": elem.get("role", ""),
                     "identifier": elem.get("identifier", ""),
                     "bounds": bounds,
@@ -866,60 +1011,11 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
                         data={"elements": [], "count": 0, "filter": filter_text},
                     )
 
-            # Filter elements: Keep those with meaningful labels
-            # Exclude only generic spatial-only labels (our own annotations)
-            generic_labels = {
-                "Button [TOP]",
-                "Button [MIDDLE]",
-                "Button [BOTTOM]",
-                "Group [TOP]",
-                "Group [MIDDLE]",
-                "Group [BOTTOM]",
-                "Toolbar [TOP]",
-                "Toolbar [MIDDLE]",
-                "Toolbar [BOTTOM]",
-            }
-
-            # Filter elements: Include interactive elements even with empty labels (for theme buttons)
-            # Only exclude generic structural elements
-            meaningful_elements = [
-                e
-                for e in normalized_elements
-                if (
-                    # Include if it has a meaningful label
-                    (e.get("label") and e["label"] not in generic_labels)
-                    # OR if it's interactive with valid bounds (even if label is empty)
-                    or (e.get("category") == "interactive" and e.get("center"))
-                )
-            ]
-
-            base_elements = (
-                meaningful_elements if meaningful_elements else normalized_elements
+            max_total = 25 if (filter_text or filter_role) else 20
+            selected, hidden_count = _select_smart_compact_elements(
+                normalized_elements, max_total=max_total
             )
-            input_elements = [
-                e
-                for e in base_elements
-                if (e.get("role") or "").lower() in INPUT_PRIORITY_ROLES
-            ]
-            other_elements = [
-                e
-                for e in base_elements
-                if (e.get("role") or "").lower() not in INPUT_PRIORITY_ROLES
-            ]
-            max_display = 75
-            remaining_slots = max(0, max_display - len(input_elements))
-            result_elements = (input_elements + other_elements[:remaining_slots])[:200]
-            display_elements = result_elements[:max_display]
-            truncated_note = ""
-            if len(base_elements) > len(display_elements):
-                truncated_note = (
-                    f"\n... +{len(base_elements) - len(display_elements)} more"
-                )
-
-            elements_summary = _format_elements_compact(display_elements, max_display)
-            if not elements_summary:
-                elements_summary = "No elements found"
-            elements_summary += truncated_note
+            elements_summary = _format_elements_smart_compact(selected, hidden_count)
 
             import hashlib
 
@@ -940,16 +1036,20 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
 
             _get_elements_state["last_hash"] = current_hash
 
-            brief_summary = _format_elements_brief(result_elements)
+            brief_summary = _format_elements_brief(normalized_elements)
+            data_elements = normalized_elements[:200]
 
             return ActionResult(
                 success=True,
-                action_taken=f"Found {len(result_elements)} elements in {app_name}: {brief_summary}{ui_changed_msg}\n\n{elements_summary}",
+                action_taken=(
+                    f"Found {len(normalized_elements)} elements in {app_name}: "
+                    f"{brief_summary}{ui_changed_msg}\n\n{elements_summary}"
+                ),
                 method_used="accessibility",
                 confidence=1.0,
                 data={
-                    "elements": result_elements,
-                    "count": len(result_elements),
+                    "elements": data_elements,
+                    "count": len(data_elements),
                 },
             )
 

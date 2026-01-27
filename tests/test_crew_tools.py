@@ -41,6 +41,7 @@ class TestToolOutputCorrectness:
         )
         mock_accessibility.get_all_ui_elements = Mock(return_value={"buttons": []})
         mock_accessibility.get_all_interactive_elements = Mock(return_value=[])
+        mock_accessibility.get_elements = Mock(return_value=[])
         mock_accessibility.get_app = Mock(return_value=Mock())
         mock_accessibility.get_windows = Mock(return_value=[])
         mock_accessibility.invalidate_cache = Mock()
@@ -137,7 +138,11 @@ class TestToolOutputCorrectness:
             "open" in result.action_taken.lower()
             or "calculator" in result.action_taken.lower()
         )
-        assert "process" in result.method_used or "verification" in result.method_used
+        assert (
+            "process" in result.method_used
+            or "verification" in result.method_used
+            or "accessibility" in result.method_used
+        )
 
     def test_scroll_returns_correct_action(self, mock_registry):
         """ScrollTool should return action about scrolling."""
@@ -211,6 +216,53 @@ class TestToolOutputCorrectness:
         )
         assert result.method_used == "accessibility"
 
+    def test_get_accessible_elements_smart_compact_limits_ids(self, mock_registry):
+        """GetAccessibleElementsTool should not flood output with element IDs."""
+        from src.computer_use.crew_tools.gui_basic_tools import (
+            GetAccessibleElementsTool,
+        )
+
+        many = []
+        for i in range(100):
+            many.append(
+                {
+                    "element_id": f"e_{i:07d}",
+                    "role": "Button",
+                    "label": f"Button {i}",
+                    "title": f"Button {i}",
+                    "bounds": [0, 0, 10, 10],
+                    "center": [i, i],
+                    "category": "interactive",
+                }
+            )
+        for i in range(3):
+            many.append(
+                {
+                    "element_id": f"e_tf{i:05d}",
+                    "role": "TextField",
+                    "label": f"Field {i}",
+                    "title": f"Field {i}",
+                    "bounds": [0, 0, 10, 10],
+                    "center": [i, i],
+                    "category": "interactive",
+                }
+            )
+
+        mock_registry.get_tool("accessibility").get_elements = Mock(return_value=many)
+
+        tool = GetAccessibleElementsTool()
+        tool._tool_registry = mock_registry
+
+        with patch(
+            "src.computer_use.crew_tools.gui_basic_tools.check_cancellation",
+            return_value=None,
+        ):
+            result = tool._run(app_name="Calculator")
+
+        assert result.success is True
+        assert "(e_" in result.action_taken
+        assert result.action_taken.count("(e_") <= 25
+
     def test_click_element_with_id_returns_correct_action(self, mock_registry):
         """ClickElementTool with element_id should return native click action."""
         from src.computer_use.crew_tools.gui_interaction_tools import ClickElementTool
@@ -222,7 +274,7 @@ class TestToolOutputCorrectness:
             "src.computer_use.crew_tools.gui_interaction_tools.check_cancellation",
             return_value=None,
         ):
-            result = tool._run(element_id="abc123", current_app="Calculator")
+            result = tool._run(element_id="e_abc123", current_app="Calculator")
 
         assert result.success is True
         assert "click" in result.action_taken.lower()

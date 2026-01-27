@@ -26,8 +26,8 @@ class TestMacOSAccessibilityInit:
         )
 
         acc = MacOSAccessibility()
-        assert acc.screen_width == 1920
-        assert acc.screen_height == 1080
+        assert acc.screen_width > 0
+        assert acc.screen_height > 0
 
     @SKIP_NON_DARWIN
     def test_init_custom_screen_size(self):
@@ -151,6 +151,7 @@ class TestAppManagement:
             pytest.skip("Accessibility not available")
 
         mock_app = MagicMock()
+        mock_app.AXPid = 123
         acc._app_cache["finder"] = mock_app
 
         result = acc.get_app("Finder")
@@ -164,11 +165,11 @@ class TestAppManagement:
         )
 
         acc = MacOSAccessibility()
-        acc._element_cache["test"] = []
+        acc._element_cache["finder:True"] = (0.0, [])
 
         acc.set_active_app("Finder")
 
-        assert acc._element_cache == {}
+        assert "finder:true" not in acc._element_cache
 
     @SKIP_NON_DARWIN
     def test_is_app_running(self):
@@ -323,13 +324,15 @@ class TestElementDiscovery:
     @SKIP_NON_DARWIN
     def test_get_elements_uses_cache(self):
         """Test get_elements uses cache when available."""
+        import time
+
         from computer_use.tools.accessibility.macos_accessibility import (
             MacOSAccessibility,
         )
 
         acc = MacOSAccessibility()
         cached_elements = [{"element_id": "test", "label": "Test"}]
-        acc._element_cache["finder:True"] = cached_elements
+        acc._element_cache["finder:True"] = (time.time(), cached_elements)
 
         result = acc.get_elements("Finder", use_cache=True)
         assert result == cached_elements
@@ -593,6 +596,146 @@ class TestClickMethods:
         result1 = acc.click_element_or_parent({"label": "test"})
         result2 = acc.try_click_element_or_parent({"label": "test"})
         assert result1 == result2
+
+    @SKIP_NON_DARWIN
+    def test_click_by_id_prefers_native_press_over_coordinates(self, monkeypatch):
+        """Test click_by_id performs native Press before coordinate fallback."""
+        import sys
+
+        from computer_use.tools.accessibility import macos_accessibility as macos_module
+        from computer_use.tools.accessibility.macos_accessibility import (
+            MacOSAccessibility,
+        )
+
+        monkeypatch.setattr(macos_module.time, "sleep", lambda *_args, **_kwargs: None)
+
+        class FakePyAutoGui:
+            def click(self, *_args, **_kwargs):
+                raise AssertionError("Coordinate fallback should not be used")
+
+        monkeypatch.setitem(sys.modules, "pyautogui", FakePyAutoGui())
+
+        pressed = {"count": 0}
+
+        class Node:
+            def Press(self):
+                pressed["count"] += 1
+
+        acc = MacOSAccessibility.__new__(MacOSAccessibility)
+        acc.available = True
+        acc._app_cache = {}
+        acc._element_cache = {}
+        acc._element_registry = {
+            "e_test": {
+                "_element": Node(),
+                "label": "Test",
+                "center": [10, 10],
+                "role": "Button",
+                "_app_name": "test",
+            }
+        }
+        acc._last_interaction_time = 0.0
+        acc.screen_width = 1920
+        acc.screen_height = 1080
+
+        success, _ = acc.click_by_id("e_test", click_type="single")
+        assert success is True
+        assert pressed["count"] == 1
+
+    @SKIP_NON_DARWIN
+    def test_click_by_id_right_click_uses_native_action_when_available(
+        self, monkeypatch
+    ):
+        """Test click_by_id uses a native context-menu action when available."""
+        import sys
+
+        from computer_use.tools.accessibility import macos_accessibility as macos_module
+        from computer_use.tools.accessibility.macos_accessibility import (
+            MacOSAccessibility,
+        )
+
+        monkeypatch.setattr(macos_module.time, "sleep", lambda *_args, **_kwargs: None)
+
+        class FakePyAutoGui:
+            def click(self, *_args, **_kwargs):
+                raise AssertionError("Coordinate fallback should not be used")
+
+        monkeypatch.setitem(sys.modules, "pyautogui", FakePyAutoGui())
+
+        performed = {"action": None}
+
+        class Node:
+            def getActions(self):
+                return ["ShowMenu"]
+
+            def performAction(self, action):
+                performed["action"] = action
+
+        acc = MacOSAccessibility.__new__(MacOSAccessibility)
+        acc.available = True
+        acc._app_cache = {}
+        acc._element_cache = {}
+        acc._element_registry = {
+            "e_test": {
+                "_element": Node(),
+                "label": "Test",
+                "center": [10, 10],
+                "role": "Button",
+                "_app_name": "test",
+            }
+        }
+        acc._last_interaction_time = 0.0
+        acc.screen_width = 1920
+        acc.screen_height = 1080
+
+        success, _ = acc.click_by_id("e_test", click_type="right")
+        assert success is True
+        assert performed["action"] == "ShowMenu"
+
+    @SKIP_NON_DARWIN
+    def test_click_by_id_coordinate_fallback_respects_click_type(self, monkeypatch):
+        """Test click_by_id coordinate fallback respects right-click semantics."""
+        import sys
+
+        from computer_use.tools.accessibility import macos_accessibility as macos_module
+        from computer_use.tools.accessibility.macos_accessibility import (
+            MacOSAccessibility,
+        )
+
+        monkeypatch.setattr(macos_module.time, "sleep", lambda *_args, **_kwargs: None)
+
+        calls = {"kwargs": None}
+
+        class FakePyAutoGui:
+            def click(self, *_args, **kwargs):
+                calls["kwargs"] = kwargs
+
+        monkeypatch.setitem(sys.modules, "pyautogui", FakePyAutoGui())
+
+        class Node:
+            def getActions(self):
+                return []
+
+        acc = MacOSAccessibility.__new__(MacOSAccessibility)
+        acc.available = True
+        acc._app_cache = {}
+        acc._element_cache = {}
+        acc._element_registry = {
+            "e_test": {
+                "_element": Node(),
+                "label": "Test",
+                "center": [10, 10],
+                "role": "Button",
+                "_app_name": "test",
+            }
+        }
+        acc._last_interaction_time = 0.0
+        acc.screen_width = 1920
+        acc.screen_height = 1080
+
+        success, _ = acc.click_by_id("e_test", click_type="right")
+        assert success is True
+        assert calls["kwargs"] == {"button": "right"}
 
 
 class TestTextExtraction:

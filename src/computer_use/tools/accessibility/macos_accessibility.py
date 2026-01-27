@@ -511,14 +511,111 @@ class MacOSAccessibility:
         """Get element from registry by ID."""
         return self._element_registry.get(element_id)
 
-    def click_by_id(self, element_id: str) -> Tuple[bool, str]:
+    def _get_available_actions(self, node: Any) -> List[str]:
+        """
+        Get supported accessibility action names for a node.
+
+        Args:
+            node: Accessibility element
+
+        Returns:
+            List of action names as strings
+        """
+        try:
+            if hasattr(node, "getActions"):
+                actions = node.getActions()
+                if actions:
+                    return [str(a) for a in actions]
+        except Exception:
+            pass
+
+        try:
+            actions = getattr(node, "AXActions", None)
+            if actions:
+                return [str(a) for a in actions]
+        except Exception:
+            pass
+
+        return []
+
+    def _native_click(
+        self, node: Any, label: str, app_name: str = "", click_type: str = "single"
+    ) -> Tuple[bool, str]:
+        """
+        Perform a click using accessibility actions only.
+
+        Args:
+            node: Accessibility element
+            label: Human-readable label for logging
+            app_name: Optional application name for cache invalidation
+            click_type: Click type: single, double, or right
+
+        Returns:
+            (success, message)
+        """
+        invalidate_target = app_name if app_name else None
+        normalized = (click_type or "single").strip().lower()
+        if normalized not in {"single", "double", "right"}:
+            normalized = "single"
+
+        try:
+            if normalized == "single":
+                if hasattr(node, "Press") and callable(getattr(node, "Press")):
+                    node.Press()
+                    time.sleep(0.05)
+                    self.invalidate_cache(invalidate_target)
+                    return (True, f"Clicked '{label}' via Press")
+
+                if hasattr(node, "AXPress") and callable(getattr(node, "AXPress")):
+                    node.AXPress()
+                    time.sleep(0.05)
+                    self.invalidate_cache(invalidate_target)
+                    return (True, f"Clicked '{label}' via AXPress")
+
+            preferred_substrings: Tuple[str, ...]
+            if normalized == "right":
+                preferred_substrings = ("showmenu", "context", "menu", "secondary")
+            elif normalized == "double":
+                preferred_substrings = ("double", "open", "confirm")
+            else:
+                preferred_substrings = ("press", "click")
+
+            actions = self._get_available_actions(node)
+            for action in actions:
+                action_lower = action.lower()
+                if any(s in action_lower for s in preferred_substrings):
+                    if hasattr(node, action) and callable(getattr(node, action)):
+                        getattr(node, action)()
+                        time.sleep(0.05)
+                        self.invalidate_cache(invalidate_target)
+                        return (True, f"Clicked '{label}' via {action}")
+
+                    if hasattr(node, "performAction") and callable(
+                        getattr(node, "performAction")
+                    ):
+                        node.performAction(action)
+                        time.sleep(0.05)
+                        self.invalidate_cache(invalidate_target)
+                        return (True, f"Clicked '{label}' via {action}")
+
+            if normalized in {"double", "right"}:
+                return (False, f"No native {normalized}-click action for '{label}'")
+
+            return (False, f"No native click action for '{label}'")
+        except Exception as e:
+            return (False, f"Native click failed: {e}")
+
+    def click_by_id(
+        self, element_id: str, click_type: str = "single"
+    ) -> Tuple[bool, str]:
         """
         Click element by its unique ID.
 
-        Tries: coordinate click → parent click → native Press action.
+        Prioritizes native accessibility actions and only falls back to coordinates.
 
         Args:
             element_id: Element ID from get_elements()
+            click_type: Click type: single, double, or right
 
         Returns:
             (success, message)
@@ -534,59 +631,75 @@ class MacOSAccessibility:
         label = element.get("label", element_id)
         center = element.get("center")
         role = element.get("role", "")
+        app_name = element.get("_app_name", "")
 
         if role in ("StaticText", "Text") and node:
             parent = self._find_clickable_parent(node)
             if parent:
-                result = self._click_node(parent, label)
-                if result[0]:
-                    return result
+                clicked, message = self._native_click(
+                    parent, label, app_name=app_name, click_type=click_type
+                )
+                if clicked:
+                    return (clicked, message)
 
-        app_name = element.get("_app_name", "")
+        if node:
+            clicked, message = self._native_click(
+                node, label, app_name=app_name, click_type=click_type
+            )
+            if clicked:
+                return (clicked, message)
+
+        normalized = (click_type or "single").strip().lower()
+        if normalized not in {"single", "double", "right"}:
+            normalized = "single"
 
         if center and len(center) == 2:
             try:
                 import pyautogui
 
-                pyautogui.click(center[0], center[1])
+                if normalized == "double":
+                    pyautogui.click(center[0], center[1], clicks=2)
+                elif normalized == "right":
+                    pyautogui.click(center[0], center[1], button="right")
+                else:
+                    pyautogui.click(center[0], center[1])
                 time.sleep(0.05)
                 self.invalidate_cache(app_name if app_name else None)
-                return (True, f"Clicked '{label}' at {tuple(center)}")
-            except Exception:
-                pass
-
-        if node:
-            return self._click_node(node, label, app_name)
+                return (
+                    True,
+                    f"Clicked '{label}' at {tuple(center)} (coordinate fallback)",
+                )
+            except Exception as e:
+                return (False, f"Click failed: {e}")
 
         return (False, f"No click method for '{label}'")
 
     def _click_node(
-        self, node: Any, label: str, app_name: str = ""
+        self, node: Any, label: str, app_name: str = "", click_type: str = "single"
     ) -> Tuple[bool, str]:
-        """Click a node using available methods."""
+        """
+        Click a node using native accessibility actions then coordinate fallback.
+
+        Args:
+            node: Accessibility element
+            label: Human-readable label for logging
+            app_name: Optional application name for cache invalidation
+            click_type: Click type: single, double, or right
+
+        Returns:
+            (success, message)
+        """
         invalidate_target = app_name if app_name else None
+        clicked, message = self._native_click(
+            node, label, app_name=app_name, click_type=click_type
+        )
+        if clicked:
+            return (clicked, message)
+
         try:
-            if hasattr(node, "Press"):
-                node.Press()
-                time.sleep(0.05)
-                self.invalidate_cache(invalidate_target)
-                return (True, f"Clicked '{label}' via Press")
-
-            if hasattr(node, "AXPress"):
-                node.AXPress()
-                time.sleep(0.05)
-                self.invalidate_cache(invalidate_target)
-                return (True, f"Clicked '{label}' via AXPress")
-
-            if hasattr(node, "AXActions") and node.AXActions:
-                for action in node.AXActions:
-                    action_lower = str(action).lower()
-                    if "press" in action_lower or "click" in action_lower:
-                        if hasattr(node, "performAction"):
-                            node.performAction(action)
-                            time.sleep(0.05)
-                            self.invalidate_cache(invalidate_target)
-                            return (True, f"Clicked '{label}' via {action}")
+            normalized = (click_type or "single").strip().lower()
+            if normalized not in {"single", "double", "right"}:
+                normalized = "single"
 
             if hasattr(node, "AXPosition") and hasattr(node, "AXSize"):
                 pos = node.AXPosition
@@ -595,10 +708,15 @@ class MacOSAccessibility:
                 y = int(pos[1] + size[1] / 2)
                 import pyautogui
 
-                pyautogui.click(x, y)
+                if normalized == "double":
+                    pyautogui.click(x, y, clicks=2)
+                elif normalized == "right":
+                    pyautogui.click(x, y, button="right")
+                else:
+                    pyautogui.click(x, y)
                 time.sleep(0.05)
                 self.invalidate_cache(invalidate_target)
-                return (True, f"Clicked '{label}' at ({x}, {y})")
+                return (True, f"Clicked '{label}' at ({x}, {y}) (coordinate fallback)")
 
         except Exception as e:
             return (False, f"Click failed: {e}")

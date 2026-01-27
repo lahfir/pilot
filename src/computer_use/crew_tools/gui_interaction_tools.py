@@ -129,20 +129,12 @@ class ClickElementTool(InstrumentedBaseTool):
                 )
             if hasattr(accessibility_tool, "click_by_id"):
                 with action_spinner("Clicking", target):
-                    success, message = accessibility_tool.click_by_id(element_id)
-
-                    if click_type == "double":
-                        elem = accessibility_tool.get_element_by_id(element_id)
-                        if elem and elem.get("center"):
-                            x, y = elem["center"]
-                            input_tool = self._tool_registry.get_tool("input")
-                            input_tool.double_click(x, y)
-                    elif click_type == "right":
-                        elem = accessibility_tool.get_element_by_id(element_id)
-                        if elem and elem.get("center"):
-                            x, y = elem["center"]
-                            input_tool = self._tool_registry.get_tool("input")
-                            input_tool.right_click(x, y)
+                    try:
+                        success, message = accessibility_tool.click_by_id(
+                            element_id, click_type=click_type
+                        )
+                    except TypeError:
+                        success, message = accessibility_tool.click_by_id(element_id)
 
                 print_action_result(success, message)
 

@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional, Protocol
 from rich.text import Text
 
 from ..state import ToolState
-from ..theme import ICONS, THEME
+from ..theme import THEME
 from ..core.responsive import ResponsiveWidth
 from .shared_state import DashboardSharedState
 
@@ -41,13 +41,25 @@ class _StatusSink(Protocol):
 class _ToolRendererPort(Protocol):
     def _render_tool_header(self, tool: ToolState) -> Text: ...
 
-    def _render_input(self, input_data: Any) -> Text: ...
+    def _render_input(self, input_data: Any, prefix: str = "│   ") -> Text: ...
 
     def _render_output(
-        self, output_data: Any, duration: float | None = None
+        self,
+        output_data: Any,
+        duration: float | None = None,
+        prefix: str = "│   ",
+        continuation_prefix: str = "│       ",
     ) -> Text: ...
 
-    def _render_error(self, error: str, duration: float | None = None) -> Text: ...
+    def _render_error(
+        self,
+        error: str,
+        duration: float | None = None,
+        prefix: str = "│   ",
+        continuation_prefix: str = "│       ",
+    ) -> Text: ...
+
+    def render_complete_tool(self, tool: ToolState, nested: bool = False) -> Text: ...
 
 
 class _ThinkingRendererPort(Protocol):
@@ -201,57 +213,18 @@ class ToolDisplay:
             self._shared.nested_tools.add(tool.tool_id)
             is_nested = True
 
-        if not is_nested:
-            action_desc = self._get_action_description(tool.name, tool.input_data)
-            if action_desc:
-                action_line = Text()
-                action_line.append(
-                    f"  {ICONS['bullet']} ", style=f"bold {THEME['tool_pending']}"
-                )
-                action_line.append(action_desc, style=f"italic {THEME['text']}")
-                self._printer._print(action_line)
-
-        pending_line = Text()
-        pending_line.append("├─ ", style=THEME["hud_border"])
-        pending_line.append("⟳ ", style=THEME["tool_pending"])
-        pending_line.append(tool.name, style=f"bold {THEME['text']}")
-
-        self._printer._print(
-            self._nest_tool_line(pending_line) if is_nested else pending_line
-        )
+        _ = is_nested
         self._status.show(f"Running {tool.name}...")
 
     def _print_tool_complete(self, tool: ToolState) -> None:
         is_nested = tool.tool_id in self._shared.nested_tools
 
-        if tool.tool_id not in self._shared.printed_tools:
-            header = self._tool_renderer._render_tool_header(tool)
-            self._printer._print(self._nest_tool_line(header) if is_nested else header)
-            if tool.input_data:
-                input_line = self._tool_renderer._render_input(tool.input_data)
-                self._printer._print(
-                    self._nest_tool_line(input_line) if is_nested else input_line
-                )
-            self._shared.printed_tools.add(tool.tool_id)
-
-        if tool.status == "success":
-            output_line = self._tool_renderer._render_output(
-                tool.output_data, tool.duration
-            )
-            self._printer._print(
-                self._nest_tool_line(output_line) if is_nested else output_line
-            )
-            self._printer._print_raw("")
-            self._status.show("Processing results...")
-        else:
-            error_line = self._tool_renderer._render_error(
-                tool.error or "Unknown error", tool.duration
-            )
-            self._printer._print(
-                self._nest_tool_line(error_line) if is_nested else error_line
-            )
-            self._printer._print_raw("")
-            self._status.show("Handling error...")
+        block = self._tool_renderer.render_complete_tool(tool, nested=is_nested)
+        self._printer._print(block)
+        self._printer._print_raw("")
+        self._status.show(
+            "Processing results..." if tool.status == "success" else "Handling error..."
+        )
 
         self._shared.started_tools.discard(tool.tool_id)
         if is_nested:
