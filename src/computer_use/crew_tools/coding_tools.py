@@ -5,6 +5,7 @@ Wraps CodingAgent (Cline CLI) for autonomous code automation.
 
 from pydantic import BaseModel, Field
 import asyncio
+import concurrent.futures
 
 from .instrumented_tool import InstrumentedBaseTool
 
@@ -58,35 +59,16 @@ class CodingAgentTool(InstrumentedBaseTool):
             return "ERROR: Coding agent unavailable - not initialized"
 
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                need_cleanup = True
-            else:
-                need_cleanup = False
+            running_loop = asyncio.get_running_loop()
         except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            need_cleanup = True
+            running_loop = None
 
-        try:
-            result = loop.run_until_complete(coding_agent.execute_task(task))
-        finally:
-            if need_cleanup:
-                try:
-                    pending = asyncio.all_tasks(loop)
-                    for pending_task in pending:
-                        pending_task.cancel()
-                    if pending:
-                        loop.run_until_complete(
-                            asyncio.gather(*pending, return_exceptions=True)
-                        )
-                    loop.run_until_complete(loop.shutdown_asyncgens())
-                except Exception:
-                    pass
-                finally:
-                    loop.close()
+        if running_loop and running_loop.is_running():
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(asyncio.run, coding_agent.execute_task(task))
+                result = future.result()
+        else:
+            result = asyncio.run(coding_agent.execute_task(task))
 
         try:
             if result.success:

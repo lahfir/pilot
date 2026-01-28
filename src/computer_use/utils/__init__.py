@@ -1,11 +1,16 @@
 """
-Utility modules for platform detection, helpers, and validation.
+Utility modules organized by domain.
+
+Submodules:
+- platform: Platform detection, capabilities, permissions
+- validation: Coordinate, safety, and reasoning validation
+- logging: Logging configuration, status, and metrics
+- interaction: User confirmation and OCR targeting
+- ui: Dashboard, prompts, and rendering
 """
 
-from .platform_detector import PlatformCapabilities, detect_platform
-from .platform_helper import PlatformHelper
-from .safety_checker import SafetyChecker
-from .coordinate_validator import CoordinateValidator
+from .platform import PlatformCapabilities, PlatformHelper, detect_platform
+from .validation import CoordinateValidator, SafetyChecker
 
 __all__ = [
     "PlatformCapabilities",

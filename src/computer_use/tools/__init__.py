@@ -1,11 +1,15 @@
 """
 Tool implementations for computer use automation.
+
+Submodules:
+- system: Core system tools (screenshot, input, process, file)
+- accessibility: Platform-specific accessibility APIs
+- browser: Browser automation tools
+- vision: OCR and vision detection
+- fallback: Fallback detection methods
 """
 
-from .screenshot_tool import ScreenshotTool
-from .input_tool import InputTool
-from .process_tool import ProcessTool
-from .file_tool import FileTool
+from .system import FileTool, InputTool, ProcessTool, ScreenshotTool
 
 __all__ = [
     "ScreenshotTool",

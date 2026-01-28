@@ -12,7 +12,7 @@ from typing import Optional, Set
 from .instrumented_tool import InstrumentedBaseTool
 from ..schemas.actions import ActionResult
 from ..config.timing_config import get_timing_config
-from ..services.app_state import get_app_state
+from ..services.state import get_app_state
 from ..utils.ui import ActionType, action_spinner, dashboard, print_action_result
 
 
@@ -173,7 +173,7 @@ class OpenApplicationTool(InstrumentedBaseTool):
     """Open desktop application."""
 
     name: str = "open_application"
-    description: str = "Open desktop application by name (e.g., Calculator, Safari)"
+    description: str = "Open desktop application by name (e.g., Calculator, Notes)"
     args_schema: type[BaseModel] = OpenAppInput
 
     def _run(self, app_name: str, explanation: Optional[str] = None) -> ActionResult:
@@ -711,7 +711,7 @@ def _select_smart_compact_elements(
     Select a small, high-signal subset of elements for LLM display.
 
     Strategy:
-    - Include input fields first
+    - ALWAYS include ALL input fields (TextField, TextArea) - these are critical
     - Then include labeled interactive elements by role priority
     - Prefer unique labels and top-to-bottom layout ordering
 
@@ -733,8 +733,10 @@ def _select_smart_compact_elements(
 
     def score(e: dict) -> tuple:
         label = (e.get("label") or "").strip()
+        role = (e.get("role") or "").lower()
         unique = 0 if label_counts.get(label, 0) == 1 else 1
-        length = len(label) if label else 999
+        is_list_item = role in ("group", "cell", "row")
+        length = -len(label) if (is_list_item and label) else (len(label) if label else 999)
         center = e.get("center") or [9999, 9999]
         return (unique, length, center[1], center[0])
 
@@ -747,28 +749,69 @@ def _select_smart_compact_elements(
     seen_ids: set[str] = set()
 
     for e in inputs:
-        if len(selected) >= max_total:
-            break
         eid = e.get("element_id") or ""
         if eid and eid not in seen_ids:
             selected.append(e)
             seen_ids.add(eid)
 
+    remaining_slots = max(0, max_total - len(selected))
+
+    # #region agent log
+    import json as _json
+
+    role_distribution = {}
+    for e in elements:
+        r = e.get("role", "unknown")
+        role_distribution[r] = role_distribution.get(r, 0) + 1
+    pondatti_elements = [
+        e for e in elements if "pondatti" in (e.get("label") or "").lower()
+    ]
+    group_elements = [e for e in elements if (e.get("role") or "").lower() == "group"]
+    open("/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log", "a").write(
+        _json.dumps(
+            {
+                "location": "gui_basic_tools.py:_select_smart_compact:roles",
+                "message": "Element role distribution",
+                "data": {
+                    "role_counts": role_distribution,
+                    "pondatti_elements": [
+                        {
+                            "role": e.get("role"),
+                            "label": e.get("label")[:50] if e.get("label") else None,
+                            "element_id": e.get("element_id"),
+                        }
+                        for e in pondatti_elements[:5]
+                    ],
+                    "all_group_labels": [
+                        (e.get("label") or "")[:40] for e in group_elements[:20]
+                    ],
+                },
+                "hypothesisId": "F",
+                "timestamp": __import__("time").time(),
+            }
+        )
+        + "\n"
+    )
+    # #endregion
+
     role_priority = [
-        ("Button", 10),
+        ("Button", 12),
+        ("Group", 15),
+        ("Cell", 10),
+        ("Row", 10),
         ("MenuItem", 8),
         ("MenuBarItem", 4),
         ("CheckBox", 4),
         ("RadioButton", 4),
         ("MenuButton", 2),
         ("PopUpButton", 2),
+        ("StaticText", 6),
     ]
 
     for role, per_role_cap in role_priority:
-        if len(selected) >= max_total:
+        if remaining_slots <= 0:
             break
-        remaining = max_total - len(selected)
-        take = min(remaining, per_role_cap)
+        take = min(remaining_slots, per_role_cap)
         candidates = [
             e
             for e in elements
@@ -777,12 +820,13 @@ def _select_smart_compact_elements(
         ]
         candidates.sort(key=score)
         for e in candidates[:take]:
-            if len(selected) >= max_total:
+            if remaining_slots <= 0:
                 break
             eid = e.get("element_id") or ""
             if eid and eid not in seen_ids:
                 selected.append(e)
                 seen_ids.add(eid)
+                remaining_slots -= 1
 
     hidden = max(0, len(elements) - len(selected))
     return (selected, hidden)
@@ -792,38 +836,90 @@ def _format_elements_smart_compact(selected: list[dict], hidden_count: int) -> s
     """
     Format a smart-compact list of elements for minimal token usage.
 
+    Separates INPUT FIELDS (where you type) from other UI elements for clarity.
+
     Args:
         selected: Selected elements to display
         hidden_count: Count of additional elements not shown
 
     Returns:
-        Multi-line formatted summary grouped by role
+        Multi-line formatted summary with input fields prominently displayed
     """
+    input_fields: list[str] = []
     by_role: dict[str, list[str]] = {}
+
+    # #region agent log
+    import json as _jfmt
+    textareas = [e for e in selected if (e.get("role") or "").lower() == "textarea"]
+    if textareas:
+        open("/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log", "a").write(_jfmt.dumps({"location": "gui_basic_tools.py:format:all_textareas", "message": "All TextAreas in selected", "data": {"count": len(textareas), "textareas": [{"label": (e.get("label") or "")[:40], "eid": e.get("element_id"), "is_bottom": e.get("is_bottom"), "is_focused": e.get("focused"), "center": e.get("center")} for e in textareas[:10]]}, "hypothesisId": "G", "timestamp": __import__("time").time()}) + "\n")
+    # #endregion
+
     for e in selected:
         role = e.get("role") or "Other"
         label = (e.get("label") or "").strip()
         eid = e.get("element_id") or ""
-        if not label or not eid:
+        if not eid:
             continue
-        by_role.setdefault(role, []).append(_format_label_id(label, eid))
+
+        role_lower = role.lower()
+        is_input_role = role_lower in INPUT_PRIORITY_ROLES
+        is_focused = e.get("focused", False)
+        is_bottom = e.get("is_bottom", False)
+
+        focus_marker = "→" if is_focused else ""
+        pos_hint = "[bottom]" if is_bottom and is_input_role else ""
+
+        if is_input_role and role_lower in (
+            "textfield",
+            "securetextfield",
+            "searchfield",
+            "combobox",
+        ):
+            if label:
+                display = f"{focus_marker}{label}{pos_hint}({eid})"
+            else:
+                display = f"{focus_marker}[unlabeled]{pos_hint}({eid})"
+            input_fields.append(f"{role}: {display.strip()}")
+        elif is_input_role and role_lower == "textarea":
+            label_preview = label[:30] + "…" if len(label) > 30 else label
+            label_lower = label.lower()
+            is_placeholder = label_lower in ("", "message", "imessage", "type a message", "text message")
+            is_empty_or_placeholder = is_placeholder or not label
+            is_likely_input = is_focused or is_empty_or_placeholder
+            # #region agent log
+            import json as _j2
+            if is_bottom or is_focused or is_empty_or_placeholder:
+                open("/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log", "a").write(_j2.dumps({"location": "gui_basic_tools.py:format:textarea", "message": "TextArea check", "data": {"label": label[:40] if label else None, "eid": eid, "is_bottom": is_bottom, "is_focused": is_focused, "is_empty_or_placeholder": is_empty_or_placeholder, "is_likely_input": is_likely_input}, "hypothesisId": "G", "timestamp": __import__("time").time()}) + "\n")
+            # #endregion
+            if is_likely_input:
+                display = f"{focus_marker}{label_preview or '[empty]'}{pos_hint}({eid})"
+                input_fields.append(f"TextArea(input): {display.strip()}")
+        else:
+            if label:
+                by_role.setdefault(role, []).append(_format_label_id(label, eid))
 
     role_order = [
-        "TextField",
-        "TextArea",
-        "SearchField",
-        "ComboBox",
-        "SecureTextField",
         "Button",
+        "Group",
+        "Cell",
+        "Row",
         "MenuItem",
         "MenuBarItem",
         "CheckBox",
         "RadioButton",
         "MenuButton",
         "PopUpButton",
+        "StaticText",
     ]
 
     lines: list[str] = []
+
+    if input_fields:
+        lines.append("═══ INPUT FIELDS (click then type) ═══")
+        lines.extend(input_fields)
+        lines.append("")
+
     for role in role_order:
         items = by_role.pop(role, [])
         if items:
@@ -894,6 +990,32 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
             )
 
         accessibility_tool = self._tool_registry.get_tool("accessibility")
+
+        # #region agent log
+        import json
+
+        open(
+            "/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log", "a"
+        ).write(
+            json.dumps(
+                {
+                    "location": "gui_basic_tools.py:GetAccessibleElementsTool:_run",
+                    "message": "Tool _run called",
+                    "data": {
+                        "app_name": app_name,
+                        "accessibility_available": (
+                            accessibility_tool.available
+                            if accessibility_tool
+                            else False
+                        ),
+                    },
+                    "hypothesisId": "A,C",
+                    "timestamp": __import__("time").time(),
+                }
+            )
+            + "\n"
+        )
+        # #endregion
 
         if not accessibility_tool or not accessibility_tool.available:
             return ActionResult(
@@ -973,6 +1095,8 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
                     "bounds": bounds,
                     "center": center,
                     "category": elem.get("category", "interactive"),
+                    "focused": elem.get("focused", False),
+                    "is_bottom": elem.get("is_bottom", False),
                 }
                 normalized_elements.append(normalized)
 
@@ -1011,7 +1135,7 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
                         data={"elements": [], "count": 0, "filter": filter_text},
                     )
 
-            max_total = 25 if (filter_text or filter_role) else 20
+            max_total = 35 if (filter_text or filter_role) else 30
             selected, hidden_count = _select_smart_compact_elements(
                 normalized_elements, max_total=max_total
             )
@@ -1050,6 +1174,31 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
                         "center": e.get("center", []),
                     }
                 )
+
+            # #region agent log
+            import json as _json
+
+            open(
+                "/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log", "a"
+            ).write(
+                _json.dumps(
+                    {
+                        "location": "gui_basic_tools.py:GetAccessibleElementsTool:output",
+                        "message": "Final output to agent",
+                        "data": {
+                            "app_name": app_name,
+                            "total_elements": len(normalized_elements),
+                            "selected_count": len(selected),
+                            "hidden_count": hidden_count,
+                            "elements_summary_preview": elements_summary[:500],
+                        },
+                        "hypothesisId": "F",
+                        "timestamp": __import__("time").time(),
+                    }
+                )
+                + "\n"
+            )
+            # #endregion
 
             return ActionResult(
                 success=True,

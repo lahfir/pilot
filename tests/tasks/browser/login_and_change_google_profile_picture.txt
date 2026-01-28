@@ -1,5 +1,0 @@
-Login to this google account and change my profile picture. I want you to use the image generator tool to generate a new profile picture. All in a single browser agent and task.
-
-Credentials:
-Email: dream4billions@gmail.com
-Password: dream4billions@262001

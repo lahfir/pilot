@@ -1,50 +1,36 @@
 """CrewAI-based multi-agent computer automation system with hierarchical delegation."""
 
 import asyncio
-import platform
+import hashlib
+import os
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
 from crewai import Agent, Crew, Process, Task
-from crewai.events.event_bus import crewai_event_bus
-from crewai.events.types.llm_events import (
-    LLMCallStartedEvent,
-    LLMCallCompletedEvent,
-)
 
 from .agents.browser_agent import BrowserAgent
 from .agents.coding_agent import CodingAgent
 from .config.llm_config import LLMConfig
-from .crew_tools import (
-    CheckAppRunningTool,
-    ClickElementTool,
-    CodingAgentTool,
-    ExecuteShellCommandTool,
-    FindApplicationTool,
-    GetAccessibleElementsTool,
-    GetSystemStateTool,
-    GetWindowImageTool,
-    ListRunningAppsTool,
-    OpenApplicationTool,
-    ReadScreenTextTool,
-    RequestHumanInputTool,
-    ScrollTool,
-    TakeScreenshotTool,
-    TypeTextTool,
-    WebAutomationTool,
-)
 from .schemas import TaskExecutionResult
-from .services.app_state import get_app_state
+from .services.state import get_app_state
+from .services.crew import (
+    CrewAgentFactory,
+    CrewGuiDelegate,
+    CrewToolsFactory,
+    LLMEventService,
+)
 from .tools.platform_registry import PlatformToolRegistry
-from .utils.coordinate_validator import CoordinateValidator
+from .utils.logging import debug_log, update_crew_token_usage
+from .utils.platform import PlatformHelper
+from .utils.validation import CoordinateValidator
 from .utils.ui import (
     ActionType,
     dashboard,
     print_failure,
     print_success,
 )
-from .services.crew_gui_delegate import CrewGuiDelegate
 
 AGENT_DISPLAY_NAMES = {
     "Task Orchestration Manager": "Manager",
@@ -100,7 +86,7 @@ class ComputerUseCrew:
         self.browser_llm = browser_llm_client or LLMConfig.get_browser_llm()
 
         self.agents_config = self._load_yaml_config("agents.yaml")
-        self.platform_context = self._get_platform_context()
+        self.platform_context = PlatformHelper.get_platform_context_string()
 
         self.tool_registry = self._initialize_tool_registry()
         self._initialize_app_state()
@@ -117,7 +103,6 @@ class ComputerUseCrew:
         self.crew: Optional[Crew] = None
         self._cached_agents: Optional[Dict[str, Agent]] = None
         self._last_token_update: float = 0
-        self._llm_handlers_registered: bool = False
 
     def _load_yaml_config(self, filename: str) -> Dict[str, Any]:
         config_path = Path(__file__).parent / "config" / filename
@@ -160,68 +145,20 @@ class ComputerUseCrew:
         return CodingAgent()
 
     def _initialize_gui_tools(self) -> Dict[str, Any]:
-        tools = {
-            "take_screenshot": TakeScreenshotTool(),
-            "click_element": ClickElementTool(),
-            "type_text": TypeTextTool(),
-            "open_application": OpenApplicationTool(),
-            "read_screen_text": ReadScreenTextTool(),
-            "scroll": ScrollTool(),
-            "list_running_apps": ListRunningAppsTool(),
-            "check_app_running": CheckAppRunningTool(),
-            "get_accessible_elements": GetAccessibleElementsTool(),
-            "get_window_image": GetWindowImageTool(),
-            "find_application": FindApplicationTool(),
-            "request_human_input": RequestHumanInputTool(),
-        }
-        for tool in tools.values():
-            tool._tool_registry = self.tool_registry
-        tools["find_application"]._llm = LLMConfig.get_orchestration_llm()
-        return tools
+        return CrewToolsFactory.create_gui_tools(self.tool_registry)
 
     def _initialize_observation_tools(self) -> Dict[str, Any]:
-        tools = {
-            "get_system_state": GetSystemStateTool(),
-        }
-        for tool in tools.values():
-            tool._tool_registry = self.tool_registry
-        return tools
+        return CrewToolsFactory.create_observation_tools(self.tool_registry)
 
-    def _initialize_web_tool(self) -> WebAutomationTool:
-        tool = WebAutomationTool()
-        tool._browser_agent = self.browser_agent
-        return tool
+    def _initialize_web_tool(self) -> Any:
+        return CrewToolsFactory.create_web_tool(self.browser_agent)
 
-    def _initialize_coding_tool(self) -> CodingAgentTool:
-        tool = CodingAgentTool()
-        tool._coding_agent = self.coding_agent
-        return tool
+    def _initialize_coding_tool(self) -> Any:
+        return CrewToolsFactory.create_coding_tool(self.coding_agent)
 
-    def _initialize_system_tool(self) -> ExecuteShellCommandTool:
-        tool = ExecuteShellCommandTool()
-        tool._safety_checker = self.safety_checker
-        tool._confirmation_manager = self.confirmation_manager
-        return tool
-
-    def _get_platform_context(self) -> str:
-        os_name = platform.system()
-        platform_names = {"Darwin": "macOS", "Windows": "Windows", "Linux": "Linux"}
-        platform_name = platform_names.get(os_name, os_name)
-
-        import os
-        import getpass
-
-        username = getpass.getuser()
-        home_dir = os.path.expanduser("~")
-        cwd = os.getcwd()
-
-        return (
-            f"\n\n═══ SYSTEM CONTEXT ═══\n"
-            f"Platform: {platform_name} {platform.release()} ({platform.machine()})\n"
-            f"Username: {username}\n"
-            f"Home Directory: {home_dir}\n"
-            f"Working Directory: {cwd}\n"
-            f"═══════════════════════\n"
+    def _initialize_system_tool(self) -> Any:
+        return CrewToolsFactory.create_system_tool(
+            self.safety_checker, self.confirmation_manager
         )
 
     def _extract_context_from_history(
@@ -362,49 +299,9 @@ class ComputerUseCrew:
 
     def _update_token_usage(self) -> None:
         """Update dashboard with current token usage using CrewAI's built-in metrics."""
-        if not hasattr(self, "crew") or not self.crew:
-            return
-
-        import time
-
-        now = time.time()
-        if (now - self._last_token_update) < 5.0:
-            return
-        self._last_token_update = now
-
-        try:
-            metrics = self.crew.calculate_usage_metrics()
-            if metrics.prompt_tokens > 0 or metrics.completion_tokens > 0:
-                dashboard.update_token_usage(
-                    metrics.prompt_tokens,
-                    metrics.completion_tokens,
-                )
-        except Exception:
-            try:
-                total_prompt = 0
-                total_completion = 0
-                for agent in self.crew.agents:
-                    if hasattr(agent, "llm") and hasattr(agent.llm, "_token_usage"):
-                        usage = agent.llm._token_usage
-                        total_prompt += usage.get("prompt_tokens", 0)
-                        total_completion += usage.get("completion_tokens", 0)
-                if total_prompt > 0 or total_completion > 0:
-                    dashboard.update_token_usage(total_prompt, total_completion)
-            except Exception:
-                pass
-            try:
-                total_prompt = 0
-                total_completion = 0
-                if hasattr(self.crew, "manager_agent") and self.crew.manager_agent:
-                    mgr = self.crew.manager_agent
-                    if hasattr(mgr, "llm") and hasattr(mgr.llm, "_token_usage"):
-                        usage = mgr.llm._token_usage
-                        total_prompt += usage.get("prompt_tokens", 0)
-                        total_completion += usage.get("completion_tokens", 0)
-                if total_prompt > 0 or total_completion > 0:
-                    dashboard.update_token_usage(total_prompt, total_completion)
-            except Exception:
-                pass
+        self._last_token_update = update_crew_token_usage(
+            self.crew, self._last_token_update
+        )
 
     def _create_agent(
         self,
@@ -415,25 +312,16 @@ class ComputerUseCrew:
     ) -> Agent:
         """Create a CrewAI agent from configuration."""
         config = self.agents_config[config_key]
-        tools = [tool_map[name] for name in tool_names if name in tool_map]
-        backstory_with_context = config["backstory"] + self.platform_context
-        agent_role = config["role"]
-
-        agent_params = {
-            "role": agent_role,
-            "goal": config["goal"],
-            "backstory": backstory_with_context,
-            "verbose": dashboard.is_verbose,
-            "llm": llm,
-            "max_iter": config.get("max_iter", 15),
-            "allow_delegation": config.get("allow_delegation", False),
-            "memory": True,
-            "step_callback": self._create_step_callback(agent_role),
-        }
-
-        agent_params["tools"] = tools
-
-        return Agent(**agent_params)
+        return CrewAgentFactory.create_agent(
+            config_key=config_key,
+            config=config,
+            tool_names=tool_names,
+            llm=llm,
+            tool_map=tool_map,
+            platform_context=self.platform_context,
+            step_callback_factory=self._create_step_callback,
+            agent_display_names=AGENT_DISPLAY_NAMES,
+        )
 
     def _create_crewai_agents(self) -> Dict[str, Agent]:
         """Create all CrewAI agents for the hierarchical crew."""
@@ -456,7 +344,7 @@ class ComputerUseCrew:
             ),
             "system_agent": self._create_agent(
                 "system_agent", system_tools, self.llm, tool_map
-            ),  # Tools: execute_shell_command
+            ),
             "coding_agent": self._create_agent(
                 "coding_agent", coding_tools, self.llm, tool_map
             ),
@@ -487,6 +375,7 @@ class ComputerUseCrew:
 Understand what the user wants to achieve, then delegate to the appropriate specialist.
 
 CRITICAL:
+- Use any provided SYSTEM STATE context verbatim when delegating.
 - Pass EXACT file paths/URLs between agents (never paraphrase)
 - Browser tasks = ONE delegation (session continuity)
 - Verify outcomes with evidence from tool outputs""",
@@ -498,79 +387,28 @@ CRITICAL:
 
     def _setup_llm_event_handlers(self) -> None:
         """Subscribe to CrewAI LLM events for real-time status updates."""
-        if self._llm_handlers_registered:
-            return
-
-        self._llm_handlers_registered = True
-
-        try:
-
-            @crewai_event_bus.on(LLMCallStartedEvent)
-            def on_llm_start(source: Any, event: LLMCallStartedEvent) -> None:
-                model = getattr(event, "model", "LLM") or "LLM"
-                model_name = (
-                    str(model).split("/")[-1] if "/" in str(model) else str(model)
-                )
-                dashboard.log_llm_start(model_name)
-                agent = dashboard.get_current_agent_name() or "Agent"
-                if agent == "Manager":
-                    dashboard._show_status(f"Thinking • {model_name}")
-                else:
-                    dashboard._show_status(f"Reasoning • {model_name}")
-
-            @crewai_event_bus.on(LLMCallCompletedEvent)
-            def on_llm_complete(source: Any, event: LLMCallCompletedEvent) -> None:
-                prompt_tokens = 0
-                completion_tokens = 0
-                usage = getattr(event, "usage", None) or getattr(
-                    event, "token_usage", None
-                )
-                if usage:
-                    if isinstance(usage, dict):
-                        prompt_tokens = usage.get("prompt_tokens")
-                        if prompt_tokens is None:
-                            prompt_tokens = usage.get("input_tokens", 0)
-                        completion_tokens = usage.get("completion_tokens")
-                        if completion_tokens is None:
-                            completion_tokens = usage.get("output_tokens", 0)
-                    else:
-                        prompt_tokens = getattr(usage, "prompt_tokens", None)
-                        if prompt_tokens is None:
-                            prompt_tokens = getattr(usage, "input_tokens", 0)
-                        completion_tokens = getattr(usage, "completion_tokens", None)
-                        if completion_tokens is None:
-                            completion_tokens = getattr(usage, "output_tokens", 0)
-
-                dashboard.log_llm_complete(prompt_tokens, completion_tokens)
-                agent = dashboard.get_current_agent_name() or "Agent"
-
-                response = getattr(event, "response", None)
-                if response:
-                    reasoning = None
-                    if isinstance(response, dict):
-                        reasoning = response.get("reasoning_content") or response.get(
-                            "thinking"
-                        )
-                    elif hasattr(response, "reasoning_content"):
-                        reasoning = response.reasoning_content
-                    elif hasattr(response, "thinking"):
-                        reasoning = response.thinking
-
-                    if reasoning and len(str(reasoning)) > 20:
-                        dashboard.set_thinking(f"💭 {str(reasoning)[:200]}...")
-
-                if agent == "Manager":
-                    dashboard._show_status("Deciding next action...")
-                else:
-                    dashboard._show_status("Executing...")
-
-        except Exception:
-            pass
+        LLMEventService.setup_handlers()
 
     async def _run_hierarchical_crew(
         self, task: str, context_str: str
     ) -> TaskExecutionResult:
         """Execute the hierarchical crew with thread-based execution."""
+        debug_log(
+            "H_CREW_KICKOFF",
+            "crew.py:_run_hierarchical_crew:enter",
+            "Starting hierarchical crew",
+            {
+                "task_len": len(task or ""),
+                "task_sha8": hashlib.sha256((task or "").encode("utf-8")).hexdigest()[
+                    :8
+                ],
+                "llm_provider": os.getenv("LLM_PROVIDER"),
+                "llm_model": os.getenv("LLM_MODEL"),
+                "vision_llm_provider": os.getenv("VISION_LLM_PROVIDER"),
+                "vision_llm_model": os.getenv("VISION_LLM_MODEL"),
+                "llm_timeout": os.getenv("LLM_TIMEOUT"),
+            },
+        )
         dashboard.add_log_entry(
             ActionType.EXECUTE,
             "Starting hierarchical execution",
@@ -582,7 +420,26 @@ CRITICAL:
         self._setup_llm_event_handlers()
 
         agents_dict = self._get_or_create_agents()
-        manager_task = self._create_manager_task(task, context_str)
+        system_state_context = ""
+        try:
+            state_tool = self.observation_tools.get("get_system_state")
+            if state_tool:
+                state_result = state_tool._run(scope="standard")
+                if (
+                    getattr(state_result, "success", False)
+                    and isinstance(getattr(state_result, "data", None), dict)
+                    and state_result.data.get("context_for_delegation")
+                ):
+                    system_state_context = (
+                        "\n\nSYSTEM STATE (for delegation):\n"
+                        f"{state_result.data['context_for_delegation']}\n"
+                    )
+        except Exception:
+            system_state_context = ""
+
+        manager_task = self._create_manager_task(
+            task, context_str + system_state_context
+        )
 
         specialist_agents = [
             agents_dict["browser_agent"],
@@ -601,7 +458,23 @@ CRITICAL:
 
         loop = asyncio.get_event_loop()
         try:
+            t0 = time.time()
+            debug_log(
+                "H_CREW_KICKOFF",
+                "crew.py:_run_hierarchical_crew:before_kickoff",
+                "Calling CrewAI kickoff in executor",
+                {"executor_loop_running": bool(loop.is_running())},
+            )
             result = await loop.run_in_executor(None, self.crew.kickoff)
+            debug_log(
+                "H_CREW_KICKOFF",
+                "crew.py:_run_hierarchical_crew:after_kickoff",
+                "CrewAI kickoff returned",
+                {
+                    "elapsed_ms": int((time.time() - t0) * 1000),
+                    "result_type": type(result).__name__,
+                },
+            )
 
             if hasattr(result, "token_usage") and result.token_usage:
                 tu = result.token_usage
@@ -619,6 +492,21 @@ CRITICAL:
                 task=task, result=result_str, overall_success=True
             )
         except Exception as exc:
+            import traceback
+
+            tb_str = traceback.format_exc()
+            print(f"\n[CREW ERROR] {type(exc).__name__}: {exc}")
+            print(f"[TRACEBACK]\n{tb_str[:500]}")
+            debug_log(
+                "H_CREW_KICKOFF",
+                "crew.py:_run_hierarchical_crew:exception",
+                "CrewAI kickoff raised",
+                {
+                    "exc_type": type(exc).__name__,
+                    "exc_str": str(exc)[:500],
+                    "traceback": tb_str[:1000],
+                },
+            )
             if self._cancellation_requested:
                 print_failure("Task cancelled by user")
                 return TaskExecutionResult(

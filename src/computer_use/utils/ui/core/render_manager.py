@@ -147,10 +147,8 @@ class RenderManager:
         if not self._is_running:
             return
         with self._render_lock:
-            self._pause_status()
             self.console.print(renderable)
             sys.stdout.flush()
-            self._resume_status()
 
     def append_text(self, content: str) -> None:
         """Append plain text content to output."""

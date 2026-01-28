@@ -242,15 +242,17 @@ class HeadsetLoader:
 
     def stop(self) -> None:
         """Stop the loading animation."""
+        thread_to_join = None
         with self._lock:
             if not self._running:
                 return
             self._running = False
             self._stop_event.set()
+            thread_to_join = self._thread
+            self._thread = None
 
-        if self._thread:
-            self._thread.join(timeout=0.2)
-        self._thread = None
+        if thread_to_join and thread_to_join.is_alive():
+            thread_to_join.join(timeout=0.5)
 
     def set_message(self, message: str) -> None:
         """Update the loading message."""

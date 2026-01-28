@@ -291,6 +291,22 @@ class WindowsAccessibility:
 
             element_id = f"e_{str(uuid.uuid4())[:7]}"
 
+            is_focused = False
+            try:
+                is_focused = node.has_focus()
+            except Exception:
+                pass
+
+            role_desc = ""
+            try:
+                role_desc = str(
+                    getattr(node.element_info, "localized_control_type", "") or ""
+                )
+            except Exception:
+                pass
+
+            is_bottom = (y + h / 2) > (self.screen_height * 0.75)
+
             element_info = {
                 "element_id": element_id,
                 "identifier": window_text,
@@ -302,6 +318,9 @@ class WindowsAccessibility:
                 "bounds": [int(x), int(y), int(w), int(h)],
                 "has_actions": True,
                 "enabled": is_enabled,
+                "focused": is_focused,
+                "role_description": role_desc,
+                "is_bottom": is_bottom,
                 "_element": node,
                 "_app_name": app_name,
             }

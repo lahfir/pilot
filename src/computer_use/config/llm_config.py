@@ -58,6 +58,7 @@ class LLMConfig:
     _llm_cache: dict = {}
     _orchestration_cache: dict = {}
     _browser_cache: dict = {}
+    _warmed_up: set = set()
 
     @classmethod
     def clear_cache(cls) -> None:
@@ -137,19 +138,91 @@ class LLMConfig:
 
         llm_timeout = int(os.getenv("LLM_TIMEOUT", "120"))
 
+        from ..utils.ui import dashboard
+
+        try:
+            import litellm
+
+            litellm.num_retries = 5
+            litellm.request_timeout = 120
+            if dashboard.is_verbose:
+                litellm.set_verbose = True
+        except ImportError:
+            pass
+
         llm_kwargs = {
             "model": model_name,
             "api_key": api_key,
             "timeout": llm_timeout,
-            "num_retries": 3,
+            "num_retries": 5,
         }
 
         if reasoning_effort:
             llm_kwargs["reasoning_effort"] = reasoning_effort
 
         llm = LLM(**llm_kwargs)
+
+        if dashboard.is_verbose:
+            original_call = llm.call
+
+            def debug_call(*args, **kwargs):
+                import time
+
+                t0 = time.time()
+                try:
+                    result = original_call(*args, **kwargs)
+                    print(f"[LLM OK] {model_name} ({time.time() - t0:.1f}s)")
+                    return result
+                except Exception as e:
+                    print(f"[LLM FAIL] {model_name}: {type(e).__name__}: {e}")
+                    raise
+
+            llm.call = debug_call
+
         LLMConfig._llm_cache[cache_key] = llm
         return llm
+
+    @classmethod
+    def warmup_all_sync(cls) -> None:
+        """
+        Synchronously warm up all cached LLMs.
+
+        Makes a test call to each LLM to establish the connection before
+        any real tasks run. This prevents first-task delays.
+        """
+        import concurrent.futures
+
+        llms_to_warmup = [
+            (key, llm)
+            for key, llm in cls._llm_cache.items()
+            if key not in cls._warmed_up
+        ]
+
+        if not llms_to_warmup:
+            return
+
+        def warmup_single(item):
+            key, llm = item
+            try:
+                llm.call(messages=[{"role": "user", "content": "Hi"}])
+            except Exception:
+                pass
+            cls._warmed_up.add(key)
+            return key
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [executor.submit(warmup_single, item) for item in llms_to_warmup]
+            concurrent.futures.wait(futures, timeout=30.0)
+
+    @classmethod
+    def ensure_all_warmed_up(cls, timeout: float = 10.0) -> None:
+        """
+        Ensure all LLMs are warmed up synchronously.
+
+        Args:
+            timeout: Ignored, kept for API compatibility
+        """
+        cls.warmup_all_sync()
 
     @staticmethod
     def get_orchestration_llm(

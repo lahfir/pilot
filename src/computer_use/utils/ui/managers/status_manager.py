@@ -65,14 +65,17 @@ class StatusManager:
         if not self._shared.is_running or not self._shared.task:
             return
 
+        should_schedule = False
         with self._status_lock:
             if not self._active:
                 self._active = True
             self._current_status_message = message
             status_text = self._build_status_line(message)
-            self._renderer.set_status(Text.from_markup(status_text))
-            if self._status_timer is None:
-                self._schedule_next_refresh()
+            should_schedule = self._status_timer is None
+
+        self._renderer.set_status(Text.from_markup(status_text))
+        if should_schedule:
+            self._schedule_next_refresh()
 
     def _get_refresh_interval(self, task: TaskState) -> float:
         if task.current_phase in ("thinking", "executing"):
@@ -85,7 +88,12 @@ class StatusManager:
         interval = self._get_refresh_interval(self._shared.task)
 
         def refresh() -> None:
-            with self._status_lock:
+            acquired = self._status_lock.acquire(blocking=False)
+            if not acquired:
+                self._status_timer = None
+                self._schedule_next_refresh()
+                return
+            try:
                 if (
                     not self._active
                     or not self._shared.is_running
@@ -94,8 +102,11 @@ class StatusManager:
                     self._status_timer = None
                     return
                 status_text = self._build_status_line()
-                self._renderer.set_status(Text.from_markup(status_text))
                 self._status_timer = None
+            finally:
+                self._status_lock.release()
+
+            self._renderer.set_status(Text.from_markup(status_text))
             self._schedule_next_refresh()
 
         self._status_timer = threading.Timer(interval, refresh)

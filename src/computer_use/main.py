@@ -53,15 +53,14 @@ class _StartupOutputFilter:
 sys.stdout = _StartupOutputFilter(_original_stdout)
 sys.stderr = _StartupOutputFilter(_original_stderr)
 
-from .utils.logging_config import setup_logging  # noqa: E402
+from .utils.logging import setup_logging  # noqa: E402
 
 setup_logging(verbose=False)
 
 from .crew import ComputerUseCrew  # noqa: E402
-from .utils.command_confirmation import CommandConfirmation  # noqa: E402
-from .utils.permissions import check_and_request_permissions  # noqa: E402
-from .utils.platform_detector import detect_platform  # noqa: E402
-from .utils.safety_checker import SafetyChecker  # noqa: E402
+from .utils.interaction import CommandConfirmation  # noqa: E402
+from .utils.platform import check_and_request_permissions, detect_platform  # noqa: E402
+from .utils.validation import SafetyChecker  # noqa: E402
 from .utils.ui import (  # noqa: E402
     ActionType,
     VerbosityLevel,
@@ -121,8 +120,7 @@ async def main(
         capabilities = detect_platform()
 
         from .config.llm_config import LLMConfig
-        from .services.twilio_service import TwilioService
-        from .services.webhook_server import WebhookServer
+        from .services.external import TwilioService, WebhookServer
 
         loader.set_message("Starting services...")
         twilio_service = TwilioService()
@@ -132,6 +130,15 @@ async def main(
         if twilio_service.is_configured():
             webhook_server = WebhookServer(twilio_service)
             webhook_server.start()
+
+        loader.set_message("Initializing LLMs...")
+        from .config.llm_config import LLMConfig
+
+        _ = LLMConfig.get_llm()
+        _ = LLMConfig.get_vision_llm()
+
+        loader.set_message("Warming up LLMs...")
+        LLMConfig.warmup_all_sync()
 
         loader.set_message("Loading tools...")
         crew = ComputerUseCrew(

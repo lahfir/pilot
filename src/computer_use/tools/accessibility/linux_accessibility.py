@@ -301,6 +301,25 @@ class LinuxAccessibility:
 
             element_id = f"e_{str(uuid.uuid4())[:7]}"
 
+            is_focused = False
+            try:
+                state_set = node.getState()
+                is_focused = state_set.contains(self.pyatspi.STATE_FOCUSED)
+            except Exception:
+                pass
+
+            role_desc = ""
+            try:
+                role_desc = (
+                    node.getLocalizedRoleName()
+                    if hasattr(node, "getLocalizedRoleName")
+                    else ""
+                )
+            except Exception:
+                pass
+
+            is_bottom = (y + h / 2) > (self.screen_height * 0.75)
+
             element_info = {
                 "element_id": element_id,
                 "identifier": name,
@@ -312,6 +331,9 @@ class LinuxAccessibility:
                 "bounds": [int(x), int(y), int(w), int(h)],
                 "has_actions": has_actions,
                 "enabled": is_enabled,
+                "focused": is_focused,
+                "role_description": role_desc,
+                "is_bottom": is_bottom,
                 "_element": node,
                 "_app_name": app_name,
             }

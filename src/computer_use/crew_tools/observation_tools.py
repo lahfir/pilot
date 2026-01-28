@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from .instrumented_tool import InstrumentedBaseTool
 from ..schemas.actions import ActionResult
-from ..services.state_observer import StateObserver, ObservationScope
+from ..services.state import StateObserver, ObservationScope
 
 
 class GetSystemStateInput(BaseModel):

@@ -5,6 +5,7 @@ Uses LLM intelligence to find best app for capability - NO hardcoding.
 
 from pydantic import BaseModel, Field
 import asyncio
+import concurrent.futures
 
 from .instrumented_tool import InstrumentedBaseTool
 from ..schemas.actions import ActionResult
@@ -111,13 +112,17 @@ If no suitable USER-FACING app exists in the list, select "NONE".
 Select the EXACT app name from the list above."""
 
         try:
-            # Run LLM selection
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
             try:
-                selection = loop.run_until_complete(structured_llm.ainvoke(prompt))
-            finally:
-                loop.close()
+                running_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                running_loop = None
+
+            if running_loop and running_loop.is_running():
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(asyncio.run, structured_llm.ainvoke(prompt))
+                    selection = future.result()
+            else:
+                selection = asyncio.run(structured_llm.ainvoke(prompt))
 
             if selection.selected_app == "NONE" or selection.confidence < 0.5:
                 return ActionResult(

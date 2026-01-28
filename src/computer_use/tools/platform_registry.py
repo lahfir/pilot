@@ -6,10 +6,7 @@ Uses parallel initialization for faster startup.
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, List, Optional, Union
 
-from .screenshot_tool import ScreenshotTool
-from .input_tool import InputTool
-from .process_tool import ProcessTool
-from .file_tool import FileTool
+from .system import FileTool, InputTool, ProcessTool, ScreenshotTool
 from .accessibility.macos_accessibility import MacOSAccessibility
 from .accessibility.windows_accessibility import WindowsAccessibility
 from .accessibility.linux_accessibility import LinuxAccessibility
@@ -18,9 +15,8 @@ from .vision.template_matcher import TemplateMatcher
 from .vision.element_detector import ElementDetector
 from .fallback.vision_coordinates import VisionCoordinateTool
 from ..schemas.tool_types import CapabilitiesSummary
-from ..utils.platform_detector import PlatformCapabilities
-from ..utils.safety_checker import SafetyChecker
-from ..utils.coordinate_validator import CoordinateValidator
+from ..utils.platform import PlatformCapabilities
+from ..utils.validation import CoordinateValidator, SafetyChecker
 
 ToolType = Union[
     ScreenshotTool,

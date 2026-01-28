@@ -112,19 +112,16 @@ class MacOSAccessibility:
         Invalidate element cache after interactions.
 
         Args:
-            app_name: If provided, only invalidate cache for this app
+            app_name: If provided, only invalidate element cache for this app (registry always cleared)
         """
         if app_name:
             prefix = app_name.lower()
             keys_to_remove = [k for k in self._element_cache if k.startswith(prefix)]
             for key in keys_to_remove:
                 self._element_cache.pop(key, None)
-            registry_keys = [k for k in self._element_registry if k.startswith(prefix)]
-            for key in registry_keys:
-                self._element_registry.pop(key, None)
         else:
             self._element_cache.clear()
-            self._element_registry.clear()
+        self._element_registry.clear()
         self._last_interaction_time = time.time()
 
     def set_active_app(self, app_name: str) -> None:
@@ -176,20 +173,106 @@ class MacOSAccessibility:
         app_name = app_name.strip()
         cache_key = app_name.lower()
 
+        # #region agent log
+        import json
+
+        open(
+            "/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log", "a"
+        ).write(
+            json.dumps(
+                {
+                    "location": "macos_accessibility.py:get_app:start",
+                    "message": "get_app called",
+                    "data": {
+                        "app_name": app_name,
+                        "cache_key": cache_key,
+                        "in_cache": cache_key in self._app_cache,
+                    },
+                    "hypothesisId": "A,B",
+                    "timestamp": __import__("time").time(),
+                }
+            )
+            + "\n"
+        )
+        # #endregion
+
         if cache_key in self._app_cache:
             cached = self._app_cache[cache_key]
-            if self._is_valid_app_ref(cached):
+            cached_windows = getattr(cached, "AXWindows", None)
+            if (
+                cached_windows
+                and len(cached_windows) > 0
+                and self._is_valid_app_ref(cached)
+            ):
+                # #region agent log
+                open(
+                    "/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log",
+                    "a",
+                ).write(
+                    json.dumps(
+                        {
+                            "location": "macos_accessibility.py:get_app:cache_hit",
+                            "message": "Returning cached app",
+                            "data": {
+                                "app_name": app_name,
+                                "windows_count": len(cached_windows),
+                            },
+                            "hypothesisId": "B",
+                            "timestamp": __import__("time").time(),
+                        }
+                    )
+                    + "\n"
+                )
+                # #endregion
                 return cached
             self._app_cache.pop(cache_key, None)
 
         try:
             app = self.atomacos.getAppRefByLocalizedName(app_name)
+            # #region agent log
+            open(
+                "/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log", "a"
+            ).write(
+                json.dumps(
+                    {
+                        "location": "macos_accessibility.py:get_app:localized",
+                        "message": "getAppRefByLocalizedName result",
+                        "data": {
+                            "app_name": app_name,
+                            "found": app is not None,
+                            "has_windows": (
+                                bool(getattr(app, "AXWindows", None)) if app else False
+                            ),
+                        },
+                        "hypothesisId": "E",
+                        "timestamp": __import__("time").time(),
+                    }
+                )
+                + "\n"
+            )
+            # #endregion
             if app:
                 windows = getattr(app, "AXWindows", None)
                 if windows and len(windows) > 0:
                     self._app_cache[cache_key] = app
                     return app
-        except Exception:
+        except Exception as e:
+            # #region agent log
+            open(
+                "/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log", "a"
+            ).write(
+                json.dumps(
+                    {
+                        "location": "macos_accessibility.py:get_app:localized_error",
+                        "message": "getAppRefByLocalizedName error",
+                        "data": {"app_name": app_name, "error": str(e)},
+                        "hypothesisId": "E",
+                        "timestamp": __import__("time").time(),
+                    }
+                )
+                + "\n"
+            )
+            # #endregion
             pass
 
         for attempt in range(retry_count):
@@ -198,38 +281,147 @@ class MacOSAccessibility:
                 time.sleep(0.1)
 
             candidates = []
+            running_app_names = []
             try:
                 for running_app in self.atomacos.NativeUIElement.getRunningApps():
                     localized_name = None
                     if hasattr(running_app, "localizedName"):
                         localized_name = running_app.localizedName()
+                    running_app_names.append(localized_name)
 
                     if localized_name and self._matches_name(localized_name, app_name):
                         bundle_id = None
                         if hasattr(running_app, "bundleIdentifier"):
                             bundle_id = running_app.bundleIdentifier()
+                        # #region agent log
+                        open(
+                            "/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log",
+                            "a",
+                        ).write(
+                            json.dumps(
+                                {
+                                    "location": "macos_accessibility.py:get_app:match_found",
+                                    "message": "Name match found",
+                                    "data": {
+                                        "localized_name": localized_name,
+                                        "app_name": app_name,
+                                        "bundle_id": bundle_id,
+                                    },
+                                    "hypothesisId": "A,D",
+                                    "timestamp": __import__("time").time(),
+                                }
+                            )
+                            + "\n"
+                        )
+                        # #endregion
                         if bundle_id:
                             try:
                                 app_ref = self.atomacos.getAppRefByBundleId(bundle_id)
                                 windows = getattr(app_ref, "AXWindows", None)
+                                # #region agent log
+                                open(
+                                    "/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log",
+                                    "a",
+                                ).write(
+                                    json.dumps(
+                                        {
+                                            "location": "macos_accessibility.py:get_app:bundle_lookup",
+                                            "message": "Bundle lookup result",
+                                            "data": {
+                                                "bundle_id": bundle_id,
+                                                "app_ref_found": app_ref is not None,
+                                                "windows_count": (
+                                                    len(windows) if windows else 0
+                                                ),
+                                            },
+                                            "hypothesisId": "E",
+                                            "timestamp": __import__("time").time(),
+                                        }
+                                    )
+                                    + "\n"
+                                )
+                                # #endregion
                                 if windows and len(windows) > 0:
                                     self._app_cache[cache_key] = app_ref
                                     return app_ref
-                                if self._is_valid_app_ref(app_ref):
-                                    candidates.append(app_ref)
                             except Exception:
                                 continue
-            except Exception:
+            except Exception as e:
+                # #region agent log
+                open(
+                    "/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log",
+                    "a",
+                ).write(
+                    json.dumps(
+                        {
+                            "location": "macos_accessibility.py:get_app:running_apps_error",
+                            "message": "Error iterating running apps",
+                            "data": {"error": str(e)},
+                            "hypothesisId": "A",
+                            "timestamp": __import__("time").time(),
+                        }
+                    )
+                    + "\n"
+                )
+                # #endregion
                 pass
 
-            if candidates:
-                self._app_cache[cache_key] = candidates[0]
-                return candidates[0]
+            # #region agent log
+            if attempt == 0:
+                open(
+                    "/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log",
+                    "a",
+                ).write(
+                    json.dumps(
+                        {
+                            "location": "macos_accessibility.py:get_app:all_running",
+                            "message": "All running app names",
+                            "data": {
+                                "running_apps": running_app_names[:20],
+                                "looking_for": app_name,
+                                "candidates_count": len(candidates),
+                            },
+                            "hypothesisId": "A,D",
+                            "timestamp": __import__("time").time(),
+                        }
+                    )
+                    + "\n"
+                )
+            # #endregion
+
+            for cand in candidates:
+                cand_windows = getattr(cand, "AXWindows", None)
+                if cand_windows and len(cand_windows) > 0:
+                    self._app_cache[cache_key] = cand
+                    return cand
 
             try:
                 frontmost = self.atomacos.getFrontmostApp()
                 if frontmost:
                     front_title = getattr(frontmost, "AXTitle", None) or ""
+                    # #region agent log
+                    open(
+                        "/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log",
+                        "a",
+                    ).write(
+                        json.dumps(
+                            {
+                                "location": "macos_accessibility.py:get_app:frontmost",
+                                "message": "Checking frontmost app",
+                                "data": {
+                                    "front_title": str(front_title),
+                                    "app_name": app_name,
+                                    "matches": self._matches_name(
+                                        str(front_title), app_name
+                                    ),
+                                },
+                                "hypothesisId": "A",
+                                "timestamp": __import__("time").time(),
+                            }
+                        )
+                        + "\n"
+                    )
+                    # #endregion
                     if self._matches_name(str(front_title), app_name):
                         if self._is_valid_app_ref(frontmost):
                             self._app_cache[cache_key] = frontmost
@@ -237,6 +429,22 @@ class MacOSAccessibility:
             except Exception:
                 pass
 
+        # #region agent log
+        open(
+            "/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log", "a"
+        ).write(
+            json.dumps(
+                {
+                    "location": "macos_accessibility.py:get_app:failed",
+                    "message": "get_app returning None",
+                    "data": {"app_name": app_name},
+                    "hypothesisId": "A,B,C,D,E",
+                    "timestamp": __import__("time").time(),
+                }
+            )
+            + "\n"
+        )
+        # #endregion
         return None
 
     def get_windows(self, app: Any) -> List[Any]:
@@ -288,11 +496,47 @@ class MacOSAccessibility:
                 return cached_elements
 
         app = self.get_app(app_name)
+        # #region agent log
+        import json
+
+        open(
+            "/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log", "a"
+        ).write(
+            json.dumps(
+                {
+                    "location": "macos_accessibility.py:get_elements:after_get_app",
+                    "message": "get_app result in get_elements",
+                    "data": {"app_name": app_name, "app_found": app is not None},
+                    "hypothesisId": "A,C",
+                    "timestamp": __import__("time").time(),
+                }
+            )
+            + "\n"
+        )
+        # #endregion
         if not app:
             return []
 
         elements: List[Dict[str, Any]] = []
         app_name_lower = app_name.lower()
+
+        windows = self.get_windows(app)
+        # #region agent log
+        open(
+            "/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log", "a"
+        ).write(
+            json.dumps(
+                {
+                    "location": "macos_accessibility.py:get_elements:windows",
+                    "message": "Windows found",
+                    "data": {"app_name": app_name, "windows_count": len(windows)},
+                    "hypothesisId": "C",
+                    "timestamp": __import__("time").time(),
+                }
+            )
+            + "\n"
+        )
+        # #endregion
 
         if hasattr(app, "AXMenuBar"):
             try:
@@ -302,8 +546,25 @@ class MacOSAccessibility:
             except Exception:
                 pass
 
-        for window in self.get_windows(app):
+        for window in windows:
             self._traverse(window, elements, interactive_only, 0, app_name_lower)
+
+        # #region agent log
+        open(
+            "/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log", "a"
+        ).write(
+            json.dumps(
+                {
+                    "location": "macos_accessibility.py:get_elements:done",
+                    "message": "Elements found",
+                    "data": {"app_name": app_name, "elements_count": len(elements)},
+                    "hypothesisId": "C",
+                    "timestamp": __import__("time").time(),
+                }
+            )
+            + "\n"
+        )
+        # #endregion
 
         self._element_cache[cache_key] = (time.time(), elements)
         return elements
@@ -470,6 +731,20 @@ class MacOSAccessibility:
             raw_id = f"{int(x)}{int(y)}{hash(role) & 0xFFFF:04x}"[-7:]
             element_id = f"e_{raw_id}"
 
+            is_focused = False
+            try:
+                is_focused = bool(getattr(node, "AXFocused", False))
+            except Exception:
+                pass
+
+            role_desc = ""
+            try:
+                role_desc = str(getattr(node, "AXRoleDescription", "") or "")
+            except Exception:
+                pass
+
+            is_bottom = (y + h / 2) > (self.screen_height * 0.75)
+
             info = {
                 "element_id": element_id,
                 "role": role.replace("AX", ""),
@@ -479,6 +754,9 @@ class MacOSAccessibility:
                 "bounds": [int(x), int(y), int(w), int(h)],
                 "has_actions": has_actions,
                 "enabled": is_enabled,
+                "focused": is_focused,
+                "role_description": role_desc,
+                "is_bottom": is_bottom,
                 "_element": node,
                 "_app_name": app_name,
             }
@@ -626,6 +904,31 @@ class MacOSAccessibility:
         element = self._element_registry.get(element_id)
         if not element:
             return (False, f"Element ID '{element_id}' not found")
+
+        # #region agent log
+        import json as _jclick
+
+        open(
+            "/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log", "a"
+        ).write(
+            _jclick.dumps(
+                {
+                    "location": "macos_accessibility.py:click_by_id",
+                    "message": "Click requested",
+                    "data": {
+                        "element_id": element_id,
+                        "label": (element.get("label") or "")[:50],
+                        "role": element.get("role"),
+                        "center": element.get("center"),
+                        "bounds": element.get("bounds"),
+                    },
+                    "hypothesisId": "H",
+                    "timestamp": time.time(),
+                }
+            )
+            + "\n"
+        )
+        # #endregion
 
         node = element.get("_element")
         label = element.get("label", element_id)

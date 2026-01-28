@@ -1,7 +1,0 @@
-Login to Hubspot CRM and work with it. Here is a link to a list of sample contact: https://www.scribd.com/document/620450622/100-sample-contacts-list-excel
-
-I want you to gather around 3 contacts and add as a new contact in Hubspot CRM.
-
-Credentials to login to Hubspot CRM:
-Email: dream4billions@gmail.com
-Password: Dream4billions@262001

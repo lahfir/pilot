@@ -8,9 +8,9 @@ from typing import Optional
 
 from .instrumented_tool import InstrumentedBaseTool
 from ..schemas.actions import ActionResult
-from ..services.app_state import get_app_state
+from ..services.state import get_app_state
 from ..utils.ui import action_spinner, dashboard, print_action_result
-from ..utils.ocr_targeting import (
+from ..utils.interaction.ocr_targeting import (
     score_ocr_candidate,
     filter_candidates_by_spatial_context,
 )
@@ -352,6 +352,11 @@ class TypeTextTool(InstrumentedBaseTool):
         Returns:
             ActionResult with typing details
         """
+        # #region agent log
+        import json as _jtype
+        open("/Users/lahfir/Documents/Projects/computer-use/.cursor/debug.log", "a").write(_jtype.dumps({"location": "gui_interaction_tools.py:type_text", "message": "Type requested", "data": {"text_preview": text[:100] if text else None, "text_len": len(text) if text else 0, "use_clipboard": use_clipboard, "require_app": require_app}, "hypothesisId": "H", "timestamp": __import__("time").time()}) + "\n")
+        # #endregion
+
         if not text:
             return ActionResult(
                 success=False,
@@ -384,7 +389,7 @@ class TypeTextTool(InstrumentedBaseTool):
         is_hotkey = len(hotkey_sequences) > 0
 
         if is_hotkey and require_app:
-            from ..services.state_observer import StateObserver
+            from ..services.state import StateObserver
 
             observer = StateObserver(self._tool_registry)
             is_focused, message = observer.verify_precondition(
@@ -456,6 +461,10 @@ class TypeTextTool(InstrumentedBaseTool):
                 input_tool.paste_text(text)
             else:
                 input_tool.type_text(text)
+
+            accessibility_tool = self._tool_registry.get_tool("accessibility")
+            if accessibility_tool and hasattr(accessibility_tool, "invalidate_cache"):
+                accessibility_tool.invalidate_cache()
 
             return ActionResult(
                 success=True,

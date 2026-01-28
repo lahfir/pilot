@@ -17,7 +17,7 @@ def load_twilio_tools() -> Optional[Tools]:
     Returns:
         Tools object with Twilio actions, or None if not configured
     """
-    from ...services.twilio_service import TwilioService
+    from ...services.external import TwilioService
 
     # Initialize Twilio service
     twilio_service = TwilioService()
