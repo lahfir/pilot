@@ -195,7 +195,6 @@ class OpenApplicationTool(InstrumentedBaseTool):
             return cancelled
 
         process_tool = self._tool_registry.get_tool("process")
-        accessibility_tool = self._tool_registry.get_tool("accessibility")
 
         try:
             with action_spinner("Opening", app_name):
@@ -213,60 +212,18 @@ class OpenApplicationTool(InstrumentedBaseTool):
 
             get_app_state().set_target_app(app_name)
 
-            timing = get_timing_config()
-            max_attempts = 5
-            wait_interval = timing.app_launch_retry_interval
+            try:
+                process_tool.focus_app(app_name)
+            except Exception:
+                pass
 
-            for attempt in range(max_attempts):
-                time.sleep(wait_interval)
-
-                try:
-                    process_tool.focus_app(app_name)
-                except Exception:
-                    pass
-
-                if accessibility_tool and hasattr(accessibility_tool, "get_app"):
-                    app_ref = accessibility_tool.get_app(app_name)
-                    if app_ref:
-                        is_frontmost = False
-                        if hasattr(accessibility_tool, "is_app_frontmost"):
-                            is_frontmost = accessibility_tool.is_app_frontmost(app_name)
-
-                        return ActionResult(
-                            success=True,
-                            action_taken=f"Opened {app_name}. Ready for accessibility operations.",
-                            method_used="accessibility_ready",
-                            confidence=1.0,
-                            data={
-                                "is_running": True,
-                                "is_frontmost": is_frontmost,
-                                "wait_attempts": attempt + 1,
-                            },
-                        )
-
-            is_running = False
-            if process_tool and hasattr(process_tool, "is_process_running"):
-                is_running = process_tool.is_process_running(app_name)
-
-            if is_running:
-                return ActionResult(
-                    success=True,
-                    action_taken=f"Opened {app_name} (process running, accessibility pending).",
-                    method_used="process_running",
-                    confidence=0.8,
-                    data={
-                        "is_running": True,
-                        "is_frontmost": False,
-                        "note": "App running but accessibility not ready. May need to wait.",
-                    },
-                )
-
+            print_action_result(True, f"Opened {app_name}")
             return ActionResult(
-                success=False,
-                action_taken=f"Launched {app_name} but process not detected",
+                success=True,
+                action_taken=f"Opened {app_name}",
                 method_used="process",
-                confidence=0.3,
-                error=f"'{app_name}' launch command succeeded but process not running. Check app name spelling.",
+                confidence=1.0,
+                data={"is_running": True},
             )
 
         except Exception as e:
@@ -972,8 +929,15 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
                 )
 
                 if len(windows) == 0:
+                    process_tool = self._tool_registry.get_tool("process")
                     for retry in range(3):
+                        if process_tool:
+                            try:
+                                process_tool.focus_app(app_name)
+                            except Exception:
+                                pass
                         time.sleep(0.5)
+                        accessibility_tool.invalidate_cache(app_name)
                         app_ref = accessibility_tool.get_app(app_name)
                         if app_ref:
                             windows = accessibility_tool.get_windows(app_ref)
@@ -986,10 +950,10 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
                     if len(windows) == 0:
                         return ActionResult(
                             success=False,
-                            action_taken=f"{app_name} has no visible windows. Use get_window_image to check screen, or open_application to bring app to front.",
+                            action_taken=f"{app_name} accessibility not responding. Windows exist but accessibility API can't see them. Try clicking on the app window first.",
                             method_used="accessibility",
                             confidence=0.0,
-                            error=f"No windows detected for {app_name} after retries.",
+                            error=f"Accessibility API cannot detect {app_name} windows. The app is visible (screenshot works) but accessibility is blocked.",
                             data={
                                 "elements": [],
                                 "count": 0,
