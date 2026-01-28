@@ -1,12 +1,17 @@
 """Instrumented base tool that auto-logs completion to dashboard."""
 
+from typing import Any
+
 from crewai.tools import BaseTool
+from pydantic import PrivateAttr
 
 from ..utils.ui import dashboard
 
 
 class InstrumentedBaseTool(BaseTool):
     """Base tool that automatically logs completion status to dashboard."""
+
+    _tool_registry: Any = PrivateAttr(default=None)
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)

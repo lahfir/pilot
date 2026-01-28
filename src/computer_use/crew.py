@@ -378,11 +378,23 @@ CRITICAL:
 - Use any provided SYSTEM STATE context verbatim when delegating.
 - Pass EXACT file paths/URLs between agents (never paraphrase)
 - Browser tasks = ONE delegation (session continuity)
-- Verify outcomes with evidence from tool outputs""",
-            expected_output="""Confirmation that the user's goal was achieved, with:
-- What was accomplished
-- Any outputs produced (files, data, results)
-- Evidence of completion from tool outputs""",
+
+VERIFICATION REQUIREMENT:
+- You MUST verify outcomes with CONCRETE evidence from tool outputs
+- If specialist returns error, "couldn't generate", or "No elements found" = TASK FAILED
+- NEVER claim success without specific tool output proving the action was completed
+- If task failed, report FAILURE honestly - do not fabricate success""",
+            expected_output="""Either:
+A) SUCCESS - with concrete evidence:
+   - Specific tool outputs showing action was completed
+   - Verification showing the result (e.g., message sent, file created)
+
+OR
+
+B) FAILURE - with honest explanation:
+   - What was attempted
+   - What specific error or issue occurred
+   - Why the task could not be completed""",
         )
 
     def _setup_llm_event_handlers(self) -> None:

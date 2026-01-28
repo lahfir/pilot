@@ -91,7 +91,6 @@ class CapabilitiesSummary(TypedDict):
     available_tools: List[str]
     tier1_available: bool
     tier2_available: bool
-    tier3_available: bool
 
 
 class Tool(Protocol):

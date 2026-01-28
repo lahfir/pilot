@@ -83,7 +83,7 @@ class TestToolOutputCorrectness:
 
     def test_check_app_running_returns_correct_action(self, mock_registry):
         """CheckAppRunningTool should return action about checking app status."""
-        from src.computer_use.crew_tools.gui_basic_tools import CheckAppRunningTool
+        from computer_use.crew_tools.gui_basic_tools import CheckAppRunningTool
 
         tool = CheckAppRunningTool()
         tool._tool_registry = mock_registry
@@ -100,7 +100,7 @@ class TestToolOutputCorrectness:
 
     def test_list_running_apps_returns_correct_action(self, mock_registry):
         """ListRunningAppsTool should return action about listing apps."""
-        from src.computer_use.crew_tools.gui_basic_tools import ListRunningAppsTool
+        from computer_use.crew_tools.gui_basic_tools import ListRunningAppsTool
 
         tool = ListRunningAppsTool()
         tool._tool_registry = mock_registry
@@ -117,7 +117,7 @@ class TestToolOutputCorrectness:
 
     def test_open_application_returns_correct_action(self, mock_registry):
         """OpenApplicationTool should return action about opening app."""
-        from src.computer_use.crew_tools.gui_basic_tools import OpenApplicationTool
+        from computer_use.crew_tools.gui_basic_tools import OpenApplicationTool
 
         mock_registry.get_tool("accessibility").is_app_frontmost = Mock(
             return_value=True
@@ -146,7 +146,7 @@ class TestToolOutputCorrectness:
 
     def test_scroll_returns_correct_action(self, mock_registry):
         """ScrollTool should return action about scrolling."""
-        from src.computer_use.crew_tools.gui_basic_tools import ScrollTool
+        from computer_use.crew_tools.gui_basic_tools import ScrollTool
 
         tool = ScrollTool()
         tool._tool_registry = mock_registry
@@ -160,7 +160,7 @@ class TestToolOutputCorrectness:
 
     def test_take_screenshot_returns_correct_action(self, mock_registry):
         """TakeScreenshotTool should return action about capturing screenshot."""
-        from src.computer_use.crew_tools.gui_basic_tools import TakeScreenshotTool
+        from computer_use.crew_tools.gui_basic_tools import TakeScreenshotTool
 
         tool = TakeScreenshotTool()
         tool._tool_registry = mock_registry
@@ -176,7 +176,7 @@ class TestToolOutputCorrectness:
 
     def test_read_screen_text_returns_correct_action(self, mock_registry):
         """ReadScreenTextTool should return action about reading text."""
-        from src.computer_use.crew_tools.gui_basic_tools import ReadScreenTextTool
+        from computer_use.crew_tools.gui_basic_tools import ReadScreenTextTool
 
         tool = ReadScreenTextTool()
         tool._tool_registry = mock_registry
@@ -196,7 +196,7 @@ class TestToolOutputCorrectness:
 
     def test_get_accessible_elements_returns_correct_action(self, mock_registry):
         """GetAccessibleElementsTool should return action about getting elements."""
-        from src.computer_use.crew_tools.gui_basic_tools import (
+        from computer_use.crew_tools.gui_basic_tools import (
             GetAccessibleElementsTool,
         )
 
@@ -218,7 +218,7 @@ class TestToolOutputCorrectness:
 
     def test_get_accessible_elements_smart_compact_limits_ids(self, mock_registry):
         """GetAccessibleElementsTool should not flood output with element IDs."""
-        from src.computer_use.crew_tools.gui_basic_tools import (
+        from computer_use.crew_tools.gui_basic_tools import (
             GetAccessibleElementsTool,
         )
 
@@ -265,7 +265,7 @@ class TestToolOutputCorrectness:
 
     def test_get_accessible_elements_data_payload_is_compact(self, mock_registry):
         """GetAccessibleElementsTool should keep returned element payload compact."""
-        from src.computer_use.crew_tools.gui_basic_tools import (
+        from computer_use.crew_tools.gui_basic_tools import (
             GetAccessibleElementsTool,
         )
 

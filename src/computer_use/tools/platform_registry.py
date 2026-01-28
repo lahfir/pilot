@@ -11,12 +11,8 @@ from .accessibility import (
     MacOSAccessibility,
     WindowsAccessibility,
     LinuxAccessibility,
-    get_accessibility_tool,
 )
 from .vision.ocr_tool import OCRTool
-from .vision.template_matcher import TemplateMatcher
-from .vision.element_detector import ElementDetector
-from .fallback.vision_coordinates import VisionCoordinateTool
 from ..schemas.tool_types import CapabilitiesSummary
 from ..utils.platform import PlatformCapabilities
 from ..utils.validation import CoordinateValidator, SafetyChecker
@@ -30,9 +26,6 @@ ToolType = Union[
     WindowsAccessibility,
     LinuxAccessibility,
     OCRTool,
-    TemplateMatcher,
-    ElementDetector,
-    VisionCoordinateTool,
 ]
 
 
@@ -125,16 +118,6 @@ class PlatformToolRegistry:
                 except Exception:
                     pass
 
-        if "ocr" in tools:
-            ocr_tool = tools["ocr"]
-            tools["template_matcher"] = TemplateMatcher()
-            tools["element_detector"] = ElementDetector(ocr_tool=ocr_tool)
-        else:
-            tools["template_matcher"] = TemplateMatcher()
-            tools["element_detector"] = ElementDetector(ocr_tool=None)
-
-        tools["vision_coordinates"] = VisionCoordinateTool()
-
         return tools
 
     def get_gui_tools(self) -> List[ToolType]:
@@ -149,13 +132,8 @@ class PlatformToolRegistry:
         if "accessibility" in self.tools:
             ordered_tools.append(self.tools["accessibility"])
 
-        ordered_tools.extend(
-            [
-                self.tools["ocr"],
-                self.tools["element_detector"],
-                self.tools["vision_coordinates"],
-            ]
-        )
+        if "ocr" in self.tools:
+            ordered_tools.append(self.tools["ocr"])
 
         return ordered_tools
 
@@ -196,6 +174,5 @@ class PlatformToolRegistry:
             gpu_type=getattr(self.capabilities, "gpu_type", None),
             available_tools=self.list_available_tools(),
             tier1_available="accessibility" in self.tools,
-            tier2_available=True,
-            tier3_available=True,
+            tier2_available="ocr" in self.tools,
         )

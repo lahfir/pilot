@@ -106,7 +106,6 @@ class MacOSAccessibility(AccessibilityProtocol):
             return cached
 
         best_candidate = None
-        best_has_windows = False
 
         for attempt in range(retry_count):
             if attempt > 0:

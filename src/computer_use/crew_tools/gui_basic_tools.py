@@ -553,9 +553,10 @@ class CheckAppRunningTool(InstrumentedBaseTool):
         try:
             is_running = accessibility_tool.is_app_running(app_name)
 
+            status = "RUNNING" if is_running else "NOT RUNNING"
             return ActionResult(
                 success=True,
-                action_taken=f"Checked if {app_name} is running",
+                action_taken=f"{app_name} is {status}",
                 method_used="accessibility",
                 confidence=1.0,
                 data={"app_name": app_name, "is_running": is_running},
@@ -969,11 +970,39 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
                     f"windows={len(windows)}, "
                     f"window_details={window_info}"
                 )
+
+                if len(windows) == 0:
+                    for retry in range(3):
+                        time.sleep(0.5)
+                        app_ref = accessibility_tool.get_app(app_name)
+                        if app_ref:
+                            windows = accessibility_tool.get_windows(app_ref)
+                            if len(windows) > 0:
+                                elements = accessibility_tool.get_elements(
+                                    app_name, interactive_only=True, use_cache=False
+                                )
+                                break
+
+                    if len(windows) == 0:
+                        return ActionResult(
+                            success=False,
+                            action_taken=f"{app_name} has no visible windows. Use get_window_image to check screen, or open_application to bring app to front.",
+                            method_used="accessibility",
+                            confidence=0.0,
+                            error=f"No windows detected for {app_name} after retries.",
+                            data={
+                                "elements": [],
+                                "count": 0,
+                                "debug": debug_info,
+                                "windows": 0,
+                            },
+                        )
+
                 return ActionResult(
                     success=True,
-                    action_taken=f"No interactive elements found in {app_name}. Debug: {debug_info}. Try focusing the app first or check if it has accessibility support.",
+                    action_taken=f"No interactive elements found in {app_name}. Debug: {debug_info}. The app window exists but contains no clickable UI elements. Try using get_window_image to see screen state.",
                     method_used="accessibility",
-                    confidence=1.0,
+                    confidence=0.5,
                     data={"elements": [], "count": 0, "debug": debug_info},
                 )
 
@@ -1161,19 +1190,13 @@ class GetWindowImageTool(InstrumentedBaseTool):
         screenshot_tool = self._tool_registry.get_tool("screenshot")
 
         try:
-            # Determine what to capture
             if element and "bounds" in element and len(element["bounds"]) == 4:
-                # Crop by element bounds
                 x, y, w, h = element["bounds"]
                 region_tuple = (x, y, w, h)
                 image = screenshot_tool.capture(region=region_tuple)
-                capture_type = f"element at ({x},{y})"
             elif app_name:
-                # Capture application window
-                image, bounds = screenshot_tool.capture_active_window(app_name)
-                capture_type = f"{app_name} window"
+                image, _ = screenshot_tool.capture_active_window(app_name)
             elif region:
-                # Capture specific region
                 region_tuple = (
                     region["x"],
                     region["y"],
@@ -1181,11 +1204,8 @@ class GetWindowImageTool(InstrumentedBaseTool):
                     region["height"],
                 )
                 image = screenshot_tool.capture(region=region_tuple)
-                capture_type = f"region {region_tuple}"
             else:
-                # Full screen capture
                 image = screenshot_tool.capture()
-                capture_type = "full screen"
 
             with tempfile.NamedTemporaryFile(
                 mode="wb", suffix=".png", delete=False
@@ -1193,19 +1213,17 @@ class GetWindowImageTool(InstrumentedBaseTool):
                 image.save(tmp, format="PNG")
                 temp_path = tmp.name
 
-            # Register temp file for cleanup
             TempFileRegistry.register(temp_path)
 
             return ActionResult(
                 success=True,
-                action_taken=f"Captured {capture_type} as image. Image saved to {temp_path} for vision analysis.",
+                action_taken=f"Screenshot saved: {temp_path}",
                 method_used="screenshot",
                 confidence=1.0,
                 data={
                     "path": temp_path,
                     "size": list(image.size),
                     "app_name": app_name,
-                    "note": "Image saved to file. Use vision model to analyze if needed.",
                 },
             )
 

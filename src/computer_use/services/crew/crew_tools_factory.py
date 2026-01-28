@@ -25,6 +25,7 @@ from ...crew_tools import (
     TypeTextTool,
     WebAutomationTool,
 )
+from ...crew_tools.analyze_image_tool import AnalyzeImageTool
 
 
 class CrewToolsFactory:
@@ -56,9 +57,13 @@ class CrewToolsFactory:
             "get_window_image": GetWindowImageTool(),
             "find_application": FindApplicationTool(),
             "request_human_input": RequestHumanInputTool(),
+            "analyze_image": AnalyzeImageTool(),
         }
         for tool in tools.values():
-            tool._tool_registry = tool_registry
+            try:
+                tool._tool_registry = tool_registry
+            except (AttributeError, ValueError):
+                pass
         tools["find_application"]._llm = LLMConfig.get_orchestration_llm()
         return tools
 

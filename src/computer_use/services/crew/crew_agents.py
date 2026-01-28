@@ -28,6 +28,7 @@ class CrewAgentFactory:
         platform_context: str,
         step_callback_factory: Callable,
         agent_display_names: Dict[str, str],
+        multimodal: bool = False,
     ) -> Agent:
         """
         Create a CrewAI agent from configuration.
@@ -41,6 +42,7 @@ class CrewAgentFactory:
             platform_context: Platform context string for backstory
             step_callback_factory: Function to create step callbacks
             agent_display_names: Map of agent roles to display names
+            multimodal: Whether to enable multimodal (image) support
 
         Returns:
             Configured CrewAI Agent instance
@@ -60,6 +62,9 @@ class CrewAgentFactory:
             "memory": True,
             "step_callback": step_callback_factory(agent_role),
         }
+
+        if multimodal:
+            agent_params["multimodal"] = True
 
         agent_params["tools"] = tools
 
