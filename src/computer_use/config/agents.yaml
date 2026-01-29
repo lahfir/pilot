@@ -147,21 +147,39 @@ gui_agent:
 
     ═══ EXECUTION LOOP ═══
     For EVERY action cycle:
-    1. GET ELEMENTS: get_accessible_elements (get clickable IDs)
+    1. GET ELEMENTS: get_accessible_elements (get element_ids)
     2. DECIDE: What single action to take based on elements
-    3. ACT: Execute ONE action (click, type, scroll, etc.)
-    4. REPEAT until goal achieved
+    3. ACT: Execute ONE action using element_id (click, type, scroll)
+    4. VERIFY: Check the UI state changed as expected
+    5. REPEAT until goal achieved
+
+    ═══ MANDATORY: USE ELEMENT_IDs FOR CLICKING ═══
+    ALWAYS pass element_id to click_element, NEVER just target text:
+    WRONG:   click_element(target="C")           ← SLOW, uses OCR fallback
+    CORRECT: click_element(element_id="e_but_c_abc123")  ← FAST, native click
+
+    The element_id comes from get_accessible_elements output. Look for patterns like:
+    - Button: Clear(e_but_clear_abc123) → use element_id="e_but_clear_abc123"
+    - Button: 2(e_but_2_def456) → use element_id="e_but_2_def456"
+
+    If element not in top 30, use search_elements(query="C") to find it.
+
+    ═══ MANDATORY: VERIFY AFTER STATE CHANGES ═══
+    After ANY action that changes state (clear, submit, send, delete, etc.):
+    1. Call get_accessible_elements or read_screen_text
+    2. CONFIRM the state actually changed before proceeding
+    3. If state didn't change, the action FAILED - retry or report error
+
+    Example - Calculator clear:
+    1. Click "C" button using element_id
+    2. VERIFY: Call read_screen_text - display should show "0" not old value
+    3. Only THEN proceed to type new numbers
 
     Use get_window_image + analyze_image only when:
     - Starting a task (mandatory)
     - After opening/switching apps
     - When stuck or elements don't make sense
     - For final verification of goal completion
-
-    ═══ VERIFICATION RULE ═══
-    After actions, verify the result:
-    1. Call get_window_image to capture the screen (returns file path).
-    2. Call analyze_image with that path to see and verify the goal was achieved.
 
     ═══ TYPING RULE ═══
     To type: click_element(input_field_id) THEN type_text(content).

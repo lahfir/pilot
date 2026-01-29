@@ -5,7 +5,6 @@ Simple tools: screenshot, open_application, read_screen, scroll.
 
 import atexit
 import os
-import time
 from pydantic import BaseModel, Field
 from typing import Optional, Set
 
@@ -176,6 +175,44 @@ class OpenApplicationTool(InstrumentedBaseTool):
     description: str = "Open desktop application by name (e.g., Calculator, Notes)"
     args_schema: type[BaseModel] = OpenAppInput
 
+    def _wait_for_app_ready(
+        self, app_name: str, timeout: float = 5.0, poll_interval: float = 0.2
+    ) -> bool:
+        """
+        Wait for app to be ready by checking for accessible windows.
+
+        Args:
+            app_name: Application name
+            timeout: Max seconds to wait (default 5)
+            poll_interval: Seconds between checks (default 0.2)
+
+        Returns:
+            True if app has windows, False if timeout reached
+        """
+        import time
+
+        accessibility = self._tool_registry.get_tool("accessibility")
+        if not accessibility or not accessibility.available:
+            time.sleep(1.0)
+            return True
+
+        accessibility.invalidate_cache(app_name)
+
+        start = time.time()
+        while (time.time() - start) < timeout:
+            try:
+                app_ref = accessibility.get_app(app_name, retry_count=1)
+                if app_ref:
+                    windows = accessibility.get_windows(app_ref)
+                    if windows and len(windows) > 0:
+                        return True
+            except Exception:
+                pass
+            time.sleep(poll_interval)
+            accessibility.invalidate_cache(app_name)
+
+        return False
+
     def _run(self, app_name: str, explanation: Optional[str] = None) -> ActionResult:
         """
         Open application without blocking for frontmost status.
@@ -217,14 +254,26 @@ class OpenApplicationTool(InstrumentedBaseTool):
             except Exception:
                 pass
 
-            print_action_result(True, f"Opened {app_name}")
-            return ActionResult(
-                success=True,
-                action_taken=f"Opened {app_name}",
-                method_used="process",
-                confidence=1.0,
-                data={"is_running": True},
-            )
+            app_ready = self._wait_for_app_ready(app_name, timeout=5.0)
+
+            if app_ready:
+                print_action_result(True, f"Opened {app_name}")
+                return ActionResult(
+                    success=True,
+                    action_taken=f"Opened {app_name} (ready)",
+                    method_used="process",
+                    confidence=1.0,
+                    data={"is_running": True, "has_windows": True},
+                )
+            else:
+                print_action_result(True, f"Opened {app_name} (no windows yet)")
+                return ActionResult(
+                    success=True,
+                    action_taken=f"Opened {app_name} (may still be loading)",
+                    method_used="process",
+                    confidence=0.7,
+                    data={"is_running": True, "has_windows": False},
+                )
 
         except Exception as e:
             return ActionResult(
@@ -648,6 +697,8 @@ def _select_smart_compact_elements(
     """
     Select a small, high-signal subset of elements for LLM display.
 
+    Uses single-pass bucketing for O(n) performance instead of O(n² log n).
+
     Strategy:
     - ALWAYS include ALL input fields (TextField, TextArea) - these are critical
     - Then include labeled interactive elements by role priority
@@ -660,14 +711,26 @@ def _select_smart_compact_elements(
     Returns:
         (selected_elements, hidden_count)
     """
+    from collections import defaultdict
+
     if max_total <= 0:
         return ([], len(elements))
 
+    by_role: dict[str, list[dict]] = defaultdict(list)
+    input_elements: list[dict] = []
     label_counts: dict[str, int] = {}
+
     for e in elements:
+        role = e.get("role") or ""
+        role_lower = role.lower()
         label = (e.get("label") or "").strip()
+
         if _is_meaningful_label(label):
             label_counts[label] = label_counts.get(label, 0) + 1
+            by_role[role].append(e)
+
+        if role_lower in INPUT_PRIORITY_ROLES:
+            input_elements.append(e)
 
     def score(e: dict) -> tuple:
         label = (e.get("label") or "").strip()
@@ -680,15 +743,12 @@ def _select_smart_compact_elements(
         center = e.get("center") or [9999, 9999]
         return (unique, length, center[1], center[0])
 
-    inputs = [
-        e for e in elements if (e.get("role") or "").lower() in INPUT_PRIORITY_ROLES
-    ]
-    inputs.sort(key=_get_element_priority)
+    input_elements.sort(key=_get_element_priority)
 
     selected: list[dict] = []
     seen_ids: set[str] = set()
 
-    for e in inputs:
+    for e in input_elements:
         eid = e.get("element_id") or ""
         if eid and eid not in seen_ids:
             selected.append(e)
@@ -713,13 +773,10 @@ def _select_smart_compact_elements(
     for role, per_role_cap in role_priority:
         if remaining_slots <= 0:
             break
+        candidates = by_role.get(role, [])
+        if not candidates:
+            continue
         take = min(remaining_slots, per_role_cap)
-        candidates = [
-            e
-            for e in elements
-            if (e.get("role") or "") == role
-            and _is_meaningful_label((e.get("label") or "").strip())
-        ]
         candidates.sort(key=score)
         for e in candidates[:take]:
             if remaining_slots <= 0:
@@ -929,38 +986,19 @@ class GetAccessibleElementsTool(InstrumentedBaseTool):
                 )
 
                 if len(windows) == 0:
-                    process_tool = self._tool_registry.get_tool("process")
-                    for retry in range(3):
-                        if process_tool:
-                            try:
-                                process_tool.focus_app(app_name)
-                            except Exception:
-                                pass
-                        time.sleep(0.5)
-                        accessibility_tool.invalidate_cache(app_name)
-                        app_ref = accessibility_tool.get_app(app_name)
-                        if app_ref:
-                            windows = accessibility_tool.get_windows(app_ref)
-                            if len(windows) > 0:
-                                elements = accessibility_tool.get_elements(
-                                    app_name, interactive_only=True, use_cache=False
-                                )
-                                break
-
-                    if len(windows) == 0:
-                        return ActionResult(
-                            success=False,
-                            action_taken=f"{app_name} accessibility not responding. Windows exist but accessibility API can't see them. Try clicking on the app window first.",
-                            method_used="accessibility",
-                            confidence=0.0,
-                            error=f"Accessibility API cannot detect {app_name} windows. The app is visible (screenshot works) but accessibility is blocked.",
-                            data={
-                                "elements": [],
-                                "count": 0,
-                                "debug": debug_info,
-                                "windows": 0,
-                            },
-                        )
+                    return ActionResult(
+                        success=False,
+                        action_taken=f"{app_name} has no visible windows. The app may be minimized or not fully launched.",
+                        method_used="accessibility",
+                        confidence=0.0,
+                        error=f"No windows found for {app_name}. Try clicking on the app or using open_application first.",
+                        data={
+                            "elements": [],
+                            "count": 0,
+                            "debug": debug_info,
+                            "windows": 0,
+                        },
+                    )
 
                 return ActionResult(
                     success=True,

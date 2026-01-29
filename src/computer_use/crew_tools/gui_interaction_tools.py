@@ -161,17 +161,6 @@ class ClickElementTool(InstrumentedBaseTool):
                     else:
                         success = input_tool.click(x, y, validate=True)
 
-                    import time
-
-                    timing = get_timing_config()
-                    time.sleep(timing.ui_state_change_delay)
-
-                accessibility_tool = self._tool_registry.get_tool("accessibility")
-                if accessibility_tool and hasattr(
-                    accessibility_tool, "invalidate_cache"
-                ):
-                    accessibility_tool.invalidate_cache()
-
                 print_action_result(success, f"Clicked {target}")
 
                 return ActionResult(
@@ -181,6 +170,12 @@ class ClickElementTool(InstrumentedBaseTool):
                     confidence=1.0,
                     data={"coordinates": (x, y), "requires_verification": False},
                 )
+
+        ocr_warning = (
+            f"⚠️ SLOW PATH: Using OCR fallback for '{target}'. "
+            "Use element_id from get_accessible_elements for faster native clicks."
+        )
+        print_action_result(True, ocr_warning)
 
         screenshot_tool = self._tool_registry.get_tool("screenshot")
         ocr_tool = self._tool_registry.get_tool("ocr")
@@ -285,16 +280,11 @@ class ClickElementTool(InstrumentedBaseTool):
             else:
                 success = input_tool.click(x_screen, y_screen, validate=True)
 
-            import time
-
-            timing = get_timing_config()
-            time.sleep(timing.ui_state_change_delay)
-
-        print_action_result(success, "Clicked via OCR")
+        print_action_result(success, "Clicked via OCR (SLOW)")
 
         return ActionResult(
             success=success,
-            action_taken=f"Clicked {target}",
+            action_taken=f"Clicked {target} (via OCR - SLOW). Next time use element_id for faster native clicks.",
             method_used="ocr",
             confidence=best_match.confidence,
             data={
@@ -302,6 +292,7 @@ class ClickElementTool(InstrumentedBaseTool):
                 "matched_text": best_match.text,
                 "score": best_score,
                 "requires_verification": True,
+                "warning": "OCR fallback is slow. Use element_id from get_accessible_elements.",
             },
         )
 
@@ -456,10 +447,6 @@ class TypeTextTool(InstrumentedBaseTool):
                 input_tool.paste_text(text)
             else:
                 input_tool.type_text(text)
-
-            accessibility_tool = self._tool_registry.get_tool("accessibility")
-            if accessibility_tool and hasattr(accessibility_tool, "invalidate_cache"):
-                accessibility_tool.invalidate_cache()
 
             return ActionResult(
                 success=True,
