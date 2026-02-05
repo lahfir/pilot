@@ -23,7 +23,7 @@ class TestAnalyzeImageToolInitialization:
 
         spec = importlib.util.spec_from_file_location(
             "analyze_image_tool",
-            "src/computer_use/crew_tools/analyze_image_tool.py",
+            "src/pilot/crew_tools/analyze_image_tool.py",
         )
         module = importlib.util.module_from_spec(spec)
         sys.modules["analyze_image_tool"] = module
@@ -34,11 +34,11 @@ class TestAnalyzeImageToolInitialization:
 
     def test_analyze_image_tool_in_crew_tools_factory(self):
         """CrewToolsFactory should include analyze_image tool."""
-        from computer_use.services.crew.crew_tools_factory import CrewToolsFactory
+        from pilot.services.crew.crew_tools_factory import CrewToolsFactory
 
         mock_registry = Mock()
         with patch(
-            "computer_use.services.crew.crew_tools_factory.LLMConfig"
+            "pilot.services.crew.crew_tools_factory.LLMConfig"
         ) as mock_llm_config:
             mock_llm = Mock()
             mock_llm_config.get_orchestration_llm.return_value = mock_llm
@@ -50,12 +50,12 @@ class TestAnalyzeImageToolInitialization:
 
     def test_analyze_image_tool_is_custom_implementation(self):
         """analyze_image should be our custom AnalyzeImageTool, not VisionTool."""
-        from computer_use.services.crew.crew_tools_factory import CrewToolsFactory
-        from computer_use.crew_tools.analyze_image_tool import AnalyzeImageTool
+        from pilot.services.crew.crew_tools_factory import CrewToolsFactory
+        from pilot.crew_tools.analyze_image_tool import AnalyzeImageTool
 
         mock_registry = Mock()
         with patch(
-            "computer_use.services.crew.crew_tools_factory.LLMConfig"
+            "pilot.services.crew.crew_tools_factory.LLMConfig"
         ) as mock_llm_config:
             mock_llm_config.get_orchestration_llm.return_value = Mock()
 
@@ -69,7 +69,7 @@ class TestAnalyzeImageToolFunctionality:
 
     def test_analyze_image_no_path_returns_error(self):
         """AnalyzeImageTool should return error when no path provided."""
-        from computer_use.crew_tools.analyze_image_tool import AnalyzeImageTool
+        from pilot.crew_tools.analyze_image_tool import AnalyzeImageTool
 
         tool = AnalyzeImageTool()
         result = tool._run(image_path="")
@@ -79,7 +79,7 @@ class TestAnalyzeImageToolFunctionality:
 
     def test_analyze_image_nonexistent_file_returns_error(self):
         """AnalyzeImageTool should return error for nonexistent file."""
-        from computer_use.crew_tools.analyze_image_tool import AnalyzeImageTool
+        from pilot.crew_tools.analyze_image_tool import AnalyzeImageTool
 
         tool = AnalyzeImageTool()
         result = tool._run(image_path="/nonexistent/path/image.png")
@@ -114,7 +114,7 @@ class TestGetWindowImageOutput:
 
     def test_get_window_image_returns_path(self, mock_registry):
         """get_window_image should return simplified output with path."""
-        from computer_use.crew_tools.gui_basic_tools import GetWindowImageTool
+        from pilot.crew_tools.gui_basic_tools import GetWindowImageTool
 
         tool = GetWindowImageTool()
         tool._tool_registry = mock_registry
@@ -128,7 +128,7 @@ class TestGetWindowImageOutput:
 
     def test_get_window_image_output_is_concise(self, mock_registry):
         """get_window_image output should not contain verbose instructions."""
-        from computer_use.crew_tools.gui_basic_tools import GetWindowImageTool
+        from pilot.crew_tools.gui_basic_tools import GetWindowImageTool
 
         tool = GetWindowImageTool()
         tool._tool_registry = mock_registry
@@ -140,7 +140,7 @@ class TestGetWindowImageOutput:
 
     def test_get_window_image_data_contains_required_fields(self, mock_registry):
         """get_window_image data should contain path, size, and app_name."""
-        from computer_use.crew_tools.gui_basic_tools import GetWindowImageTool
+        from pilot.crew_tools.gui_basic_tools import GetWindowImageTool
 
         tool = GetWindowImageTool()
         tool._tool_registry = mock_registry
@@ -154,7 +154,7 @@ class TestGetWindowImageOutput:
 
     def test_get_window_image_creates_temp_file(self, mock_registry):
         """get_window_image should create a temporary PNG file."""
-        from computer_use.crew_tools.gui_basic_tools import GetWindowImageTool
+        from pilot.crew_tools.gui_basic_tools import GetWindowImageTool
 
         tool = GetWindowImageTool()
         tool._tool_registry = mock_registry
@@ -171,9 +171,9 @@ class TestGuiAgentMultimodalRemoved:
 
     def test_create_agent_without_multimodal(self):
         """GUI agent should be created without multimodal parameter."""
-        from computer_use.services.crew.crew_agents import CrewAgentFactory
+        from pilot.services.crew.crew_agents import CrewAgentFactory
 
-        with patch("computer_use.services.crew.crew_agents.Agent") as MockAgent:
+        with patch("pilot.services.crew.crew_agents.Agent") as MockAgent:
             MockAgent.return_value = Mock()
 
             config = {
@@ -198,9 +198,9 @@ class TestGuiAgentMultimodalRemoved:
 
     def test_create_agent_with_multimodal_flag(self):
         """Agent should only have multimodal when explicitly passed."""
-        from computer_use.services.crew.crew_agents import CrewAgentFactory
+        from pilot.services.crew.crew_agents import CrewAgentFactory
 
-        with patch("computer_use.services.crew.crew_agents.Agent") as MockAgent:
+        with patch("pilot.services.crew.crew_agents.Agent") as MockAgent:
             MockAgent.return_value = Mock()
 
             config = {
@@ -251,7 +251,7 @@ class TestTwoStepWorkflow:
 
     def test_workflow_step1_get_window_image(self, mock_registry):
         """Step 1: get_window_image captures and returns path."""
-        from computer_use.crew_tools.gui_basic_tools import GetWindowImageTool
+        from pilot.crew_tools.gui_basic_tools import GetWindowImageTool
 
         tool = GetWindowImageTool()
         tool._tool_registry = mock_registry
@@ -266,11 +266,11 @@ class TestTwoStepWorkflow:
 
     def test_workflow_analyze_image_tool_exists(self):
         """Step 2: analyze_image tool should be available in GUI tools."""
-        from computer_use.services.crew.crew_tools_factory import CrewToolsFactory
+        from pilot.services.crew.crew_tools_factory import CrewToolsFactory
 
         mock_registry = Mock()
         with patch(
-            "computer_use.services.crew.crew_tools_factory.LLMConfig"
+            "pilot.services.crew.crew_tools_factory.LLMConfig"
         ) as mock_llm:
             mock_llm.get_orchestration_llm.return_value = Mock()
 
@@ -281,7 +281,7 @@ class TestTwoStepWorkflow:
 
     def test_analyze_image_accepts_image_path(self):
         """AnalyzeImageTool should accept image_path parameter."""
-        from computer_use.crew_tools.analyze_image_tool import AnalyzeImageTool
+        from pilot.crew_tools.analyze_image_tool import AnalyzeImageTool
 
         tool = AnalyzeImageTool()
         assert hasattr(tool, "_run")
@@ -311,7 +311,7 @@ class TestTempFileCleanup:
 
     def test_temp_file_registered_for_cleanup(self, mock_registry):
         """Created temp files should be registered with TempFileRegistry."""
-        from computer_use.crew_tools.gui_basic_tools import (
+        from pilot.crew_tools.gui_basic_tools import (
             GetWindowImageTool,
             TempFileRegistry,
         )
@@ -333,7 +333,7 @@ class TestErrorHandling:
 
     def test_get_window_image_handles_screenshot_failure(self):
         """get_window_image should handle screenshot failures gracefully."""
-        from computer_use.crew_tools.gui_basic_tools import GetWindowImageTool
+        from pilot.crew_tools.gui_basic_tools import GetWindowImageTool
 
         mock_registry = Mock()
         mock_screenshot = Mock()
@@ -351,7 +351,7 @@ class TestErrorHandling:
 
     def test_get_window_image_handles_app_window_not_found(self):
         """get_window_image should handle app window not found."""
-        from computer_use.crew_tools.gui_basic_tools import GetWindowImageTool
+        from pilot.crew_tools.gui_basic_tools import GetWindowImageTool
 
         mock_registry = Mock()
         mock_screenshot = Mock()

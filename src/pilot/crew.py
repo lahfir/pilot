@@ -379,22 +379,29 @@ CRITICAL:
 - Pass EXACT file paths/URLs between agents (never paraphrase)
 - Browser tasks = ONE delegation (session continuity)
 
+FAILURE DETECTION (CHECK FIRST):
+Before claiming success, scan delegation output for these error indicators:
+- "error", "Error", "failed", "Failed", "exception"
+- "No elements found", "not found", "unable to"
+- "could not", "couldn't", "Failed to parse"
+- Tool call errors or exceptions
+If ANY error indicator is present → report FAILURE with the actual error message.
+
 VERIFICATION REQUIREMENT:
 - You MUST verify outcomes with CONCRETE evidence from tool outputs
-- If specialist returns error, "couldn't generate", or "No elements found" = TASK FAILED
+- If specialist returns error = TASK FAILED (report the error)
 - NEVER claim success without specific tool output proving the action was completed
 - If task failed, report FAILURE honestly - do not fabricate success""",
-            expected_output="""Either:
-A) SUCCESS - with concrete evidence:
+            expected_output="""FIRST: Scan delegation output for errors. If errors found, report FAILURE.
+
+A) FAILURE (if ANY errors in output):
+   - State: "TASK FAILED"
+   - Quote the actual error message from the output
+   - Explain what was attempted before failure
+
+B) SUCCESS (ONLY if zero errors AND positive evidence):
    - Specific tool outputs showing action was completed
-   - Verification showing the result (e.g., message sent, file created)
-
-OR
-
-B) FAILURE - with honest explanation:
-   - What was attempted
-   - What specific error or issue occurred
-   - Why the task could not be completed""",
+   - Quote the verification evidence from tool outputs""",
         )
 
     def _setup_llm_event_handlers(self) -> None:
@@ -499,6 +506,7 @@ B) FAILURE - with honest explanation:
                 dashboard.update_token_usage(prompt, completion)
 
             result_str = str(result)
+
             print_success("Execution completed")
             return TaskExecutionResult(
                 task=task, result=result_str, overall_success=True

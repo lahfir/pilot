@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Computer Use Agent - Automated Installation Script
+# Pilot - Automated Installation Script
 # Supports macOS, Linux, and Windows (via WSL/Git Bash)
 
 set -e  # Exit on error
@@ -28,7 +28,7 @@ print_header() {
     echo ""
     echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║                                                            ║${NC}"
-    echo -e "${CYAN}║        ${SPARKLE}  COMPUTER USE AGENT - INSTALLER  ${SPARKLE}          ║${NC}"
+    echo -e "${CYAN}║        ${SPARKLE}  PILOT - INSTALLER  ${SPARKLE}          ║${NC}"
     echo -e "${CYAN}║                                                            ║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -294,7 +294,7 @@ setup_env_file() {
     print_info "Creating .env file..."
     
     cat > .env << 'EOF'
-# Computer Use Agent Configuration
+# Pilot Configuration
 # Edit this file to add your API keys
 
 # Main LLM Provider (coordination, browser, system tasks)
@@ -403,8 +403,8 @@ test_installation() {
     
     # Quick verification test
     if uv run python -c "
-from computer_use.utils.platform_detector import detect_platform
-from computer_use.config.llm_config import LLMConfig
+from pilot.utils.platform_detector import detect_platform
+from pilot.config.llm_config import LLMConfig
 cap = detect_platform()
 print(f'✅ Platform: {cap.os_type}')
 print(f'✅ Python packages: OK')
@@ -433,7 +433,7 @@ print_next_steps() {
     echo -e "     ${YELLOW}nano .env${NC}  or  ${YELLOW}vim .env${NC}"
     echo ""
     echo -e "  ${CYAN}2.${NC} Start the agent:"
-    echo -e "     ${YELLOW}uv run python -m computer_use.main${NC}"
+    echo -e "     ${YELLOW}uv run python -m pilot.main${NC}"
     echo ""
     
     print_info "Example Tasks:"

@@ -59,7 +59,7 @@ class CrewAgentFactory:
             "llm": llm,
             "max_iter": config.get("max_iter", 15),
             "allow_delegation": config.get("allow_delegation", False),
-            "memory": True,
+            "memory": False,
             "step_callback": step_callback_factory(agent_role),
         }
 

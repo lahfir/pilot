@@ -33,8 +33,8 @@ class AccessibilityCacheManager:
     - After successful action: Advance epoch in registry
     """
 
-    DEFAULT_TTL: float = 10.0
-    POST_INTERACTION_TTL: float = 2.0
+    DEFAULT_TTL: float = 30.0
+    POST_INTERACTION_TTL: float = 10.0
 
     def __init__(self):
         self._element_cache: Dict[str, CacheEntry] = {}

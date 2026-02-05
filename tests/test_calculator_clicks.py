@@ -14,7 +14,7 @@ def test_click_all_calculator_buttons():
     subprocess.run(["open", "-a", "Calculator"], check=True)
     time.sleep(1.5)
 
-    from computer_use.tools.accessibility import get_accessibility_tool
+    from pilot.tools.accessibility import get_accessibility_tool
 
     acc = get_accessibility_tool()
     assert acc.available, "Accessibility not available"

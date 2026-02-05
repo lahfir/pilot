@@ -1363,15 +1363,18 @@ class GetWindowImageTool(InstrumentedBaseTool):
         Returns:
             ActionResult with base64 image data
         """
-        import tempfile
+        import uuid
 
         screenshot_tool = self._tool_registry.get_tool("screenshot")
+
+        if hasattr(screenshot_tool, "_cache"):
+            screenshot_tool._cache = None
 
         try:
             if element and "bounds" in element and len(element["bounds"]) == 4:
                 x, y, w, h = element["bounds"]
                 region_tuple = (x, y, w, h)
-                image = screenshot_tool.capture(region=region_tuple)
+                image = screenshot_tool.capture(region=region_tuple, use_cache=False)
             elif app_name:
                 image, _ = screenshot_tool.capture_active_window(app_name)
             elif region:
@@ -1381,15 +1384,12 @@ class GetWindowImageTool(InstrumentedBaseTool):
                     region["width"],
                     region["height"],
                 )
-                image = screenshot_tool.capture(region=region_tuple)
+                image = screenshot_tool.capture(region=region_tuple, use_cache=False)
             else:
-                image = screenshot_tool.capture()
+                image = screenshot_tool.capture(use_cache=False)
 
-            with tempfile.NamedTemporaryFile(
-                mode="wb", suffix=".png", delete=False
-            ) as tmp:
-                image.save(tmp, format="PNG")
-                temp_path = tmp.name
+            temp_path = f"/tmp/screenshot_{uuid.uuid4().hex[:8]}.png"
+            image.save(temp_path, format="PNG")
 
             TempFileRegistry.register(temp_path)
 

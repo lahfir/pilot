@@ -49,13 +49,13 @@ class TestCrossPlatformConsistency:
 
     def test_all_platforms_have_same_method_names(self):
         """Test that all platforms implement the same public methods."""
-        from computer_use.tools.accessibility.macos_accessibility import (
+        from pilot.tools.accessibility.macos.accessibility import (
             MacOSAccessibility,
         )
-        from computer_use.tools.accessibility.linux_accessibility import (
+        from pilot.tools.accessibility.linux.accessibility import (
             LinuxAccessibility,
         )
-        from computer_use.tools.accessibility.windows_accessibility import (
+        from pilot.tools.accessibility.windows.accessibility import (
             WindowsAccessibility,
         )
 
@@ -91,13 +91,13 @@ class TestCrossPlatformConsistency:
 
     def test_core_methods_exist_on_all_platforms(self):
         """Test that essential methods exist on all platforms."""
-        from computer_use.tools.accessibility.macos_accessibility import (
+        from pilot.tools.accessibility.macos.accessibility import (
             MacOSAccessibility,
         )
-        from computer_use.tools.accessibility.linux_accessibility import (
+        from pilot.tools.accessibility.linux.accessibility import (
             LinuxAccessibility,
         )
-        from computer_use.tools.accessibility.windows_accessibility import (
+        from pilot.tools.accessibility.windows.accessibility import (
             WindowsAccessibility,
         )
 
@@ -146,13 +146,13 @@ class TestCrossPlatformConsistency:
 
     def test_backward_compatible_aliases_exist(self):
         """Test that backward-compatible method aliases exist."""
-        from computer_use.tools.accessibility.macos_accessibility import (
+        from pilot.tools.accessibility.macos.accessibility import (
             MacOSAccessibility,
         )
-        from computer_use.tools.accessibility.linux_accessibility import (
+        from pilot.tools.accessibility.linux.accessibility import (
             LinuxAccessibility,
         )
-        from computer_use.tools.accessibility.windows_accessibility import (
+        from pilot.tools.accessibility.windows.accessibility import (
             WindowsAccessibility,
         )
 
@@ -187,13 +187,13 @@ class TestCrossPlatformConsistency:
 
     def test_method_parameter_counts_match(self):
         """Test that methods have same parameter counts across platforms."""
-        from computer_use.tools.accessibility.macos_accessibility import (
+        from pilot.tools.accessibility.macos.accessibility import (
             MacOSAccessibility,
         )
-        from computer_use.tools.accessibility.linux_accessibility import (
+        from pilot.tools.accessibility.linux.accessibility import (
             LinuxAccessibility,
         )
-        from computer_use.tools.accessibility.windows_accessibility import (
+        from pilot.tools.accessibility.windows.accessibility import (
             WindowsAccessibility,
         )
 
@@ -237,13 +237,13 @@ class TestCrossPlatformConsistency:
 
     def test_return_type_consistency(self):
         """Test that key methods return consistent types."""
-        from computer_use.tools.accessibility.macos_accessibility import (
+        from pilot.tools.accessibility.macos.accessibility import (
             MacOSAccessibility,
         )
-        from computer_use.tools.accessibility.linux_accessibility import (
+        from pilot.tools.accessibility.linux.accessibility import (
             LinuxAccessibility,
         )
-        from computer_use.tools.accessibility.windows_accessibility import (
+        from pilot.tools.accessibility.windows.accessibility import (
             WindowsAccessibility,
         )
 
@@ -277,13 +277,13 @@ class TestCrossPlatformConsistency:
 
     def test_click_by_id_returns_tuple(self):
         """Test that click_by_id returns (bool, str) tuple on all platforms."""
-        from computer_use.tools.accessibility.macos_accessibility import (
+        from pilot.tools.accessibility.macos.accessibility import (
             MacOSAccessibility,
         )
-        from computer_use.tools.accessibility.linux_accessibility import (
+        from pilot.tools.accessibility.linux.accessibility import (
             LinuxAccessibility,
         )
-        from computer_use.tools.accessibility.windows_accessibility import (
+        from pilot.tools.accessibility.windows.accessibility import (
             WindowsAccessibility,
         )
 
@@ -322,7 +322,7 @@ class TestCrossPlatformConsistency:
             "_element",
         }
 
-        from computer_use.tools.accessibility.macos_accessibility import (
+        from pilot.tools.accessibility.macos.accessibility import (
             MacOSAccessibility,
         )
 
@@ -356,7 +356,7 @@ class TestPlatformSpecificBehavior:
 
     def test_macos_uses_atomacos(self):
         """Test macOS implementation uses atomacos."""
-        from computer_use.tools.accessibility.macos_accessibility import (
+        from pilot.tools.accessibility.macos.accessibility import (
             MacOSAccessibility,
         )
 
@@ -365,7 +365,7 @@ class TestPlatformSpecificBehavior:
 
     def test_linux_uses_pyatspi(self):
         """Test Linux implementation uses pyatspi."""
-        from computer_use.tools.accessibility.linux_accessibility import (
+        from pilot.tools.accessibility.linux.accessibility import (
             LinuxAccessibility,
         )
 
@@ -375,7 +375,7 @@ class TestPlatformSpecificBehavior:
 
     def test_windows_uses_pywinauto(self):
         """Test Windows implementation uses pywinauto."""
-        from computer_use.tools.accessibility.windows_accessibility import (
+        from pilot.tools.accessibility.windows.accessibility import (
             WindowsAccessibility,
         )
 
@@ -389,13 +389,13 @@ class TestInitializationConsistency:
 
     def test_all_accept_screen_dimensions(self):
         """Test all platforms accept screen_width and screen_height."""
-        from computer_use.tools.accessibility.macos_accessibility import (
+        from pilot.tools.accessibility.macos.accessibility import (
             MacOSAccessibility,
         )
-        from computer_use.tools.accessibility.linux_accessibility import (
+        from pilot.tools.accessibility.linux.accessibility import (
             LinuxAccessibility,
         )
-        from computer_use.tools.accessibility.windows_accessibility import (
+        from pilot.tools.accessibility.windows.accessibility import (
             WindowsAccessibility,
         )
 
@@ -414,13 +414,13 @@ class TestInitializationConsistency:
 
     def test_all_have_available_attribute(self):
         """Test all platforms have an 'available' attribute."""
-        from computer_use.tools.accessibility.macos_accessibility import (
+        from pilot.tools.accessibility.macos.accessibility import (
             MacOSAccessibility,
         )
-        from computer_use.tools.accessibility.linux_accessibility import (
+        from pilot.tools.accessibility.linux.accessibility import (
             LinuxAccessibility,
         )
-        from computer_use.tools.accessibility.windows_accessibility import (
+        from pilot.tools.accessibility.windows.accessibility import (
             WindowsAccessibility,
         )
 
@@ -437,13 +437,13 @@ class TestInitializationConsistency:
 
     def test_all_have_cache_attributes(self):
         """Test all platforms have cache dictionaries."""
-        from computer_use.tools.accessibility.macos_accessibility import (
+        from pilot.tools.accessibility.macos.accessibility import (
             MacOSAccessibility,
         )
-        from computer_use.tools.accessibility.linux_accessibility import (
+        from pilot.tools.accessibility.linux.accessibility import (
             LinuxAccessibility,
         )
-        from computer_use.tools.accessibility.windows_accessibility import (
+        from pilot.tools.accessibility.windows.accessibility import (
             WindowsAccessibility,
         )
 

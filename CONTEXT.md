@@ -292,7 +292,7 @@ result = await loop.run_in_executor(None, self.crew.kickoff)
 
 ### Browser Agent
 
-**File**: `src/computer_use/agents/browser_agent.py`
+**File**: `src/pilot/agents/browser_agent.py`
 
 **Architecture**:
 
@@ -359,7 +359,7 @@ result = await agent.run(max_steps=30)  # Hard limit
 
 ### GUI Agent
 
-**File**: `src/computer_use/agents/gui_agent.py`
+**File**: `src/pilot/agents/gui_agent.py`
 
 **Screenshot-Driven Architecture**:
 
@@ -460,7 +460,7 @@ async def _click_element(
 
 ### System Agent
 
-**File**: `src/computer_use/agents/system_agent.py`
+**File**: `src/pilot/agents/system_agent.py`
 
 **Iterative Command Architecture**:
 
@@ -656,7 +656,7 @@ Previous Task Output:
 
 ### macOS Implementation
 
-**Accessibility Tool**: `src/computer_use/tools/accessibility/macos_accessibility.py`
+**Accessibility Tool**: `src/pilot/tools/accessibility/macos_accessibility.py`
 
 ```python
 class MacOSAccessibility:
@@ -725,7 +725,7 @@ class MacOSAccessibility:
 
 ### Windows Implementation
 
-**Accessibility Tool**: `src/computer_use/tools/accessibility/windows_accessibility.py`
+**Accessibility Tool**: `src/pilot/tools/accessibility/windows_accessibility.py`
 
 ```python
 class WindowsAccessibility:
@@ -790,7 +790,7 @@ class WindowsAccessibility:
 
 ### Linux Implementation
 
-**Accessibility Tool**: `src/computer_use/tools/accessibility/linux_accessibility.py`
+**Accessibility Tool**: `src/pilot/tools/accessibility/linux_accessibility.py`
 
 ```python
 class LinuxAccessibility:
@@ -1146,7 +1146,7 @@ class ExampleTool(BaseTool):
 
 ### GUI Tools (13 tools)
 
-Defined in `src/computer_use/crew_tools/`:
+Defined in `src/pilot/crew_tools/`:
 
 - `gui_basic_tools.py`: Screenshot, Open App, Read Text, Scroll
 - `gui_interaction_tools.py`: Click, Type, Get Elements, Get Image
@@ -1402,7 +1402,7 @@ class BrowserOutput(BaseModel):
 
 ### LLM Configuration
 
-**File**: `src/computer_use/config/llm_config.py`
+**File**: `src/pilot/config/llm_config.py`
 
 ```python
 class LLMConfig:
@@ -1467,7 +1467,7 @@ class LLMConfig:
 
 ### Agent Configuration
 
-**File**: `src/computer_use/config/agents.yaml`
+**File**: `src/pilot/config/agents.yaml`
 
 Defines all agent roles, goals, and tool assignments:
 
@@ -1539,7 +1539,7 @@ system_agent:
 uv run pytest
 
 # Run with coverage
-uv run pytest --cov=computer_use
+uv run pytest --cov=pilot
 
 # Run linting
 uv run ruff check .
@@ -1549,7 +1549,7 @@ uv run ruff format .
 ### Folder Organization
 
 ```
-src/computer_use/
+src/pilot/
 ├── agents/              # Agent implementations
 ├── tools/               # Low-level tool implementations
 ├── crew_tools/          # CrewAI tool wrappers

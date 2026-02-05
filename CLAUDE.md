@@ -47,12 +47,32 @@ This is a **multi-purpose, platform-agnostic, task-agnostic** autonomous agent s
 - Platform-specific code outside of platform abstraction modules
 - Instructions that would make the agent better at one task at the expense of generality
 
+### CRITICAL: Bug Fixes Must Be General
+
+**When a bug is discovered (e.g., agent hallucinated a result, action failed, etc.):**
+
+1. **NEVER** propose a task-specific workaround (e.g., "clear the calculator before calculations")
+2. **ALWAYS** fix the underlying general issue (e.g., "add result validation against observed values")
+3. The agent must learn to handle edge cases through **reasoning**, not hardcoded instructions
+4. If the agent failed to read the actual result, fix the **observation/validation framework** - don't add app-specific logic
+
+**Examples of WRONG fixes:**
+- "Add code to press AC before entering calculations" ❌
+- "Check if email was sent by looking for 'Message Sent' text" ❌
+- "Wait 2 seconds after opening Calculator" ❌
+
+**Examples of CORRECT fixes:**
+- "Validate reported results against ObservationRegistry" ✓
+- "Add general UI state change detection" ✓
+- "Improve observation recording for all tools" ✓
+
 ### Review Checklist (Before Any Change)
 
 1. Does this change work on all platforms (macOS, Windows, Linux)?
 2. Does this change apply to ALL possible tasks, not just one?
 3. Would this change still be useful if the user's task is completely different?
 4. Is this a general capability or a specific solution?
+5. **NEW**: If fixing a bug, am I fixing the general framework or adding a task-specific hack?
 
 ## Tech Stack
 
@@ -73,8 +93,8 @@ uv sync --extra linux
 uv sync --dev --extra macos          # With dev dependencies
 
 # Run the agent
-uv run python -m computer_use.main
-uv run python -m computer_use.main --voice-input  # With voice
+uv run python -m pilot.main
+uv run python -m pilot.main --voice-input  # With voice
 
 # Testing
 uv run pytest                         # All tests
@@ -97,7 +117,7 @@ uv run ruff format .                  # Format code
 User Request → Manager Agent → [Browser|GUI|System|Coding] Agent → Result
 ```
 
-- **Manager Agent** (`src/computer_use/crew.py`) - Analyzes requests, decomposes into subtasks, delegates
+- **Manager Agent** (`src/pilot/crew.py`) - Analyzes requests, decomposes into subtasks, delegates
 - **Browser Agent** - Web automation via Browser-Use framework
 - **GUI Agent** - Desktop app control via accessibility APIs
 - **System Agent** - Shell command execution (platform-aware)
@@ -113,7 +133,7 @@ User Request → Manager Agent → [Browser|GUI|System|Coding] Agent → Result
 ### Directory Structure
 
 ```
-src/computer_use/
+src/pilot/
 ├── main.py                    # CLI entry point
 ├── crew.py                    # Main orchestrator (core file)
 ├── agents/                    # Specialist agent implementations
@@ -190,7 +210,7 @@ Key test files:
 
 ## Key Files
 
-- `src/computer_use/crew.py` - Main orchestrator, start here for understanding flow
-- `src/computer_use/config/agents.yaml` - Agent roles and anti-hallucination rules
-- `src/computer_use/tools/vision/ocr_factory.py` - OCR engine selection logic
-- `src/computer_use/utils/safety_checker.py` - Operation validation
+- `src/pilot/crew.py` - Main orchestrator, start here for understanding flow
+- `src/pilot/config/agents.yaml` - Agent roles and anti-hallucination rules
+- `src/pilot/tools/vision/ocr_factory.py` - OCR engine selection logic
+- `src/pilot/utils/safety_checker.py` - Operation validation

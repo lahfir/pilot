@@ -46,7 +46,7 @@ TWILIO_PHONE_NUMBER=+1234567890
 # No additional steps needed
 
 # Start the application (webhook runs automatically on port 5001)
-uv run python -m computer_use.main
+uv run python -m pilot.main
 ```
 
 **On startup, you'll see**:
@@ -62,7 +62,7 @@ uv run python -m computer_use.main
 
 ```bash
 # Terminal 1: Run the application
-uv run python -m computer_use.main
+uv run python -m pilot.main
 
 # Terminal 2: Expose webhook publicly
 ngrok http 5001
@@ -88,7 +88,7 @@ Deploy your application to a server with a public domain:
 
 ```bash
 # Run the application
-uv run python -m computer_use.main
+uv run python -m pilot.main
 
 # Try a task with phone verification
 💬 Enter your task:
@@ -127,7 +127,7 @@ Browser agent receives code and continues
 
 ### Components
 
-#### 1. TwilioService (`src/computer_use/services/twilio_service.py`)
+#### 1. TwilioService (`src/pilot/services/twilio_service.py`)
 
 **Responsibilities**:
 - Store incoming SMS messages
@@ -151,7 +151,7 @@ class TwilioService:
         """Check if Twilio credentials are set."""
 ```
 
-#### 2. WebhookServer (`src/computer_use/services/webhook_server.py`)
+#### 2. WebhookServer (`src/pilot/services/webhook_server.py`)
 
 **Responsibilities**:
 - Run Flask server in background thread
@@ -236,7 +236,7 @@ WEBHOOK_PORT=5001
 
 ```bash
 # Terminal 1: Start application
-uv run python -m computer_use.main
+uv run python -m pilot.main
 
 # Terminal 2: Start ngrok
 ngrok http 5001
@@ -657,15 +657,15 @@ def sms_webhook():
 ## Files Reference
 
 **Service Files**:
-- `src/computer_use/services/twilio_service.py` - Core SMS service
-- `src/computer_use/services/webhook_server.py` - Flask webhook server
+- `src/pilot/services/twilio_service.py` - Core SMS service
+- `src/pilot/services/webhook_server.py` - Flask webhook server
 
 **Tool Files**:
-- `src/computer_use/tools/twilio_controller.py` - Browser-Use actions
+- `src/pilot/tools/twilio_controller.py` - Browser-Use actions
 
 **Integration**:
-- `src/computer_use/tools/browser_tool.py` - Browser agent integration
-- `src/computer_use/main.py` - Service initialization
+- `src/pilot/tools/browser_tool.py` - Browser agent integration
+- `src/pilot/main.py` - Service initialization
 
 **Configuration**:
 - `.env` - Twilio credentials

@@ -15,7 +15,7 @@ import yaml
 def agents_config():
     """Load the agents YAML configuration."""
     config_path = (
-        Path(__file__).parent.parent / "src" / "computer_use" / "config" / "agents.yaml"
+        Path(__file__).parent.parent / "src" / "pilot" / "config" / "agents.yaml"
     )
     with open(config_path, encoding="utf-8") as f:
         return yaml.safe_load(f)
@@ -171,7 +171,7 @@ class TestCrewPyStructure:
     @pytest.fixture
     def crew_py_content(self):
         """Load the crew.py file content."""
-        crew_path = Path(__file__).parent.parent / "src" / "computer_use" / "crew.py"
+        crew_path = Path(__file__).parent.parent / "src" / "pilot" / "crew.py"
         with open(crew_path, encoding="utf-8") as f:
             return f.read()
 

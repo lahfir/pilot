@@ -1,4 +1,4 @@
-# Computer Use Agent
+# Pilot
 
 Cross-platform AI agent system for autonomous desktop and web automation.
 
@@ -9,7 +9,7 @@ Cross-platform AI agent system for autonomous desktop and web automation.
 
 ## Overview
 
-Computer Use Agent enables AI to control your computer like a human would. Describe what you want in natural language, and the system figures out how to do it — across browsers, desktop apps, and the terminal. Uses multi-agent orchestration with specialist agents for web automation, GUI control, system commands, and code generation.
+Pilot enables AI to control your computer like a human would. Describe what you want in natural language, and the system figures out how to do it — across browsers, desktop apps, and the terminal. Uses multi-agent orchestration with specialist agents for web automation, GUI control, system commands, and code generation.
 
 ## Quick Start
 
@@ -17,7 +17,7 @@ Get running in 3 commands:
 
 ```bash
 # Clone and install
-git clone https://github.com/lahfir/computer-use.git && cd computer-use
+git clone https://github.com/lahfir/pilot.git && cd pilot
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync --extra macos  # or windows/linux
 
@@ -27,7 +27,7 @@ LLM_MODEL=gemini-2.0-flash-exp
 GOOGLE_API_KEY=your_key_here" > .env
 
 # Run
-uv run python -m computer_use.main
+uv run python -m pilot.main
 ```
 
 **macOS users:** Grant accessibility permissions in System Settings → Privacy & Security → Accessibility (add Terminal to the list).
@@ -37,7 +37,7 @@ uv run python -m computer_use.main
 ### macOS
 
 ```bash
-git clone https://github.com/lahfir/computer-use.git && cd computer-use
+git clone https://github.com/lahfir/pilot.git && cd pilot
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync --extra macos
 ```
@@ -47,7 +47,7 @@ uv sync --extra macos
 ### Windows
 
 ```bash
-git clone https://github.com/lahfir/computer-use.git && cd computer-use
+git clone https://github.com/lahfir/pilot.git && cd pilot
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 uv sync --extra windows
 ```
@@ -57,7 +57,7 @@ uv sync --extra windows
 ### Linux
 
 ```bash
-git clone https://github.com/lahfir/computer-use.git && cd computer-use
+git clone https://github.com/lahfir/pilot.git && cd pilot
 curl -LsSf https://astral.sh/uv/install.sh | sh
 sudo apt-get install -y python3-pyatspi python3-xlib
 uv sync --extra linux
@@ -68,7 +68,7 @@ uv sync --extra linux
 ### One-shot Installer
 
 ```bash
-git clone https://github.com/lahfir/computer-use.git && cd computer-use
+git clone https://github.com/lahfir/pilot.git && cd pilot
 ./install.sh
 ```
 
@@ -79,7 +79,7 @@ The installer detects your platform, installs dependencies, and configures permi
 ### Command
 
 ```bash
-uv run python -m computer_use.main [OPTIONS]
+uv run python -m pilot.main [OPTIONS]
 ```
 
 ### Options
@@ -98,19 +98,19 @@ uv run python -m computer_use.main [OPTIONS]
 
 ```bash
 # Basic usage
-uv run python -m computer_use.main
+uv run python -m pilot.main
 
 # With voice input enabled
-uv run python -m computer_use.main --voice-input
+uv run python -m pilot.main --voice-input
 
 # Verbose mode for debugging
-uv run python -m computer_use.main --verbose
+uv run python -m pilot.main --verbose
 
 # Quiet mode (minimal output)
-uv run python -m computer_use.main --quiet
+uv run python -m pilot.main --quiet
 
 # Use Chrome profile for authenticated sessions
-uv run python -m computer_use.main --use-browser-profile --browser-profile "Profile 1"
+uv run python -m pilot.main --use-browser-profile --browser-profile "Profile 1"
 ```
 
 ## Commands & Shortcuts
@@ -138,7 +138,7 @@ While in the interactive prompt, you can use:
 Here's what a typical session looks like:
 
 ```bash
-$ uv run python -m computer_use.main
+$ uv run python -m pilot.main
 
 ══════════════════════════════════════════════════════════════════
   Computer Use Agent
@@ -432,9 +432,9 @@ Use the `ComputerUseCrew` class for programmatic control:
 
 ```python
 import asyncio
-from computer_use.crew import ComputerUseCrew
-from computer_use.utils.platform_detector import detect_platform
-from computer_use.utils.safety_checker import SafetyChecker
+from pilot.crew import ComputerUseCrew
+from pilot.utils.platform_detector import detect_platform
+from pilot.utils.safety_checker import SafetyChecker
 
 async def main():
     # Initialize crew
@@ -624,8 +624,8 @@ The system defaults to EasyOCR. Alternative engines:
 ### Setup
 
 ```bash
-git clone https://github.com/lahfir/computer-use.git
-cd computer-use
+git clone https://github.com/lahfir/pilot.git
+cd pilot
 uv sync --dev --extra macos  # or windows/linux
 ```
 

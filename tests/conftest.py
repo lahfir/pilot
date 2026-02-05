@@ -9,7 +9,7 @@ import sys
 import time
 import subprocess
 from pathlib import Path
-from typing import Generator, List, Optional
+from typing import Generator, List
 
 import pytest
 
@@ -71,9 +71,9 @@ def real_tool_registry():
     Returns:
         PlatformToolRegistry with all tools initialized
     """
-    from computer_use.utils.platform import detect_platform
-    from computer_use.tools.platform_registry import PlatformToolRegistry
-    from computer_use.utils.validation import CoordinateValidator, SafetyChecker
+    from pilot.utils.platform import detect_platform
+    from pilot.tools.platform_registry import PlatformToolRegistry
+    from pilot.utils.validation import CoordinateValidator, SafetyChecker
 
     capabilities = detect_platform()
     safety_checker = SafetyChecker()

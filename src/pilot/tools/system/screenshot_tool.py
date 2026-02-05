@@ -18,7 +18,7 @@ class ScreenshotTool:
     Includes short-lived caching to avoid redundant captures.
     """
 
-    CACHE_TTL = 0.1
+    CACHE_TTL = 0.0
 
     def __init__(self):
         """Initialize and detect display scaling."""

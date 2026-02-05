@@ -11,6 +11,16 @@ This is the ONLY place where "AX" prefix handling should exist.
 from typing import Any, Dict, Optional
 
 
+def _safe_has_items(value: Any) -> bool:
+    """Safely check if value is a non-empty list. Handles OC_PythonLong."""
+    if value is None:
+        return False
+    try:
+        return hasattr(value, "__iter__") and not isinstance(value, str) and len(value) > 0
+    except TypeError:
+        return False
+
+
 def normalize_macos_role(ax_role: str) -> str:
     """
     Normalize macOS accessibility role to platform-agnostic format.
@@ -133,8 +143,8 @@ def normalize_macos_element(
 
         identifier = str(getattr(node, "AXIdentifier", "") or "")
 
-        actions = getattr(node, "AXActions", []) or []
-        has_actions = len(actions) > 0
+        actions = getattr(node, "AXActions", None)
+        has_actions = _safe_has_items(actions)
 
         is_enabled = bool(getattr(node, "AXEnabled", True))
         is_focused = bool(getattr(node, "AXFocused", False))

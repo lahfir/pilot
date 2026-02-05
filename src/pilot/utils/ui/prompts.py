@@ -2,7 +2,7 @@
 Stable prompt API surface.
 
 This module provides a backward-compatible interface for UI prompts and startup
-rendering, delegating implementation to `computer_use.utils.ui.prompting`.
+rendering, delegating implementation to `pilot.utils.ui.prompting`.
 """
 
 from __future__ import annotations

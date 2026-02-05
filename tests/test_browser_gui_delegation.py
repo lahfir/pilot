@@ -15,7 +15,7 @@ def test_load_browser_tools_includes_delegate_to_gui_when_delegate_provided():
 
             return _Result()
 
-    from computer_use.tools.browser import load_browser_tools
+    from pilot.tools.browser import load_browser_tools
 
     tools, _, _ = load_browser_tools(gui_delegate=_StubGuiDelegate())
 

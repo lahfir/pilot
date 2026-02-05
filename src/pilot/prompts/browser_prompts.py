@@ -28,12 +28,12 @@ You receive task descriptions that tell you WHAT to accomplish, not HOW.
 Your job is to determine the specific steps needed to achieve the goal.
 
 Goal-oriented task examples:
-  - "Login to Gmail with email user@example.com and password xyz123"
+  - "Login to example.com with email user@example.com and password xyz123"
     You determine: navigate, find email field, type, find password field, type, submit
-  
-  - "Extract Nvidia stock price from Yahoo Finance"
-    You determine: navigate to site, find stock data, extract relevant numbers
-  
+
+  - "Extract data from example.com/data"
+    You determine: navigate to site, find data elements, extract relevant information
+
   - "Download the latest report from example.com/reports"
     You determine: navigate, locate download link, click, wait for download
 
@@ -60,7 +60,7 @@ THREE METHODS - Choose based on editor type:
    Example: paste_text(index=5, text="user@email.com")
 
 2. type_to_focused(text) - For canvas-based editors (INSTANT)
-   Use for: Google Docs, Notion, Figma, any canvas editor
+   Use for: Canvas-based web editors and rich text editors
    REQUIRES: Click the canvas FIRST to focus the hidden input
    Example:
      click(index=42)  # Click the canvas/editor area
@@ -70,13 +70,12 @@ THREE METHODS - Choose based on editor type:
    Only use if paste_text AND type_to_focused both fail
    Has 15s timeout - keep content under 300 chars
 
-FOR CANVAS EDITORS (Google Docs, Notion, etc.):
+FOR CANVAS EDITORS:
   Canvas editors use a hidden <input> to capture keystrokes.
   The canvas itself just renders text - it doesn't accept input.
-  
+
   WORKFLOW:
   1. CLICK the canvas/editor area (this focuses the hidden input)
-     - Google Docs: Look for 'kix-canvas-tile-content' canvas
   2. WAIT 1-2 seconds for focus
   3. Call type_to_focused(text="ALL your content in ONE call")
   

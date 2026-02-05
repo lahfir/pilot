@@ -91,7 +91,7 @@ class WebhookServer:
             """
             import socket
 
-            from computer_use.utils.logging import silence_flask_logs
+            from pilot.utils.logging import silence_flask_logs
 
             silence_flask_logs()
 

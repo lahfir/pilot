@@ -37,7 +37,7 @@ class TestAccessibilityRefactored:
 
     def test_click_all_buttons_no_stale_errors(self, calculator_app):
         """Click all buttons without any STALE errors."""
-        from computer_use.tools.accessibility import get_accessibility_tool
+        from pilot.tools.accessibility import get_accessibility_tool
 
         acc = get_accessibility_tool()
         assert acc.available, "Accessibility not available"
@@ -75,7 +75,7 @@ class TestAccessibilityRefactored:
 
     def test_multiple_sequential_clicks_same_element(self, calculator_app):
         """Click same element multiple times without re-fetching."""
-        from computer_use.tools.accessibility import get_accessibility_tool
+        from pilot.tools.accessibility import get_accessibility_tool
 
         acc = get_accessibility_tool()
         elements = acc.get_elements(calculator_app, interactive_only=True)
@@ -102,7 +102,7 @@ class TestAccessibilityRefactored:
 
     def test_click_speed_benchmark(self, calculator_app):
         """Verify clicking is fast (>5 clicks/second)."""
-        from computer_use.tools.accessibility import get_accessibility_tool
+        from pilot.tools.accessibility import get_accessibility_tool
 
         acc = get_accessibility_tool()
         elements = acc.get_elements(calculator_app, interactive_only=True)
@@ -127,7 +127,7 @@ class TestAccessibilityRefactored:
 
     def test_direct_native_ref_clicking(self, calculator_app):
         """Test direct native ref clicking (like the working test)."""
-        from computer_use.tools.accessibility import get_accessibility_tool
+        from pilot.tools.accessibility import get_accessibility_tool
 
         acc = get_accessibility_tool()
         elements = acc.get_elements(calculator_app, interactive_only=True)
@@ -153,7 +153,7 @@ class TestAccessibilityRefactored:
 
     def test_calculator_workflow_2_plus_2(self, calculator_app):
         """Full workflow: 2 + 2 = 4."""
-        from computer_use.tools.accessibility import get_accessibility_tool
+        from pilot.tools.accessibility import get_accessibility_tool
 
         acc = get_accessibility_tool()
         elements = acc.get_elements(calculator_app, interactive_only=True)
@@ -181,7 +181,7 @@ class TestAccessibilityRefactored:
 
     def test_interleaved_fetch_and_click(self, calculator_app):
         """Verify that fetching doesn't break existing element IDs."""
-        from computer_use.tools.accessibility import get_accessibility_tool
+        from pilot.tools.accessibility import get_accessibility_tool
 
         acc = get_accessibility_tool()
 
@@ -213,7 +213,7 @@ class TestAccessibilityRefactored:
 
     def test_element_store_basic_operations(self):
         """Test SimpleElementStore basic operations."""
-        from computer_use.tools.accessibility.element_store import SimpleElementStore
+        from pilot.tools.accessibility.element_store import SimpleElementStore
 
         store = SimpleElementStore()
 

@@ -27,8 +27,8 @@ async def get_voice_input(console: Console) -> Optional[str]:
         Transcribed text or None if voice input failed or was cancelled.
     """
     try:
-        from computer_use.services.voice_input_service import VoiceInputService
-        from computer_use.services.audio_capture import AudioCapture
+        from pilot.services.voice_input_service import VoiceInputService
+        from pilot.services.audio_capture import AudioCapture
     except ImportError as e:
         logger.error(f"Voice input dependencies not available: {e}")
         console.print(

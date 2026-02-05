@@ -2,7 +2,7 @@
 
 ## Summary
 
-The computer-use automation system is built on CrewAI's multi-agent orchestration framework, featuring intelligent task decomposition, granular tools, and platform-independent implementation across macOS, Windows, and Linux.
+The pilot automation system is built on CrewAI's multi-agent orchestration framework, featuring intelligent task decomposition, granular tools, and platform-independent implementation across macOS, Windows, and Linux.
 
 ---
 
@@ -171,7 +171,7 @@ class ClickElementTool(BaseTool):
 
 ### Platform Tool Registry
 
-**Location**: `src/computer_use/tools/platform_registry.py`
+**Location**: `src/pilot/tools/platform_registry.py`
 
 **Purpose**: Provides platform-specific tool instances:
 
@@ -354,7 +354,7 @@ class FindApplicationTool(BaseTool):
 ### Directory Structure
 
 ```
-src/computer_use/
+src/pilot/
 ├── crew_tools/                    # CrewAI tool wrappers
 │   ├── __init__.py               # Exports all tools
 │   ├── gui_basic_tools.py        # Screenshot, Open, Read, Scroll
@@ -490,7 +490,7 @@ class TaskCompletionOutput(BaseModel):
 ## File Structure
 
 ```
-src/computer_use/
+src/pilot/
 ├── agents/
 │   ├── browser_agent.py          # Web automation
 │   ├── gui_agent.py              # Desktop control

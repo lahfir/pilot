@@ -141,7 +141,7 @@ def _create_twilio_tools(twilio_service) -> Tools:
         Returns:
             ActionResult indicating the request was made
         """
-        from computer_use.utils.ui import (
+        from pilot.utils.ui import (
             prompt_human_assistance,
             HumanAssistanceResult,
         )

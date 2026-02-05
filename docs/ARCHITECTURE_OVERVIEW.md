@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document provides a comprehensive overview of the computer-use automation system's architecture. The system enables AI agents to control desktop applications, web browsers, and system operations autonomously - essentially allowing AI to "use a computer" like a human would.
+This document provides a comprehensive overview of the pilot automation system's architecture. The system enables AI agents to control desktop applications, web browsers, and system operations autonomously - essentially allowing AI to "use a computer" like a human would.
 
 ---
 

@@ -1,3 +1,3 @@
 """
-Tests for computer-use automation framework.
+Tests for pilot automation framework.
 """

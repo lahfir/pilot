@@ -423,7 +423,7 @@ class BrowserAgent:
             available_files = []
             task_id = None
             if self.has_image_gen:
-                from computer_use.tools.browser.image_tools import (
+                from pilot.tools.browser.image_tools import (
                     get_generated_image_paths,
                     initialize_task_images,
                 )
@@ -461,7 +461,7 @@ class BrowserAgent:
             finally:
                 dashboard.set_browser_session(active=False)
                 if self.has_image_gen and task_id:
-                    from computer_use.tools.browser.image_tools import (
+                    from pilot.tools.browser.image_tools import (
                         cleanup_task_images,
                     )
 

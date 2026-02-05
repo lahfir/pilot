@@ -101,7 +101,7 @@ class CrewGuiDelegate:
             llm=self._gui_llm,
             max_iter=config.get("max_iter", 25),
             allow_delegation=config.get("allow_delegation", False),
-            memory=True,
+            memory=False,
             tools=tools,
             step_callback=step_callback,
         )

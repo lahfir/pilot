@@ -83,7 +83,7 @@ class TestToolOutputCorrectness:
 
     def test_check_app_running_returns_correct_action(self, mock_registry):
         """CheckAppRunningTool should return action about checking app status."""
-        from computer_use.crew_tools.gui_basic_tools import CheckAppRunningTool
+        from pilot.crew_tools.gui_basic_tools import CheckAppRunningTool
 
         tool = CheckAppRunningTool()
         tool._tool_registry = mock_registry
@@ -100,7 +100,7 @@ class TestToolOutputCorrectness:
 
     def test_list_running_apps_returns_correct_action(self, mock_registry):
         """ListRunningAppsTool should return action about listing apps."""
-        from computer_use.crew_tools.gui_basic_tools import ListRunningAppsTool
+        from pilot.crew_tools.gui_basic_tools import ListRunningAppsTool
 
         tool = ListRunningAppsTool()
         tool._tool_registry = mock_registry
@@ -117,7 +117,7 @@ class TestToolOutputCorrectness:
 
     def test_open_application_returns_correct_action(self, mock_registry):
         """OpenApplicationTool should return action about opening app."""
-        from computer_use.crew_tools.gui_basic_tools import OpenApplicationTool
+        from pilot.crew_tools.gui_basic_tools import OpenApplicationTool
 
         mock_registry.get_tool("accessibility").is_app_frontmost = Mock(
             return_value=True
@@ -128,7 +128,7 @@ class TestToolOutputCorrectness:
         tool._tool_registry = mock_registry
 
         with patch(
-            "src.computer_use.crew_tools.gui_basic_tools.check_cancellation",
+            "src.pilot.crew_tools.gui_basic_tools.check_cancellation",
             return_value=None,
         ):
             result = tool._run(app_name="Calculator")
@@ -146,7 +146,7 @@ class TestToolOutputCorrectness:
 
     def test_scroll_returns_correct_action(self, mock_registry):
         """ScrollTool should return action about scrolling."""
-        from computer_use.crew_tools.gui_basic_tools import ScrollTool
+        from pilot.crew_tools.gui_basic_tools import ScrollTool
 
         tool = ScrollTool()
         tool._tool_registry = mock_registry
@@ -160,7 +160,7 @@ class TestToolOutputCorrectness:
 
     def test_take_screenshot_returns_correct_action(self, mock_registry):
         """TakeScreenshotTool should return action about capturing screenshot."""
-        from computer_use.crew_tools.gui_basic_tools import TakeScreenshotTool
+        from pilot.crew_tools.gui_basic_tools import TakeScreenshotTool
 
         tool = TakeScreenshotTool()
         tool._tool_registry = mock_registry
@@ -176,13 +176,13 @@ class TestToolOutputCorrectness:
 
     def test_read_screen_text_returns_correct_action(self, mock_registry):
         """ReadScreenTextTool should return action about reading text."""
-        from computer_use.crew_tools.gui_basic_tools import ReadScreenTextTool
+        from pilot.crew_tools.gui_basic_tools import ReadScreenTextTool
 
         tool = ReadScreenTextTool()
         tool._tool_registry = mock_registry
 
         with patch(
-            "src.computer_use.crew_tools.gui_basic_tools.check_cancellation",
+            "src.pilot.crew_tools.gui_basic_tools.check_cancellation",
             return_value=None,
         ):
             result = tool._run()
@@ -196,7 +196,7 @@ class TestToolOutputCorrectness:
 
     def test_get_accessible_elements_returns_correct_action(self, mock_registry):
         """GetAccessibleElementsTool should return action about getting elements."""
-        from computer_use.crew_tools.gui_basic_tools import (
+        from pilot.crew_tools.gui_basic_tools import (
             GetAccessibleElementsTool,
         )
 
@@ -204,7 +204,7 @@ class TestToolOutputCorrectness:
         tool._tool_registry = mock_registry
 
         with patch(
-            "src.computer_use.crew_tools.gui_basic_tools.check_cancellation",
+            "src.pilot.crew_tools.gui_basic_tools.check_cancellation",
             return_value=None,
         ):
             result = tool._run(app_name="Calculator")
@@ -218,7 +218,7 @@ class TestToolOutputCorrectness:
 
     def test_get_accessible_elements_smart_compact_limits_ids(self, mock_registry):
         """GetAccessibleElementsTool should not flood output with element IDs."""
-        from computer_use.crew_tools.gui_basic_tools import (
+        from pilot.crew_tools.gui_basic_tools import (
             GetAccessibleElementsTool,
         )
 
@@ -254,7 +254,7 @@ class TestToolOutputCorrectness:
         tool._tool_registry = mock_registry
 
         with patch(
-            "src.computer_use.crew_tools.gui_basic_tools.check_cancellation",
+            "src.pilot.crew_tools.gui_basic_tools.check_cancellation",
             return_value=None,
         ):
             result = tool._run(app_name="Calculator")
@@ -265,7 +265,7 @@ class TestToolOutputCorrectness:
 
     def test_get_accessible_elements_data_payload_is_compact(self, mock_registry):
         """GetAccessibleElementsTool should keep returned element payload compact."""
-        from computer_use.crew_tools.gui_basic_tools import (
+        from pilot.crew_tools.gui_basic_tools import (
             GetAccessibleElementsTool,
         )
 
@@ -301,7 +301,7 @@ class TestToolOutputCorrectness:
         tool._tool_registry = mock_registry
 
         with patch(
-            "src.computer_use.crew_tools.gui_basic_tools.check_cancellation",
+            "src.pilot.crew_tools.gui_basic_tools.check_cancellation",
             return_value=None,
         ):
             result = tool._run(app_name="Calculator")
@@ -320,13 +320,13 @@ class TestToolOutputCorrectness:
 
     def test_click_element_with_id_returns_correct_action(self, mock_registry):
         """ClickElementTool with element_id should return native click action."""
-        from src.computer_use.crew_tools.gui_interaction_tools import ClickElementTool
+        from src.pilot.crew_tools.gui_interaction_tools import ClickElementTool
 
         tool = ClickElementTool()
         tool._tool_registry = mock_registry
 
         with patch(
-            "src.computer_use.crew_tools.gui_interaction_tools.check_cancellation",
+            "src.pilot.crew_tools.gui_interaction_tools.check_cancellation",
             return_value=None,
         ):
             result = tool._run(element_id="e_abc123", current_app="Calculator")
@@ -337,7 +337,7 @@ class TestToolOutputCorrectness:
 
     def test_type_text_returns_correct_action(self, mock_registry):
         """TypeTextTool should return action about typing."""
-        from src.computer_use.crew_tools.gui_interaction_tools import TypeTextTool
+        from src.pilot.crew_tools.gui_interaction_tools import TypeTextTool
 
         tool = TypeTextTool()
         tool._tool_registry = mock_registry
@@ -353,7 +353,7 @@ class TestToolOutputCorrectness:
 
     def test_type_text_hotkey_returns_correct_action(self, mock_registry):
         """TypeTextTool with hotkey should return hotkey action."""
-        from src.computer_use.crew_tools.gui_interaction_tools import TypeTextTool
+        from src.pilot.crew_tools.gui_interaction_tools import TypeTextTool
 
         mock_input = mock_registry.get_tool("input")
         mock_input.hotkey = Mock()
@@ -371,7 +371,7 @@ class TestToolOutputCorrectness:
 
     def test_type_text_hotkey_sequence_executes_multiple(self, mock_registry):
         """TypeTextTool should support comma-separated hotkey sequences."""
-        from src.computer_use.crew_tools.gui_interaction_tools import TypeTextTool
+        from src.pilot.crew_tools.gui_interaction_tools import TypeTextTool
 
         mock_input = mock_registry.get_tool("input")
         mock_input.hotkey = Mock()
@@ -414,7 +414,7 @@ class TestActionResultStructure:
 
     def test_action_result_has_required_fields(self):
         """ActionResult should have success, action_taken, method_used, confidence."""
-        from src.computer_use.schemas.actions import ActionResult
+        from src.pilot.schemas.actions import ActionResult
 
         result = ActionResult(
             success=True,
@@ -430,7 +430,7 @@ class TestActionResultStructure:
 
     def test_action_result_error_field(self):
         """ActionResult should support error field for failures."""
-        from src.computer_use.schemas.actions import ActionResult
+        from src.pilot.schemas.actions import ActionResult
 
         result = ActionResult(
             success=False,
