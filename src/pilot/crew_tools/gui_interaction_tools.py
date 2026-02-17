@@ -830,12 +830,51 @@ class TypeTextTool(InstrumentedBaseTool):
                 )
 
             elif text == "\\n" or text == "\n":
-                import pyautogui
-
-                pyautogui.press("return")
+                input_tool.press_key("return")
                 return ActionResult(
                     success=True,
                     action_taken="Pressed Enter",
+                    method_used="type",
+                    confidence=1.0,
+                )
+
+            special_keys = {
+                "tab",
+                "escape",
+                "backspace",
+                "delete",
+                "space",
+                "up",
+                "down",
+                "left",
+                "right",
+                "home",
+                "end",
+                "pageup",
+                "pagedown",
+                "f1",
+                "f2",
+                "f3",
+                "f4",
+                "f5",
+                "f6",
+                "f7",
+                "f8",
+                "f9",
+                "f10",
+                "f11",
+                "f12",
+                "return",
+                "enter",
+            }
+            if text.lower().strip() in special_keys:
+                key_name = text.lower().strip()
+                if key_name == "enter":
+                    key_name = "return"
+                input_tool.press_key(key_name)
+                return ActionResult(
+                    success=True,
+                    action_taken=f"Pressed {key_name} key",
                     method_used="type",
                     confidence=1.0,
                 )

@@ -6,7 +6,7 @@ Simple tools: screenshot, open_application, read_screen, scroll.
 import atexit
 import os
 from pydantic import BaseModel, Field
-from typing import Optional, Set
+from typing import Any, Optional, Set
 
 from .instrumented_tool import InstrumentedBaseTool
 from ..schemas.actions import ActionResult
@@ -213,20 +213,55 @@ class OpenApplicationTool(InstrumentedBaseTool):
 
         return False
 
+    def _ensure_app_focused(
+        self, app_name: str, process_tool: Any, max_attempts: int = 3
+    ) -> bool:
+        """
+        Verify the app is frontmost, retrying focus if another app stole it.
+
+        Args:
+            app_name: Application name that should be frontmost
+            process_tool: Process tool instance for focus calls
+            max_attempts: Maximum focus attempts before giving up
+
+        Returns:
+            True if app is confirmed frontmost, False otherwise
+        """
+        import time
+
+        from ..services.state import StateObserver
+
+        observer = StateObserver(self._tool_registry)
+
+        for attempt in range(max_attempts):
+            is_focused, _ = observer.verify_precondition(
+                "app_focused", app_name=app_name
+            )
+            if is_focused:
+                return True
+
+            try:
+                process_tool.focus_app(app_name)
+            except Exception:
+                pass
+            time.sleep(0.5)
+
+        is_focused, _ = observer.verify_precondition("app_focused", app_name=app_name)
+        return is_focused
+
     def _run(self, app_name: str, explanation: Optional[str] = None) -> ActionResult:
         """
-        Open application without blocking for frontmost status.
+        Open application and verify it is frontmost.
 
-        Accessibility API clicks work WITHOUT the app being frontmost.
-        Only coordinate-based clicks (pyautogui) require frontmost.
-        This tool now returns success as soon as the app is running.
+        Launches the app, waits for windows, and confirms focus.
+        Retries focus if another application steals it.
 
         Args:
             app_name: Application name
             explanation: Why this app is being opened (for logging)
 
         Returns:
-            ActionResult with launch details
+            ActionResult with launch details including focus status
         """
         if cancelled := check_cancellation():
             return cancelled
@@ -249,21 +284,36 @@ class OpenApplicationTool(InstrumentedBaseTool):
 
             get_app_state().set_target_app(app_name)
 
-            try:
-                process_tool.focus_app(app_name)
-            except Exception:
-                pass
-
             app_ready = self._wait_for_app_ready(app_name, timeout=5.0)
+            is_focused = self._ensure_app_focused(app_name, process_tool)
 
-            if app_ready:
+            if app_ready and is_focused:
                 print_action_result(True, f"Opened {app_name}")
                 return ActionResult(
                     success=True,
                     action_taken=f"Opened {app_name} (ready)",
                     method_used="process",
                     confidence=1.0,
-                    data={"is_running": True, "has_windows": True},
+                    data={
+                        "is_running": True,
+                        "has_windows": True,
+                        "is_focused": True,
+                    },
+                )
+            elif app_ready:
+                print_action_result(True, f"Opened {app_name} (not focused)")
+                return ActionResult(
+                    success=True,
+                    action_taken=(
+                        f"Opened {app_name} (running but may not be focused)"
+                    ),
+                    method_used="process",
+                    confidence=0.8,
+                    data={
+                        "is_running": True,
+                        "has_windows": True,
+                        "is_focused": False,
+                    },
                 )
             else:
                 print_action_result(True, f"Opened {app_name} (no windows yet)")
@@ -272,7 +322,11 @@ class OpenApplicationTool(InstrumentedBaseTool):
                     action_taken=f"Opened {app_name} (may still be loading)",
                     method_used="process",
                     confidence=0.7,
-                    data={"is_running": True, "has_windows": False},
+                    data={
+                        "is_running": True,
+                        "has_windows": False,
+                        "is_focused": is_focused,
+                    },
                 )
 
         except Exception as e:
@@ -1454,7 +1508,7 @@ class RequestHumanInputTool(InstrumentedBaseTool):
             dashboard.set_agent("GUI Agent")
             dashboard.set_thinking(f"Requesting human input: {question[:60]}...")
 
-        was_running = dashboard._is_running
+        was_running = dashboard._shared.is_running
         if was_running:
             dashboard.stop_dashboard()
 
